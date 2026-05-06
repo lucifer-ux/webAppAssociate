@@ -18,6 +18,7 @@
 
 .loginButton {
   padding: 16px;
+  cursor: pointer;
 }
 
 .navBarList {

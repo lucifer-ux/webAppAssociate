@@ -5,7 +5,6 @@ interface ButtonProps {
   text: string;
   color: string;
   width: number;
-  isBorder: boolean;
   onClick: React.MouseEventHandler<HTMLButtonElement>;
 }
 
@@ -13,13 +12,11 @@ const Button = (buttonProps: ButtonProps) => {
   return (
     <>
       <button
-        onClick={buttonProps.onClick}
         className="buttonStyle"
         style={{
           backgroundColor: buttonProps.backgroundColor,
           color: buttonProps.color,
           width: `${buttonProps.width}rem`,
-          border: "1px solid #1B1C19",
         }}
       >
         {buttonProps.text}

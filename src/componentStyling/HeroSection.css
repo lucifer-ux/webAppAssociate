@@ -61,6 +61,20 @@
 .ButtonLayoutHero {
   display: flex;
   justify-content: center;
+  gap: 16px;
   align-items: center;
   padding-top: 32px;
+}
+
+.decorativeImage {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 124px;
+  flex-direction: column;
+}
+
+.synthesisImage {
+  z-index: 2;
+  position: absolute;
 }

@@ -1,12 +1,9 @@
 import "../componentStyling/Navbar.css";
 import Button from "../components/Button.tsx";
-import { useNavigate } from "react-router-dom";
 
 const Navbar = () => {
-  const navigate = useNavigate();
   const handleClick = () => {
     console.log("clicked");
-    navigate("/login");
   };
 
   return (
@@ -34,7 +31,6 @@ const Navbar = () => {
             color="#FFFFFF"
             onClick={handleClick}
             width={7.2}
-            isBorder={false}
           />
         </div>
       </nav>

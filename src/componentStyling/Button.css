@@ -2,6 +2,11 @@
 
 .buttonStyle {
   padding: 16px;
-  fontfamily: "'Inter', sans-serif";
+  font-family: "Newsreader", serif;
   border: None;
+  cursor: pointer;
+}
+
+.buttonStyle:active {
+  transform: scale(0.95);
 }

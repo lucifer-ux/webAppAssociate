@@ -1,12 +1,17 @@
 import "./App.css";
-import Navbar from "./components/Navbar";
-import HeroSection from "./components/HeroSection";
+import Home from "./Home.tsx";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import LoginSignUpPage from "./components/LoginSignUpPage.tsx";
 
 function App() {
   return (
     <>
-      <Navbar />
-      <HeroSection />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/Login" element={<LoginSignUpPage />} />
+        </Routes>
+      </BrowserRouter>
     </>
   );
 }

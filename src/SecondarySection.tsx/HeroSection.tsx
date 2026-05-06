@@ -1,14 +1,10 @@
 import "../componentStyling/HeroSection.css";
 import { Gavel } from "lucide-react";
-import Button from "./Button.tsx";
-import { useNavigate } from "react-router-dom";
+import Button from "../components/Button.tsx";
 
-const HeroSection = () => {
-  const navigate = useNavigate();
-
+const heroSection = () => {
   const handleSynthesisClick = () => {
     console.log("synthesisclicked");
-    navigate("/login");
   };
 
   const handleDemoClick = () => {
@@ -48,7 +44,7 @@ const HeroSection = () => {
           color="#FFFFFF"
           onClick={handleSynthesisClick}
           width={12.2}
-          isBorder={false}
+          isBorder={true}
         />
 
         <Button
@@ -69,4 +65,4 @@ const HeroSection = () => {
   );
 };
 
-export default HeroSection;
+export default heroSection;
