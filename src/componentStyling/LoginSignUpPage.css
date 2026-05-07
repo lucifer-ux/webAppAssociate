@@ -1,0 +1,191 @@
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,700&family=Inter:wght@400;500;600;700&display=swap");
+
+.loginPage {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 390px 1fr;
+  background-color: #f5f2ec;
+}
+
+.loginSide {
+  background-color: #f5f2ec;
+  display: flex;
+  justify-content: center;
+}
+
+.loginCard {
+  width: 100%;
+  max-width: 300px;
+  padding-top: 92px;
+  padding-bottom: 40px;
+  display: flex;
+  flex-direction: column;
+}
+
+.loginLogo {
+  width: 175px;
+  height: auto;
+  object-fit: contain;
+}
+
+.loginSubtitle {
+  margin-top: 14px;
+  color: #6a625c;
+  font-family: "Newsreader", serif;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.formField {
+  margin-top: 24px;
+}
+
+.formField label {
+  display: block;
+  margin-bottom: 10px;
+  color: #2c2b29;
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.formField input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #c4beb8;
+  background: transparent;
+  height: 34px;
+  outline: none;
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  color: #2b2a28;
+}
+
+.formField input::placeholder {
+  color: #b1aaa3;
+}
+
+.passwordHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.forgotPasswordLink {
+  text-decoration: none;
+  color: #8c8680;
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.signInButton {
+  margin-top: 26px;
+  width: 100%;
+  height: 42px;
+  border: 0;
+  background: #760c0c;
+  color: #fff;
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.orDivider {
+  margin-top: 18px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #9a948f;
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.orDivider::before,
+.orDivider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #dfd8d2;
+}
+
+.ssoButton,
+.googleButton {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #cdc5be;
+  background: transparent;
+  color: #4f4d4a;
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.googleButton {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.googleIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.loginFooter {
+  margin-top: auto;
+  padding-top: 42px;
+  color: #b6afa8;
+  font-family: "Inter", sans-serif;
+  font-size: 10px;
+}
+
+.loginVisual {
+  position: relative;
+  background:
+    radial-gradient(circle at 70% 8%, rgba(255, 255, 255, 0.24), transparent 35%),
+    linear-gradient(180deg, #151515 0%, #0f0f0f 45%, #2f1f16 100%);
+  overflow: hidden;
+}
+
+.visualOverlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 58%, rgba(120, 64, 35, 0.4) 100%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(233, 233, 233, 0.08) 0px,
+      rgba(233, 233, 233, 0.08) 3px,
+      rgba(27, 27, 27, 0.2) 3px,
+      rgba(27, 27, 27, 0.2) 9px
+    );
+  opacity: 0.9;
+}
+
+@media (max-width: 960px) {
+  .loginPage {
+    grid-template-columns: 1fr;
+  }
+
+  .loginSide {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .loginCard {
+    max-width: 420px;
+    padding-top: 48px;
+  }
+
+  .loginVisual {
+    min-height: 40vh;
+  }
+}
