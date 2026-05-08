@@ -1,7 +1,7 @@
 import "../componentStyling/HomeDashboardStyling.css";
 import { useMemo, useState } from "react";
+import SideBar from "./SideBar";
 import {
-  ArrowRight,
   ArrowUp,
   Bell,
   Bolt,
@@ -9,13 +9,13 @@ import {
   Cable,
   Check,
   FilePlus2,
-  FolderOpenDot,
-  Gavel,
-  HelpCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
   Paperclip,
   Search,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   User,
 } from "lucide-react";
@@ -38,31 +38,24 @@ type GmailErrorResponse = {
 };
 
 const HomeDashboard = () => {
+  const apiBaseUrl =
+    (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:4000";
   const [isFetchingEmails, setIsFetchingEmails] = useState(false);
-  const [topEmailSubjects, setTopEmailSubjects] = useState<string[]>([]);
+  const [emails, setEmails] = useState<GmailTopEmailsResponse["emails"]>([]);
   const [emailError, setEmailError] = useState<string>("");
+  const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
+  const [isSideBarCollapsed, setIsSideBarCollapsed] = useState(false);
+  const [activeSection, setActiveSection] = useState<
+    "matterLibrary" | "activeResearch"
+  >("matterLibrary");
 
-  const activeMatterLines = useMemo(() => {
-    if (topEmailSubjects.length > 0) {
-      return topEmailSubjects;
-    }
+  const latestEmails = useMemo(() => emails.slice(0, 2), [emails]);
 
-    if (isFetchingEmails) {
-      return ["Loading latest emails..."];
-    }
-
-    if (emailError) {
-      return [emailError];
-    }
-
-    return ["Authorize connection to load your latest email subjects."];
-  }, [emailError, isFetchingEmails, topEmailSubjects]);
-
-  const handleAuthorizeConnection = async () => {
+  const handleAnalyzeEmails = async () => {
     const token = localStorage.getItem("auth_token");
 
     if (!token) {
-      setTopEmailSubjects([]);
+      setEmails([]);
       setEmailError("Missing authentication token. Please sign in again.");
       return;
     }
@@ -71,7 +64,7 @@ const HomeDashboard = () => {
     setEmailError("");
 
     try {
-      const res = await fetch("http://localhost:8090/api/auth/gmail/top-emails", {
+      const res = await fetch(`${apiBaseUrl}/api/gmail/emails`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -80,32 +73,30 @@ const HomeDashboard = () => {
         credentials: "include",
       });
 
-      const payload = (await res.json()) as GmailTopEmailsResponse | GmailErrorResponse;
+      const payload = (await res.json()) as
+        | GmailTopEmailsResponse
+        | GmailErrorResponse;
 
       if ("error" in payload) {
-        setTopEmailSubjects([]);
+        setEmails([]);
         setEmailError(payload.error);
         return;
       }
 
       if (!res.ok || !payload.success || !Array.isArray(payload.emails)) {
-        setTopEmailSubjects([]);
+        setEmails([]);
         setEmailError("Unable to load emails right now. Please try again.");
         return;
       }
 
-      const subjects = payload.emails
-        .map((email) => email.subject?.trim())
-        .filter((subject): subject is string => Boolean(subject))
-        .slice(0, 2);
+      setEmails(payload.emails);
+      setExpandedEmailId(null);
 
-      setTopEmailSubjects(subjects);
-
-      if (subjects.length === 0) {
-        setEmailError("No email subjects were returned.");
+      if (payload.emails.length === 0) {
+        setEmailError("No emails were returned.");
       }
     } catch {
-      setTopEmailSubjects([]);
+      setEmails([]);
       setEmailError("Failed to connect to Gmail endpoint.");
     } finally {
       setIsFetchingEmails(false);
@@ -116,6 +107,14 @@ const HomeDashboard = () => {
     <div className="homeDashPage">
       <header className="homeDashTopBar">
         <div className="topBarLeft">
+          <button
+            className="iconBtn sidebarToggleBtn"
+            type="button"
+            aria-label={isSideBarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setIsSideBarCollapsed((prev) => !prev)}
+          >
+            {isSideBarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
           <img src="/logo.jpeg" alt="Associate logo" className="topBarLogo" />
           <div className="searchWrap">
             <Search size={16} />
@@ -130,7 +129,11 @@ const HomeDashboard = () => {
           <button className="iconBtn" type="button" aria-label="Settings">
             <Settings size={18} />
           </button>
-          <button className="iconBtn iconBtnWithDot" type="button" aria-label="Notifications">
+          <button
+            className="iconBtn iconBtnWithDot"
+            type="button"
+            aria-label="Notifications"
+          >
             <Bell size={18} />
             <span className="notifyDot" />
           </button>
@@ -140,52 +143,11 @@ const HomeDashboard = () => {
         </div>
       </header>
 
-      <nav className="leftRail">
-        <div className="leftRailHead">
-          <h2>MATTERS</h2>
-          <p>Legal Workspace</p>
-        </div>
-
-        <div className="leftRailLinks">
-          <button className="railItem active" type="button">
-            <FolderOpenDot size={18} />
-            <span>Matter Library</span>
-          </button>
-          <button className="railItem" type="button">
-            <Search size={18} />
-            <span>Active Research</span>
-          </button>
-          <button className="railItem" type="button">
-            <Sparkles size={18} />
-            <span>Synthesis</span>
-          </button>
-          <button className="railItem" type="button">
-            <FilePlus2 size={18} />
-            <span>Drafting</span>
-          </button>
-          <button className="railItem" type="button">
-            <BookOpen size={18} />
-            <span>Archives</span>
-          </button>
-
-          <div className="leftRailEmpty">
-            <FilePlus2 size={18} />
-            <p>No matters created yet.</p>
-            <button type="button">New Case</button>
-          </div>
-        </div>
-
-        <div className="leftRailFoot">
-          <button className="railItem small" type="button">
-            <Gavel size={16} />
-            <span>Compliance</span>
-          </button>
-          <button className="railItem small" type="button">
-            <HelpCircle size={16} />
-            <span>Help</span>
-          </button>
-        </div>
-      </nav>
+      <SideBar
+        isCollapsed={isSideBarCollapsed}
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+      />
 
       <nav className="rightToolsRail">
         <button className="toolRailItem" type="button">
@@ -202,81 +164,147 @@ const HomeDashboard = () => {
         </button>
       </nav>
 
-      <main className="homeDashMain">
-        <section className="welcomeBlock">
-          <h1>Welcome to your Legal Workspace</h1>
-          <p>
-            To begin extracting insights, organizing communications, and drafting materials, let&apos;s establish your
-            foundational data sources.
-          </p>
-        </section>
-
-        <section className="connectBanner">
-          <div className="connectAccent" />
-          <div className="connectCopy">
-            <div className="connectIcon">
-              <Cable size={22} />
-            </div>
-            <div>
-              <h2>Connect your Email</h2>
+      <main className={`homeDashMain ${isSideBarCollapsed ? "sidebarCollapsed" : ""}`}>
+        {activeSection === "matterLibrary" && (
+          <>
+            <section className="welcomeBlock">
+              <h1>Good morning, Counsellor</h1>
               <p>
-                Integrating your inbox allows Associate AI to automatically extract critical legal insights, construct
-                chronological timelines, and surface relevant correspondence for your active matters without manual data
-                entry.
+                Here is your active matters snapshot, organized from your two latest
+                Gmail communications.
               </p>
-              <ul>
-                <li>
-                  <Check size={14} /> Secure OAuth 2.0
-                </li>
-                <li>
-                  <Check size={14} /> Read-only access default
-                </li>
-                <li>
-                  <Check size={14} /> SOC2 Compliant
-                </li>
-              </ul>
-            </div>
-          </div>
-          <button type="button" className="authorizeBtn" onClick={handleAuthorizeConnection} disabled={isFetchingEmails}>
-            <Cable size={16} />
-            <span>{isFetchingEmails ? "Authorizing..." : "Authorize Connection"}</span>
-          </button>
-        </section>
+            </section>
 
-        <section className="activeMattersSection" aria-live="polite">
-          <h2>Active Matters</h2>
-          <ul>
-            {activeMatterLines.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </section>
+            <section className="connectBanner">
+              <div className="connectAccent" />
+              <div className="connectCopy">
+                <div className="connectIcon">
+                  <Cable size={22} />
+                </div>
+                <div>
+                  <h2>Connect your Email</h2>
+                  <p>
+                    Integrating your inbox allows Associate AI to automatically
+                    extract critical legal insights, construct chronological
+                    timelines, and surface relevant correspondence for your active
+                    matters without manual data entry.
+                  </p>
+                  <ul>
+                    <li>
+                      <Check size={14} /> Secure OAuth 2.0
+                    </li>
+                    <li>
+                      <Check size={14} /> Read-only access default
+                    </li>
+                    <li>
+                      <Check size={14} /> SOC2 Compliant
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="authorizeBtn"
+                onClick={handleAnalyzeEmails}
+                disabled={isFetchingEmails}
+              >
+                <Cable size={16} />
+                <span>{isFetchingEmails ? "Analyzing..." : "Analyze Emails"}</span>
+              </button>
+            </section>
 
-        <section className="quickGrid">
-          <article className="quickCard">
-            <div className="quickIcon">
-              <FilePlus2 size={18} />
-            </div>
-            <h3>Establish a Matter</h3>
-            <p>Manually define a new case, set jurisdictions, and upload foundational documents directly.</p>
-            <div className="quickAction">
-              <span>Start</span>
-              <ArrowRight size={14} />
-            </div>
-          </article>
+            <section className="activeMattersSection" aria-live="polite">
+              <h2>Active Matters</h2>
+              {isFetchingEmails && (
+                <p className="matterStatus">Loading latest emails...</p>
+              )}
+              {!isFetchingEmails && emailError && (
+                <p className="matterStatus">{emailError}</p>
+              )}
+              {!isFetchingEmails && !emailError && latestEmails.length === 0 && (
+                <p className="matterStatus">
+                  Authorize connection, then click Analyze Emails to load your
+                  inbox.
+                </p>
+              )}
+              {latestEmails.length > 0 && (
+                <div className="emailResults">
+                  {latestEmails.map((email, index) => {
+                    const isExpanded = expandedEmailId === email.id;
+                    return (
+                      <article
+                        key={email.id}
+                        className={`emailCard ${isExpanded ? "expanded" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className="emailCardTrigger"
+                          onClick={() =>
+                            setExpandedEmailId(isExpanded ? null : email.id)
+                          }
+                        >
+                          <span className="matterIndex">Matter {index + 1}</span>
+                          <h3>{email.subject || "(No Subject)"}</h3>
+                        </button>
+                        {isExpanded && (
+                          <div className="emailMetaPanel">
+                            <p className="emailFrom">
+                              {email.from || "Unknown sender"}
+                            </p>
+                            <p className="emailSnippet">
+                              {email.snippet || "No snippet available."}
+                            </p>
+                            <time>{email.date || "Unknown date"}</time>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </>
+        )}
 
-          <article className="quickCard">
-            <div className="quickIcon">
-              <BookOpen size={18} />
+        {activeSection === "activeResearch" && (
+          <section className="researchWorkspace">
+            <div className="researchHead">
+              <h1>Active Research</h1>
+              <p>Search Workspace</p>
             </div>
-            <h3>Explore Templates</h3>
-            <p>Browse standard legal structures, brief formats, and contract shells pre-loaded in your library.</p>
-            <div className="quickAction muted">
-              <span>Browse</span>
-              <ArrowRight size={14} />
+            <div className="researchSearchBar">
+              <Search size={18} />
+              <input
+                type="text"
+                placeholder="Search legal databases, filings, statutes, and notes..."
+                aria-label="Search workspace"
+              />
+              <button type="button">
+                <SlidersHorizontal size={16} />
+                Filters
+              </button>
             </div>
-          </article>
-        </section>
+
+            <div className="researchGrid">
+              <article>
+                <h3>Research Threads</h3>
+                <p>No active research threads yet. Start by searching a matter keyword.</p>
+              </article>
+              <article>
+                <h3>Recent Authorities</h3>
+                <p>Statutes, cases, and filings you open will appear here for quick return.</p>
+              </article>
+              <article>
+                <h3>Workspace Notes</h3>
+                <p>Capture your legal reasoning as you research and keep it linked to matters.</p>
+              </article>
+              <article>
+                <h3>Saved Queries</h3>
+                <p>Frequently used search prompts and filters will be saved in this panel.</p>
+              </article>
+            </div>
+          </section>
+        )}
       </main>
 
       <div className="chatDockWrap">
@@ -284,8 +312,15 @@ const HomeDashboard = () => {
           <div className="chatSparkle">
             <Sparkles size={18} />
           </div>
-          <input type="text" placeholder="Draft a brief, analyze a document, or ask a legal question..." />
-          <button className="chatIconBtn" type="button" aria-label="Attach file">
+          <input
+            type="text"
+            placeholder="Draft a brief, analyze a document, or ask a legal question..."
+          />
+          <button
+            className="chatIconBtn"
+            type="button"
+            aria-label="Attach file"
+          >
             <Paperclip size={16} />
           </button>
           <button className="chatSendBtn" type="button" aria-label="Send">

@@ -1,0 +1,198 @@
+.leftRail {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  bottom: 0;
+  width: 256px;
+  background: #fbf9f4;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  z-index: 30;
+  transition: width 0.2s ease, padding 0.2s ease;
+}
+
+.leftRailHead {
+  padding: 0 8px;
+  margin-bottom: 24px;
+}
+
+.leftRailHead h2 {
+  margin: 0 0 3px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--brand-soft);
+}
+
+.leftRailHead p {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  color: #746a61;
+}
+
+.leftRailLinks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.railItem {
+  width: 100%;
+  border: 0;
+  border-left: 0;
+  background: transparent;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 14px;
+  color: #7b7268;
+  cursor: pointer;
+  text-align: left;
+}
+
+.railItem:hover {
+  color: var(--brand-soft);
+  background: #f1ece5;
+}
+
+.railItem.active {
+  color: var(--brand-soft);
+  background: #f1ece5;
+}
+
+.railItem.small {
+  font-size: 12px;
+}
+
+.leftRailEmpty {
+  margin-top: 20px;
+  background: #fbf9f4;
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: #70675f;
+  text-align: center;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+}
+
+.leftRailEmpty p {
+  margin: 0;
+}
+
+.leftRailEmpty button {
+  width: 100%;
+  height: 32px;
+  border: 0;
+  background: var(--brand);
+  color: #fff;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leftRailFoot {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.recentMattersBlock {
+  margin-top: 14px;
+}
+
+.recentMattersHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  margin-bottom: 8px;
+}
+
+.recentMattersHead h3 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: 18px;
+  font-weight: 500;
+  color: #4a302c;
+}
+
+.recentMatterAddBtn {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: #6f5e57;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.recentMatterAddBtn:hover {
+  color: var(--brand-soft);
+  background: #f1ece5;
+}
+
+.recentMatterItem {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 12px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  color: #726961;
+  cursor: pointer;
+}
+
+.recentMatterItem:hover {
+  background: #f1ece5;
+  color: var(--brand-soft);
+}
+
+.recentMatterItem.isEmpty {
+  font-style: italic;
+}
+
+.leftRail.collapsed {
+  width: 84px;
+  padding: 24px 8px;
+}
+
+.leftRail.collapsed .leftRailHead h2,
+.leftRail.collapsed .leftRailHead p,
+.leftRail.collapsed .railItem span,
+.leftRail.collapsed .leftRailEmpty p,
+.leftRail.collapsed .leftRailEmpty button,
+.leftRail.collapsed .recentMattersHead h3,
+.leftRail.collapsed .recentMatterItem {
+  display: none;
+}
+
+.leftRail.collapsed .recentMattersHead {
+  justify-content: center;
+  padding: 0;
+}
+
+.leftRail.collapsed .railItem {
+  justify-content: center;
+  padding: 0;
+  border-left: 0;
+}
+
+.leftRail.collapsed .leftRailEmpty {
+  padding: 12px 0;
+}
+
+@media (max-width: 960px) {
+  .leftRail {
+    display: none;
+  }
+}

@@ -9,8 +9,12 @@ const LoginSignUpPage = () => {
   useEffect(() => {
     const query = new URLSearchParams(location.search);
     const googleAuth = query.get("googleAuth");
+    const accessToken = query.get("accessToken");
 
     if (googleAuth === "success") {
+      if (accessToken) {
+        localStorage.setItem("auth_token", accessToken);
+      }
       navigate("/dashboard", { replace: true });
     }
   }, [location.search, navigate]);
