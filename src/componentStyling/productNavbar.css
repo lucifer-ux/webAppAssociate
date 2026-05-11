@@ -1,0 +1,315 @@
+.homeDashTopBar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  height: 64px;
+  background: #fbf9f4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(223, 191, 188, 0.35);
+}
+
+.topBarLeft,
+.topBarRight,
+.draftChromePrimaryRow,
+.draftChromeToolbar,
+.draftingToolbarGroup,
+.toolbarSizeControl,
+.draftingTopRight,
+.draftChromeMenuRow {
+  display: flex;
+  align-items: center;
+}
+
+.topBarLeft {
+  gap: 12px;
+}
+
+.sidebarToggleBtn {
+  border: 0;
+  background: #fbf9f4;
+}
+
+.searchWrap {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  height: 38px;
+  background: #fbf9f4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--ink-subtle);
+}
+
+.searchWrap input,
+.draftChromeTitleInput {
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.searchWrap input {
+  flex: 1;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.topBarRight,
+.draftingTopRight {
+  gap: 10px;
+}
+
+.topBarLogo {
+  width: 92px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.iconBtn,
+.avatarBtn,
+.toolbarIconBtn,
+.draftingMenuBtn,
+.toolbarColorBtn {
+  border: 0;
+  background: transparent;
+  color: #66625d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+}
+
+.iconBtn,
+.avatarBtn,
+.toolbarIconBtn {
+  width: 34px;
+  height: 34px;
+}
+
+.iconBtn:hover,
+.avatarBtn:hover,
+.toolbarIconBtn:hover,
+.draftingMenuBtn:hover {
+  background: #f1ece5;
+}
+
+.notifyDot {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+}
+
+.avatarBtn {
+  background: #fbf9f4;
+}
+
+.draftingChromeBar {
+  height: auto;
+  display: grid;
+  align-items: stretch;
+  padding: 0;
+  border-bottom: 1px solid #dfbfbc;
+}
+
+.draftChromePrimaryRow,
+.draftChromeMenuRow,
+.draftChromeToolbar {
+  background: #fbf9f4;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.draftChromePrimaryRow {
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(223, 191, 188, 0.4);
+}
+
+.draftChromeTitleBlock {
+  display: grid;
+  gap: 4px;
+}
+
+.draftChromeTitleInput {
+  min-width: 280px;
+  font-family: "Newsreader", serif;
+  font-size: 20px;
+  color: #2f2422;
+}
+
+.draftChromeSaved {
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #72635b;
+}
+
+.draftRoleChip {
+  border: 1px solid #dfbfbc;
+  background: #f7f2ec;
+  color: #5d4e47;
+  padding: 9px 12px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.draftRequestEditBtn,
+.draftingShareBtn {
+  border: 1px solid #4c0003;
+  background: #700d0d;
+  color: #fff;
+  padding: 10px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.draftRequestEditBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.navShare {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.draftChromeMenuRow {
+  gap: 4px;
+  padding-top: 4px;
+  padding-bottom: 10px;
+}
+
+.draftingMenuBtn {
+  padding: 6px 10px;
+  font-size: 14px;
+  color: #5c5149;
+}
+
+.draftChromeToolbar {
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  border-top: 1px solid #ece3dc;
+}
+
+.draftingToolbarGroup {
+  gap: 6px;
+  padding-right: 10px;
+  border-right: 1px solid #eadfd8;
+}
+
+.draftingToolbarGroup:last-child {
+  border-right: 0;
+}
+
+.toolbarSelectWrap {
+  position: relative;
+}
+
+.toolbarSelectWrap select {
+  appearance: none;
+  border: 1px solid #dfbfbc;
+  background: #f7f2ec;
+  color: #2d2420;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  padding: 8px 34px 8px 10px;
+}
+
+.toolbarSelectWrap.small select {
+  min-width: 82px;
+}
+
+.toolbarSelectWrap svg {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.toolbarSizeControl {
+  gap: 6px;
+  border: 1px solid #dfbfbc;
+  background: #f7f2ec;
+  padding: 0 6px;
+  min-height: 36px;
+}
+
+.toolbarSizeControl span {
+  min-width: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: #4a3c34;
+}
+
+.toolbarColorSwatches {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+}
+
+.toolbarColorBtn {
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+@media (max-width: 960px) {
+  .searchWrap {
+    width: 220px;
+  }
+
+  .topBarLogo {
+    width: 74px;
+  }
+
+  .draftChromePrimaryRow,
+  .draftChromeToolbar {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .searchWrap {
+    display: none;
+  }
+
+  .draftChromeTitleInput {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .draftChromePrimaryRow,
+  .draftChromeMenuRow,
+  .draftChromeToolbar {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}

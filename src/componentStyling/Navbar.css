@@ -11,6 +11,26 @@
   padding-right: 16px;
 }
 
+.homeIconBtn {
+  min-width: 88px;
+  height: 38px;
+  border: 0;
+  background: transparent;
+  color: #4c0003;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: "Ubuntu", sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.homeIconBtn:hover {
+  background: #f5f3ee;
+}
+
 .rightContainerNavbar {
   display: flex;
   gap: 30px;

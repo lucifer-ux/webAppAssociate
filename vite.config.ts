@@ -8,4 +8,9 @@ export default defineConfig({
     react(),
     babel({ presets: [reactCompilerPreset()] })
   ],
+  server: {
+    allowedHosts: [
+      "multilobed-scoriaceous-zayden.ngrok-free.dev"
+    ]
+  }
 })

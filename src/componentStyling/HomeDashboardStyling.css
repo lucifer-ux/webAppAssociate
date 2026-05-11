@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&family=Work+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&family=Work+Sans:wght@400;500;600;700&display=swap");
 
 :root {
   --paper: #fbf9f4;
@@ -16,102 +16,6 @@
   background: #fbf9f4;
   color: var(--ink);
   font-family: "Newsreader", serif;
-}
-
-.homeDashTopBar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 40;
-  height: 64px;
-  background: #fbf9f4;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-}
-
-.topBarLeft {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.sidebarToggleBtn {
-  border: 0;
-  background: #fbf9f4;
-}
-
-.searchWrap {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 300px;
-  height: 38px;
-  border: 0;
-  background: #fbf9f4;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  color: var(--ink-subtle);
-}
-
-.searchWrap input {
-  flex: 1;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  font-family: "Work Sans", sans-serif;
-  font-size: 13px;
-  color: var(--ink);
-}
-
-.topBarRight {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.topBarLogo {
-  width: 92px;
-  height: 30px;
-  object-fit: contain;
-}
-
-.iconBtn,
-.avatarBtn {
-  width: 34px;
-  height: 34px;
-  border: 0;
-  background: transparent;
-  color: #66625d;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  position: relative;
-}
-
-.iconBtn:hover,
-.avatarBtn:hover {
-  background: #f1ece5;
-}
-
-.notifyDot {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--brand-soft);
-}
-
-.avatarBtn {
-  border: 0;
-  background: #fbf9f4;
 }
 
 .rightToolsRail {
@@ -162,18 +66,26 @@
 }
 
 .welcomeBlock,
-.connectBanner,
-.quickGrid,
-.activeMattersSection {
+.quickGrid {
   max-width: 1000px;
   margin: 0 auto;
 }
 
 .welcomeBlock {
+  max-width: none;
   padding: 52px 32px 12px;
 }
 
-.welcomeBlock h1 {
+.welcomeHeadingRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 2px solid rgba(112, 13, 13, 0.35);
+  padding-bottom: 8px;
+}
+
+.welcomeHeadingTitle {
   position: relative;
   margin: 0;
   font-size: 48px;
@@ -182,9 +94,10 @@
   color: #2a1918;
   font-family: "Newsreader", serif;
   padding-left: 16px;
+  padding-bottom: 8px;
 }
 
-.welcomeBlock h1::before {
+.welcomeHeadingTitle::before {
   content: "";
   position: absolute;
   left: 0;
@@ -192,6 +105,17 @@
   width: 3px;
   height: 44px;
   background: var(--brand-soft);
+}
+
+.welcomeCurrentTime {
+  margin-top: 8px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6f625a;
+  white-space: nowrap;
 }
 
 .welcomeBlock p {
@@ -202,10 +126,56 @@
   max-width: 780px;
 }
 
+.researchNudgeCard {
+  width: calc(100% - 64px);
+  margin: 10px 32px 8px;
+  border: 1px solid #e2dbcf;
+  border-radius: 12px;
+  background: #f6f3eb;
+  color: #211a18;
+  padding: 10px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.researchNudgeCard:hover {
+  background: #f1ece2;
+}
+
+.researchNudgeSpark,
+.researchNudgeArrow {
+  font-size: 14px;
+  color: #3a2e2c;
+}
+
+.researchNudgeCopy h3 {
+  margin: 0;
+  font-family: "Fraunces", serif;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.researchNudgeCopy p {
+  margin: 4px 0 0;
+  font-family: "Fraunces", serif;
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #857f72;
+}
+
 .connectBanner {
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
   margin-top: 20px;
   margin-bottom: 24px;
-  padding: 28px;
+  padding: 28px 32px;
   border: 0;
   background: #fbf9f4;
   position: relative;
@@ -487,7 +457,7 @@
   justify-content: center;
 }
 
-.chatDock input {
+.chatDock textarea {
   border: 0;
   outline: 0;
   background: transparent;
@@ -495,11 +465,23 @@
   font-size: 16px;
   color: var(--ink);
   font-family: "Newsreader", serif;
+  resize: none;
+  min-height: 22px;
+  max-height: 120px;
+  line-height: 1.35;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.chatDock input::placeholder {
+.chatDock textarea::placeholder {
   color: #8e857d;
   font-style: italic;
+}
+
+.chatDockSpacer {
+  flex: 1;
+  min-height: 22px;
 }
 
 .chatIconBtn,
@@ -556,14 +538,6 @@
     padding-left: 0;
   }
 
-  .searchWrap {
-    width: 220px;
-  }
-
-  .topBarLogo {
-    width: 74px;
-  }
-
   .connectBanner {
     flex-direction: column;
     align-items: flex-start;
@@ -591,14 +565,12 @@
     padding: 20px;
   }
 
-  .searchWrap {
-    display: none;
-  }
 }
 
 .activeMattersSection {
-  margin: 0 auto 32px;
-  padding: 22px 28px;
+  max-width: none;
+  margin: 0 0 32px;
+  padding: 22px 32px;
   border: 0;
   background: #fbf9f4;
 }
@@ -608,6 +580,131 @@
   font-size: 30px;
   font-weight: 500;
   color: #2f201d;
+}
+
+.activeResearchesSection {
+  max-width: none;
+  margin: 0 0 40px;
+  padding: 0 32px;
+}
+
+.activeResearchesHead {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.activeResearchesHead h2 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 500;
+  color: #2f201d;
+}
+
+.activeResearchesGrid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.researchDemoCard {
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.researchDemoCard:hover {
+  background: #f6f3eb;
+  box-shadow: inset 0 0 0 1px #e2dbcf;
+}
+
+.researchDemoCard h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.25;
+  color: #2b1a18;
+  font-family: "Fraunces", serif;
+  font-weight: 500;
+}
+
+.researchDemoCard p {
+  margin: 9px 0 0;
+  font-family: "Fraunces", serif;
+  font-size: 13px;
+  color: #857f72;
+}
+
+.researchDraftBtn {
+  margin-top: 10px;
+  border: 1px solid #dfbfbc;
+  background: transparent;
+  color: #4c0003;
+  padding: 5px 10px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.researchDraftBtn:hover {
+  background: #efe8de;
+}
+
+.researchDemoLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b7971;
+}
+
+.researchDemoCard.startNew {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+}
+
+.researchDemoTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.researchDemoTitleRow svg {
+  color: #6f625a;
+}
+
+.startNewPlus {
+  font-family: "Fraunces", serif;
+  font-size: 34px;
+  line-height: 1;
+  color: #6f625a;
+}
+
+.startNewHint {
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  font-family: "Fraunces", serif;
+  font-size: 13px;
+  color: #857f72;
+}
+
+.researchDemoCard.startNew:hover .startNewHint {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .matterStatus {
@@ -695,6 +792,14 @@
     margin-left: 16px;
     margin-right: 16px;
     padding: 16px;
+  }
+
+  .activeResearchesSection {
+    padding: 0 16px;
+  }
+
+  .activeResearchesGrid {
+    grid-template-columns: 1fr;
   }
 
   .researchWorkspace {

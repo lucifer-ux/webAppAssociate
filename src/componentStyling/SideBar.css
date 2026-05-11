@@ -8,28 +8,16 @@
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
   z-index: 30;
-  transition: width 0.2s ease, padding 0.2s ease;
+  transition:
+    width 0.2s ease,
+    padding 0.2s ease;
 }
 
-.leftRailHead {
-  padding: 0 8px;
-  margin-bottom: 24px;
-}
-
-.leftRailHead h2 {
-  margin: 0 0 3px;
-  font-family: "Work Sans", sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  color: var(--brand-soft);
-}
-
-.leftRailHead p {
-  margin: 0;
-  font-family: "Work Sans", sans-serif;
-  font-size: 12px;
-  color: #746a61;
+.leftRail.draftingRoute {
+  top: 194px;
 }
 
 .leftRailLinks {
@@ -69,54 +57,30 @@
   font-size: 12px;
 }
 
-.leftRailEmpty {
-  margin-top: 20px;
-  background: #fbf9f4;
-  padding: 18px 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  color: #70675f;
-  text-align: center;
-  font-family: "Work Sans", sans-serif;
-  font-size: 12px;
-}
-
-.leftRailEmpty p {
-  margin: 0;
-}
-
-.leftRailEmpty button {
-  width: 100%;
-  height: 32px;
-  border: 0;
-  background: var(--brand);
-  color: #fff;
-  font-family: "Work Sans", sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
 .leftRailFoot {
   margin-top: auto;
   padding-top: 12px;
 }
 
-.recentMattersBlock {
-  margin-top: 14px;
+.matterUploaderInput {
+  display: none;
 }
 
-.recentMattersHead {
+.recentSectionBlock {
+  margin-top: 14px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.recentSectionHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
-.recentMattersHead h3 {
+.recentSectionHead h3 {
   margin: 0;
   font-family: "Newsreader", serif;
   font-size: 18px;
@@ -133,6 +97,9 @@
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .recentMatterAddBtn:hover {
@@ -140,16 +107,31 @@
   background: #f1ece5;
 }
 
+.recentItemsList {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 120px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+}
+
 .recentMatterItem {
   width: 100%;
-  border: 0;
+  max-width: 100%;
+  border: 1px solid transparent;
   background: transparent;
   text-align: left;
   padding: 8px 12px;
+  min-height: 36px;
   font-family: "Work Sans", sans-serif;
   font-size: 13px;
   color: #726961;
   cursor: pointer;
+  display: block;
+  overflow: hidden;
 }
 
 .recentMatterItem:hover {
@@ -157,8 +139,66 @@
   color: var(--brand-soft);
 }
 
+.recentMatterItem.active {
+  border-color: var(--line);
+  background: #f7f2ec;
+}
+
 .recentMatterItem.isEmpty {
   font-style: italic;
+}
+
+.matterAddTile {
+  width: 100%;
+  border: 1px dashed #ccbcae;
+  border-radius: 12px;
+  background: transparent;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.matterAddTile:hover {
+  border-color: #9e7e70;
+  background: #f3ece4;
+  transform: translateY(-1px);
+}
+
+.matterAddPlus {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Newsreader", serif;
+  font-size: 26px;
+  line-height: 1;
+  color: #6f5e57;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.recentItemTitle {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  font-family: "Newsreader", serif;
+  font-size: 16px;
+  line-height: 1.2;
+  color: #4a302c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .leftRail.collapsed {
@@ -166,17 +206,14 @@
   padding: 24px 8px;
 }
 
-.leftRail.collapsed .leftRailHead h2,
-.leftRail.collapsed .leftRailHead p,
 .leftRail.collapsed .railItem span,
-.leftRail.collapsed .leftRailEmpty p,
-.leftRail.collapsed .leftRailEmpty button,
-.leftRail.collapsed .recentMattersHead h3,
-.leftRail.collapsed .recentMatterItem {
+.leftRail.collapsed .recentSectionHead h3,
+.leftRail.collapsed .recentMatterItem,
+.leftRail.collapsed .recentItemsList {
   display: none;
 }
 
-.leftRail.collapsed .recentMattersHead {
+.leftRail.collapsed .recentSectionHead {
   justify-content: center;
   padding: 0;
 }
@@ -185,10 +222,6 @@
   justify-content: center;
   padding: 0;
   border-left: 0;
-}
-
-.leftRail.collapsed .leftRailEmpty {
-  padding: 12px 0;
 }
 
 @media (max-width: 960px) {

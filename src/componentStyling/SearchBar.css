@@ -1,0 +1,61 @@
+.chatDock {
+  align-items: center;
+  min-height: 56px;
+  border-radius: 28px;
+}
+
+.chatDock textarea {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  flex: 1;
+  display: block;
+  font-size: 16px;
+  color: var(--ink);
+  font-family: "Newsreader", serif;
+  resize: none;
+  min-height: 24px;
+  max-height: 176px;
+  line-height: 1.45;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  padding: 6px 0;
+}
+
+.chatDock textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chatDock textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chatDock textarea::-webkit-scrollbar-thumb {
+  background: rgba(139, 113, 110, 0.5);
+  border-radius: 999px;
+}
+
+.chatDock textarea::placeholder {
+  color: #8e857d;
+  font-style: italic;
+}
+
+.chatIconBtn,
+.chatSendBtn {
+  flex: 0 0 auto;
+}
+
+.chatIconBtn:disabled,
+.chatSendBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.chatSendBtn:not(:disabled):hover {
+  background: var(--brand-soft);
+}

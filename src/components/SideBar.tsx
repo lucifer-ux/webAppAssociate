@@ -1,77 +1,157 @@
 import "../componentStyling/SideBar.css";
-import {
-  BookOpen,
-  FilePlus2,
-  FolderOpenDot,
-  Gavel,
-  HelpCircle,
-  Search,
-  Sparkles,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ChevronDown, ChevronRight, Gavel, HelpCircle } from "lucide-react";
+import type { RecentResearchItem } from "./ActiveResearchPage";
+
+export type RecentMatterItem = {
+  id: string;
+  title: string;
+};
 
 type SideBarProps = {
   isCollapsed: boolean;
-  activeSection: "matterLibrary" | "activeResearch";
-  onSectionChange: (section: "matterLibrary" | "activeResearch") => void;
+  activeSection: "matterLibrary" | "activeResearch" | "drafting";
+  recentMatters?: RecentMatterItem[];
+  recentResearches?: RecentResearchItem[];
+  activeMatterId?: string | null;
+  activeResearchId?: string | null;
+  onSelectMatter?: (id: string) => void;
+  onSelectResearch?: (id: string) => void;
 };
 
 const SideBar = ({
   isCollapsed,
-  activeSection,
-  onSectionChange,
+  recentMatters = [],
+  recentResearches = [],
+  activeMatterId = null,
+  activeResearchId = null,
+  onSelectMatter,
+  onSelectResearch,
 }: SideBarProps) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const uploaderRef = useRef<HTMLInputElement | null>(null);
+  const isDraftingRoute = location.pathname === "/dashboard/drafting";
+  const isActiveResearchRoute = location.pathname === "/dashboard/active-research";
+
+  const [isRecentResearchesOpen, setIsRecentResearchesOpen] = useState(true);
+
+  const hasRecentResearches = recentResearches.length > 0;
+  const hasRecentMatters = recentMatters.length > 0;
+
+  useEffect(() => {
+    if (location.pathname !== "/dashboard") {
+      return;
+    }
+
+    const shouldOpenUploader = sessionStorage.getItem("open_matter_uploader");
+    if (shouldOpenUploader !== "1") {
+      return;
+    }
+
+    sessionStorage.removeItem("open_matter_uploader");
+    uploaderRef.current?.click();
+  }, [location.pathname]);
+
   return (
-    <nav className={`leftRail ${isCollapsed ? "collapsed" : ""}`}>
-      <div className="leftRailHead">
-        <h2>MATTERS</h2>
-        <p>Legal Workspace</p>
-      </div>
+    <nav
+      className={`leftRail ${isCollapsed ? "collapsed" : ""} ${isDraftingRoute ? "draftingRoute" : ""}`}
+    >
+      <input
+        ref={uploaderRef}
+        type="file"
+        className="matterUploaderInput"
+        aria-label="Upload matter file"
+      />
 
-      <div className="leftRailLinks">
-        <button
-          className={`railItem ${activeSection === "matterLibrary" ? "active" : ""}`}
-          type="button"
-          onClick={() => onSectionChange("matterLibrary")}
-        >
-          <FolderOpenDot size={18} />
-          <span>Matter Library</span>
-        </button>
-        <button
-          className={`railItem ${activeSection === "activeResearch" ? "active" : ""}`}
-          type="button"
-          onClick={() => onSectionChange("activeResearch")}
-        >
-          <Search size={18} />
-          <span>Active Research</span>
-        </button>
-        <button className="railItem" type="button">
-          <Sparkles size={18} />
-          <span>Synthesis</span>
-        </button>
-        <button className="railItem" type="button">
-          <FilePlus2 size={18} />
-          <span>Drafting</span>
-        </button>
-        <button className="railItem" type="button">
-          <BookOpen size={18} />
-          <span>Archives</span>
-        </button>
-      </div>
+      {isActiveResearchRoute && (
+        <div className="recentSectionBlock">
+          <div className="recentSectionHead">
+            <h3>Recent researches</h3>
+            <button
+              type="button"
+              className="recentMatterAddBtn"
+              aria-label={
+                hasRecentResearches ? "Toggle recent researches" : "Open research"
+              }
+              onClick={() => {
+                if (hasRecentResearches) {
+                  setIsRecentResearchesOpen((prev) => !prev);
+                } else {
+                  navigate("/dashboard/active-research");
+                }
+              }}
+            >
+              {hasRecentResearches ? (
+                isRecentResearchesOpen ? (
+                  <ChevronDown size={14} />
+                ) : (
+                  <ChevronRight size={14} />
+                )
+              ) : (
+                "+"
+              )}
+            </button>
+          </div>
 
-      <div className="recentMattersBlock">
-        <div className="recentMattersHead">
-          <h3>Recent matters</h3>
+          {!hasRecentResearches && (
+            <button
+              type="button"
+              className="recentMatterItem isEmpty"
+              onClick={() => navigate("/dashboard/active-research")}
+            >
+              No research yet.
+            </button>
+          )}
+
+          {hasRecentResearches && isRecentResearchesOpen && (
+            <div className="recentItemsList">
+              {recentResearches.map((research) => (
+                <button
+                  key={research.id}
+                  type="button"
+                  className={`recentMatterItem ${research.id === activeResearchId ? "active" : ""}`}
+                  onClick={() => onSelectResearch?.(research.id)}
+                >
+                  <span className="recentItemTitle">{research.query}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="recentSectionBlock">
+        <div className="recentSectionHead">
+          <h3>Matters added</h3>
+        </div>
+
+        {!hasRecentMatters && (
           <button
             type="button"
-            className="recentMatterAddBtn"
-            aria-label="Add matter"
+            className="matterAddTile"
+            aria-label="Upload a matter"
+            onClick={() => uploaderRef.current?.click()}
           >
-            +
+            <span className="matterAddPlus">+</span>
           </button>
-        </div>
-        <button type="button" className="recentMatterItem isEmpty">
-          No matters yet. Add a matter.
-        </button>
+        )}
+
+        {hasRecentMatters && (
+          <div className="recentItemsList">
+            {recentMatters.map((matter) => (
+              <button
+                key={matter.id}
+                type="button"
+                className={`recentMatterItem ${matter.id === activeMatterId ? "active" : ""}`}
+                onClick={() => onSelectMatter?.(matter.id)}
+              >
+                <span className="recentItemTitle">{matter.title}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="leftRailFoot">

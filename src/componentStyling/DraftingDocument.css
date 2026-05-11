@@ -1,0 +1,336 @@
+.draftingMain {
+  padding-top: 194px;
+  padding-right: 26px;
+  background:
+    radial-gradient(circle at top right, rgba(112, 13, 13, 0.06), transparent 24%),
+    linear-gradient(180deg, #f7f3ec 0%, #f3efe8 100%);
+}
+
+.draftingCanvasShell {
+  min-height: calc(100vh - 194px);
+}
+
+.draftingCanvasArea.soloCanvas {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 22px;
+  padding: 26px 0 54px;
+}
+
+.draftPaperSheet.compact {
+  width: min(100%, 900px);
+  min-height: 1180px;
+  background: #fffdfa;
+  border: 1px solid #d8cbc2;
+  box-shadow: 0 22px 50px rgba(31, 20, 18, 0.09);
+  position: relative;
+}
+
+.draftPaperSheet.zoom-80 {
+  transform: scale(0.84);
+  transform-origin: top center;
+}
+
+.draftPaperSheet.zoom-125 {
+  transform: scale(1.05);
+  transform-origin: top center;
+}
+
+.draftPaperEditor {
+  min-height: 1180px;
+  padding: 84px 96px 110px;
+  outline: none;
+  font-family: "Newsreader", serif;
+  font-size: 18px;
+  color: #201d1a;
+  line-height: 1.6;
+}
+
+.draftPaperEditor.readOnly {
+  background: linear-gradient(180deg, rgba(247, 243, 236, 0.48), rgba(247, 243, 236, 0.48));
+}
+
+.draftPaperEditor h1,
+.draftPaperEditor h2,
+.draftPaperEditor blockquote {
+  color: #2b1c1a;
+}
+
+.draftPaperEditor h1 {
+  margin: 0 0 20px;
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.draftPaperEditor h2 {
+  margin: 28px 0 10px;
+  font-size: 26px;
+  font-weight: 500;
+}
+
+.draftPaperEditor p,
+.draftPaperEditor li,
+.draftPaperEditor blockquote {
+  font-size: 18px;
+}
+
+.draftPaperEditor blockquote {
+  margin: 20px 0;
+  padding-left: 18px;
+  border-left: 3px solid #700d0d;
+  color: #5b4743;
+}
+
+.draftAnnotationAnchor {
+  border-left: 3px solid #cf4e45;
+  background: rgba(207, 78, 69, 0.08);
+  padding-left: 6px;
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.draftAnnotationAnchor.type-reaction {
+  border-left-color: #d79332;
+  background: rgba(215, 147, 50, 0.08);
+}
+
+.draftAnnotationAnchor.is-active {
+  background: rgba(207, 78, 69, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(207, 78, 69, 0.18);
+}
+
+.draftSelectionBubble {
+  position: absolute;
+  right: -30px;
+  width: 58px;
+  padding: 10px 0;
+  border-radius: 24px;
+  background: rgba(255, 253, 250, 0.98);
+  border: 1px solid rgba(139, 113, 110, 0.18);
+  box-shadow: 0 10px 28px rgba(40, 27, 23, 0.12);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  z-index: 6;
+}
+
+.draftSelectionBubble button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #3467d6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.draftSelectionBubble button:hover {
+  background: #eff4ff;
+}
+
+.draftCommentRail {
+  width: 300px;
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.draftCommentComposerInline {
+  display: grid;
+  gap: 10px;
+}
+
+.composerExcerptLine {
+  min-height: 42px;
+  padding: 10px 14px;
+  border-radius: 18px 18px 6px 18px;
+  background: rgba(247, 242, 236, 0.92);
+  color: #5a4a43;
+  font-family: "Newsreader", serif;
+  line-height: 1.5;
+  border: 1px solid rgba(139, 113, 110, 0.2);
+}
+
+.draftCommentComposerInline textarea {
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid rgba(139, 113, 110, 0.22);
+  background: rgba(255, 253, 250, 0.96);
+  border-radius: 18px 18px 6px 18px;
+  padding: 14px;
+  font-family: "Newsreader", serif;
+  font-size: 16px;
+  color: #2b2320;
+  line-height: 1.5;
+}
+
+.draftCommentComposerInline textarea:focus {
+  outline: none;
+  border-color: #8b716e;
+}
+
+.commentInlineActionBtn {
+  justify-self: end;
+  border: 1px solid #4c0003;
+  background: #700d0d;
+  color: #fff;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.commentInlineSecondaryBtn {
+  border: 1px solid #ccb7b3;
+  background: transparent;
+  color: #5a4a43;
+  padding: 9px 12px;
+  border-radius: 999px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.commentInlineActionBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pendingAnnotationActions,
+.reactionPickerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.reactionPickerRow button {
+  min-width: 40px;
+  height: 40px;
+  border: 1px solid #ccb7b3;
+  background: rgba(255, 253, 250, 0.96);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.reactionPickerRow button:hover {
+  background: #f0e9e1;
+}
+
+.commentInlineList {
+  display: grid;
+  gap: 10px;
+}
+
+.inlineCommentCard {
+  padding: 14px 16px;
+  border-radius: 20px 20px 8px 20px;
+  background: rgba(251, 249, 244, 0.94);
+  border: 1px solid rgba(139, 113, 110, 0.2);
+  box-shadow: 0 12px 24px rgba(40, 27, 23, 0.05);
+}
+
+.inlineCommentCard strong {
+  display: block;
+  margin-bottom: 8px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5f5048;
+}
+
+.inlineCommentCard blockquote {
+  margin: 0 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid #c5aaa5;
+  color: #56463f;
+  font-family: "Newsreader", serif;
+}
+
+.inlineCommentCard p {
+  margin: 0;
+  color: #322825;
+  font-family: "Newsreader", serif;
+  line-height: 1.5;
+}
+
+.inlineCommentCard.accepted {
+  background: rgba(231, 241, 233, 0.94);
+}
+
+.inlineCommentCard.rejected {
+  background: rgba(250, 235, 232, 0.94);
+}
+
+.inlineCommentCard.reaction p {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.inlineCommentActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.inlineCommentActions button {
+  border: 1px solid #ccb7b3;
+  background: transparent;
+  color: #5a4a43;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.inlineCommentActions button:hover {
+  background: #f0e9e1;
+  color: #4c0003;
+}
+
+@media (max-width: 1380px) {
+  .draftingCanvasArea.soloCanvas {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .draftCommentRail {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding-top: 0;
+  }
+
+  .draftPaperSheet.zoom-80,
+  .draftPaperSheet.zoom-125 {
+    transform: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .draftingMain {
+    padding-top: 214px;
+    padding-right: 0;
+  }
+
+  .draftingCanvasArea.soloCanvas {
+    padding: 16px 0 40px;
+  }
+
+  .draftPaperEditor {
+    padding: 42px 24px 60px;
+    font-size: 17px;
+  }
+}
