@@ -11,7 +11,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
-import type { RecentMatterItem } from "./SideBar";
 import { useNavigate } from "react-router-dom";
 
 type GmailTopEmailsResponse = {
@@ -40,7 +39,6 @@ const HomeDashboard = () => {
   const [emailError, setEmailError] = useState<string>("");
   const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
   const [isSideBarCollapsed, setIsSideBarCollapsed] = useState(false);
-  const [activeMatterId, setActiveMatterId] = useState<string | null>(null);
   const [draftInput, setDraftInput] = useState("");
   const [currentTime, setCurrentTime] = useState(() =>
     new Date().toLocaleTimeString("en-IN", {
@@ -68,14 +66,6 @@ const HomeDashboard = () => {
   }, []);
 
   const latestEmails = useMemo(() => emails.slice(0, 2), [emails]);
-  const recentMatters = useMemo<RecentMatterItem[]>(
-    () =>
-      emails.map((email) => ({
-        id: email.id,
-        title: email.subject || "(No Subject)",
-      })),
-    [emails],
-  );
 
   const handleAnalyzeEmails = async () => {
     const token = localStorage.getItem("auth_token");
@@ -139,9 +129,6 @@ const HomeDashboard = () => {
       <SideBar
         isCollapsed={isSideBarCollapsed}
         activeSection="matterLibrary"
-        recentMatters={recentMatters}
-        activeMatterId={activeMatterId}
-        onSelectMatter={setActiveMatterId}
       />
 
       <nav className="rightToolsRail">

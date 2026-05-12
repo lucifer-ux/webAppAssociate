@@ -1,0 +1,281 @@
+.matterUploadLoader {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.8), transparent 34%),
+    radial-gradient(circle at 80% 22%, rgba(255, 255, 255, 0.68), transparent 28%),
+    rgba(247, 243, 236, 0.92);
+  backdrop-filter: blur(8px);
+}
+
+.matterUploadLoaderFrame {
+  width: min(1160px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.9fr);
+  gap: 44px;
+  align-items: center;
+}
+
+.matterUploadLoaderContent {
+  max-width: 560px;
+}
+
+.matterUploadLoaderEyebrow {
+  margin: 0 0 10px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #866259;
+}
+
+.matterUploadLoaderContent h2 {
+  margin: 0;
+  font-family: "Fraunces", "Newsreader", serif;
+  font-size: clamp(44px, 5vw, 62px);
+  font-weight: 600;
+  line-height: 0.98;
+  color: #261914;
+}
+
+.matterUploadLoaderLead {
+  margin: 14px 0 0;
+  font-family: "Newsreader", serif;
+  font-size: 22px;
+  line-height: 1.45;
+  color: #83766d;
+  max-width: 520px;
+}
+
+.matterUploadLoaderProgress {
+  margin-top: 32px;
+  width: min(360px, 100%);
+  height: 2px;
+  background: rgba(116, 95, 90, 0.18);
+  position: relative;
+  overflow: hidden;
+}
+
+.matterUploadLoaderProgressBar {
+  display: block;
+  width: 110px;
+  height: 100%;
+  background: linear-gradient(90deg, #7f1812 0%, #8f2d24 100%);
+  animation: matterUploadProgress 2s ease-in-out infinite;
+}
+
+.matterUploadLoaderSteps {
+  margin-top: 34px;
+  width: min(520px, 100%);
+  padding: 22px 20px;
+  border-left: 2px solid #9c3027;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 12px 38px rgba(79, 57, 47, 0.05);
+}
+
+.matterUploadLoaderStep {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  font-family: "Newsreader", serif;
+  font-size: 22px;
+  line-height: 1.28;
+}
+
+.matterUploadLoaderStep + .matterUploadLoaderStep {
+  margin-top: 10px;
+}
+
+.matterUploadLoaderStepIcon {
+  width: 18px;
+  flex: 0 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Work Sans", sans-serif;
+  font-size: 14px;
+}
+
+.matterUploadLoaderStepDone {
+  color: #a49b95;
+}
+
+.matterUploadLoaderStepDone .matterUploadLoaderStepText {
+  text-decoration: line-through;
+}
+
+.matterUploadLoaderStepDone .matterUploadLoaderStepIcon {
+  color: #beb4ae;
+}
+
+.matterUploadLoaderStepActive {
+  color: #51433c;
+}
+
+.matterUploadLoaderStepActive .matterUploadLoaderStepIcon {
+  color: #7f1812;
+  animation: matterUploadSpin 1.15s linear infinite;
+  transform-origin: center;
+}
+
+.matterUploadLoaderStepUpcoming {
+  color: #c7bfba;
+}
+
+.matterUploadLoaderStepUpcoming .matterUploadLoaderStepIcon {
+  color: #d7d0cb;
+}
+
+.matterUploadLoaderPreview {
+  position: relative;
+  min-height: 520px;
+}
+
+.matterUploadLoaderSheet {
+  position: absolute;
+  width: min(360px, 100%);
+  right: 10px;
+  border: 1px solid rgba(172, 152, 144, 0.18);
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow: 0 14px 36px rgba(70, 48, 39, 0.05);
+  backdrop-filter: blur(3px);
+}
+
+.matterUploadLoaderSheetBack {
+  top: 16px;
+  height: 140px;
+  padding: 14px 14px 12px;
+  opacity: 0.75;
+}
+
+.matterUploadLoaderSheetFront {
+  top: 126px;
+  height: 336px;
+  padding: 18px 16px;
+}
+
+.matterUploadLoaderDivider {
+  height: 2px;
+  margin: 16px -16px 22px;
+  background: linear-gradient(90deg, rgba(150, 36, 28, 0.8), rgba(150, 36, 28, 0.12));
+}
+
+.matterUploadLoaderLine {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(182, 176, 171, 0.28);
+  margin-bottom: 12px;
+  filter: blur(0.2px);
+}
+
+.matterUploadLoaderLineShort {
+  width: 118px;
+}
+
+.matterUploadLoaderLineTiny {
+  width: 72px;
+  margin-left: auto;
+}
+
+.matterUploadLoaderLineMedium {
+  width: 176px;
+}
+
+.matterUploadLoaderLineWide {
+  width: 86%;
+}
+
+.matterUploadLoaderFileChip {
+  position: absolute;
+  left: -10px;
+  bottom: -14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 132px;
+  max-width: 250px;
+  padding: 7px 12px;
+  border: 1px solid rgba(183, 132, 119, 0.46);
+  border-radius: 4px;
+  background: rgba(255, 252, 248, 0.95);
+  box-shadow: 0 10px 24px rgba(74, 43, 37, 0.08);
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: #463731;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.matterUploadLoaderFileDot {
+  width: 10px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #7b1a15 0%, #b14f42 100%);
+  flex: 0 0 10px;
+}
+
+@keyframes matterUploadProgress {
+  0% {
+    transform: translateX(-10%);
+  }
+
+  50% {
+    transform: translateX(110%);
+  }
+
+  100% {
+    transform: translateX(210%);
+  }
+}
+
+@keyframes matterUploadSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 980px) {
+  .matterUploadLoader {
+    padding: 20px;
+  }
+
+  .matterUploadLoaderFrame {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .matterUploadLoaderContent h2 {
+    font-size: 42px;
+  }
+
+  .matterUploadLoaderLead {
+    font-size: 18px;
+  }
+
+  .matterUploadLoaderStep {
+    font-size: 18px;
+  }
+
+  .matterUploadLoaderPreview {
+    min-height: 360px;
+  }
+
+  .matterUploadLoaderSheet {
+    right: 0;
+    left: 0;
+    margin: 0 auto;
+  }
+}

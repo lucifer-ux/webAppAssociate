@@ -66,6 +66,35 @@
   display: none;
 }
 
+.matterUploadRetry {
+  border: 1px solid #dec9bd;
+  border-radius: 12px;
+  background: #fff7ef;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.matterUploadRetry p {
+  margin: 0 0 10px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6f4b42;
+}
+
+.matterUploadRetry button {
+  width: 100%;
+  border: 1px solid #9e7e70;
+  border-radius: 8px;
+  background: #6f3f35;
+  color: #fffaf4;
+  min-height: 34px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .recentSectionBlock {
   margin-top: 14px;
   max-width: 100%;
@@ -115,13 +144,15 @@
   max-height: 120px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 2px;
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 .recentMatterItem {
   width: 100%;
   max-width: 100%;
   border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   text-align: left;
   padding: 8px 12px;
@@ -132,9 +163,14 @@
   cursor: pointer;
   display: block;
   overflow: hidden;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .recentMatterItem:hover {
+  border-color: #e0d0c3;
   background: #f1ece5;
   color: var(--brand-soft);
 }
@@ -162,6 +198,11 @@
     border-color 0.2s ease,
     background-color 0.2s ease,
     transform 0.2s ease;
+}
+
+.matterAddTile:disabled {
+  cursor: progress;
+  opacity: 0.7;
 }
 
 .matterAddTile:hover {
