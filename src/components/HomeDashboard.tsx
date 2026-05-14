@@ -1,17 +1,11 @@
 import "../componentStyling/HomeDashboardStyling.css";
+import Button from "./Button";
 import { useEffect, useMemo, useState } from "react";
 import SideBar from "./SideBar";
-import {
-  ArrowUp,
-  BookOpen,
-  Cable,
-  FilePlus2,
-  Paperclip,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+import { ArrowUp, Cable, Paperclip } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import { useNavigate } from "react-router-dom";
+import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 
 type GmailTopEmailsResponse = {
   success: boolean;
@@ -38,7 +32,8 @@ const HomeDashboard = () => {
   const [emails, setEmails] = useState<GmailTopEmailsResponse["emails"]>([]);
   const [emailError, setEmailError] = useState<string>("");
   const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
-  const [isSideBarCollapsed, setIsSideBarCollapsed] = useState(false);
+  const { isSideBarCollapsed, setIsSideBarCollapsed } =
+    usePersistedSidebarState();
   const [draftInput, setDraftInput] = useState("");
   const [currentTime, setCurrentTime] = useState(() =>
     new Date().toLocaleTimeString("en-IN", {
@@ -66,6 +61,17 @@ const HomeDashboard = () => {
   }, []);
 
   const latestEmails = useMemo(() => emails.slice(0, 2), [emails]);
+
+  const handleQuickResearchSubmit = () => {
+    const trimmedQuery = draftInput.trim();
+    if (!trimmedQuery) return;
+    navigate("/dashboard/active-research", {
+      state: {
+        autoResearchQuery: trimmedQuery,
+      },
+    });
+    setDraftInput("");
+  };
 
   const handleAnalyzeEmails = async () => {
     const token = localStorage.getItem("auth_token");
@@ -126,25 +132,7 @@ const HomeDashboard = () => {
         onToggleSidebar={() => setIsSideBarCollapsed((prev) => !prev)}
       />
 
-      <SideBar
-        isCollapsed={isSideBarCollapsed}
-        activeSection="matterLibrary"
-      />
-
-      <nav className="rightToolsRail">
-        <button className="toolRailItem" type="button">
-          <BookOpen size={18} />
-          <span>Files</span>
-        </button>
-        <button className="toolRailItem" type="button">
-          <FilePlus2 size={18} />
-          <span>Playbook</span>
-        </button>
-        <button className="toolRailItem" type="button">
-          <ShieldCheck size={18} />
-          <span>Compliance</span>
-        </button>
-      </nav>
+      <SideBar isCollapsed={isSideBarCollapsed} activeSection="matterLibrary" />
 
       <main
         className={`homeDashMain ${isSideBarCollapsed ? "sidebarCollapsed" : ""}`}
@@ -159,10 +147,10 @@ const HomeDashboard = () => {
             </div>
           </section>
 
-          <button
+          <Button
             type="button"
             className="researchNudgeCard"
-            onClick={() => navigate("/dashboard/drafting")}
+            onClick={() => navigate("/drafting")}
             aria-label="Open active research"
           >
             <span className="researchNudgeSpark">✦</span>
@@ -173,7 +161,7 @@ const HomeDashboard = () => {
               </p>
             </div>
             <span className="researchNudgeArrow">→</span>
-          </button>
+          </Button>
 
           <section className="connectBanner">
             <div className="connectAccent" />
@@ -181,7 +169,7 @@ const HomeDashboard = () => {
               <div className="connectIcon">
                 <Cable size={22} />
               </div>
-              <button
+              <Button
                 type="button"
                 className="authorizeBtn"
                 onClick={handleAnalyzeEmails}
@@ -191,7 +179,7 @@ const HomeDashboard = () => {
                 <span>
                   {isFetchingEmails ? "Analyzing..." : "Analyze Emails"}
                 </span>
-              </button>
+              </Button>
             </div>
           </section>
 
@@ -211,7 +199,7 @@ const HomeDashboard = () => {
                       key={email.id}
                       className={`emailCard ${isExpanded ? "expanded" : ""}`}
                     >
-                      <button
+                      <Button
                         type="button"
                         className="emailCardTrigger"
                         onClick={() =>
@@ -220,7 +208,7 @@ const HomeDashboard = () => {
                       >
                         <span className="matterIndex">Matter {index + 1}</span>
                         <h3>{email.subject || "(No Subject)"}</h3>
-                      </button>
+                      </Button>
                       {isExpanded && (
                         <div className="emailMetaPanel">
                           <p className="emailFrom">
@@ -244,52 +232,57 @@ const HomeDashboard = () => {
               <h2>Active Researches</h2>
             </div>
             <div className="activeResearchesGrid">
-              <button
-                type="button"
-                className="researchDemoCard"
-                onClick={() => navigate("/dashboard/active-research")}
-              >
-                <div className="researchDemoTitleRow">
-                  <h3>Cheque bounce notice timeline and reply strategy</h3>
-                </div>
-                <p>Last opened today · 3 cited sources</p>
-              </button>
-              <button
+              <Button
                 type="button"
                 className="researchDemoCard startNew"
                 onClick={() => navigate("/dashboard/active-research")}
               >
                 <span className="startNewPlus">+</span>
                 <span className="startNewHint">Start a new research</span>
-              </button>
+              </Button>
             </div>
           </section>
         </>
       </main>
 
       <div className="chatDockWrap">
-        <div className="chatDock">
-          <div className="chatSparkle">
-            <Sparkles size={18} />
-          </div>
+        <form
+          className="chatDock"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleQuickResearchSubmit();
+          }}
+        >
+          <div className="chatSparkle">a.</div>
           <textarea
             value={draftInput}
             onChange={(event) => setDraftInput(event.target.value)}
             placeholder="Quick Research"
             aria-label="Draft input"
             rows={1}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                handleQuickResearchSubmit();
+              }
+            }}
           />
-          <button
+          <Button
             className="chatIconBtn"
             type="button"
             aria-label="Attach file"
           >
             <Paperclip size={16} />
-          </button>
-          <button className="chatSendBtn" type="button" aria-label="Send">
+          </Button>
+          <Button
+            className="chatSendBtn"
+            type="submit"
+            aria-label="Send"
+            disabled={!draftInput.trim()}
+          >
             <ArrowUp size={18} />
-          </button>
-        </div>
+          </Button>
+        </form>
       </div>
     </div>
   );

@@ -1,9 +1,11 @@
 import "../componentStyling/HomeDashboardStyling.css";
+import Button from "./Button";
 import { useState } from "react";
 import { BookOpen, FilePlus2, ShieldCheck } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import SideBar from "./SideBar";
 import ActiveResearch from "./ActiveResearch";
+import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 
 export type RecentResearchItem = {
   id: string;
@@ -12,7 +14,8 @@ export type RecentResearchItem = {
 };
 
 const ActiveResearchPage = () => {
-  const [isSideBarCollapsed, setIsSideBarCollapsed] = useState(false);
+  const { isSideBarCollapsed, setIsSideBarCollapsed } =
+    usePersistedSidebarState();
   const [recentResearches, setRecentResearches] = useState<RecentResearchItem[]>([]);
   const [activeResearchId, setActiveResearchId] = useState<string | null>(null);
 
@@ -32,18 +35,18 @@ const ActiveResearchPage = () => {
       />
 
       <nav className="rightToolsRail">
-        <button className="toolRailItem" type="button">
+        <Button className="toolRailItem" type="button">
           <BookOpen size={18} />
           <span>Files</span>
-        </button>
-        <button className="toolRailItem" type="button">
+        </Button>
+        <Button className="toolRailItem" type="button">
           <FilePlus2 size={18} />
           <span>Playbook</span>
-        </button>
-        <button className="toolRailItem" type="button">
+        </Button>
+        <Button className="toolRailItem" type="button">
           <ShieldCheck size={18} />
           <span>Compliance</span>
-        </button>
+        </Button>
       </nav>
 
       <main

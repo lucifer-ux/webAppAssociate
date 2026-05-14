@@ -4,7 +4,7 @@
   left: 0;
   bottom: 0;
   width: 256px;
-  background: #fbf9f4;
+  background: #f6f3eb;
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
@@ -14,10 +14,6 @@
   transition:
     width 0.2s ease,
     padding 0.2s ease;
-}
-
-.leftRail.draftingRoute {
-  top: 194px;
 }
 
 .leftRailLinks {
@@ -144,8 +140,11 @@
   max-height: 120px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-left: 8px;
-  padding-right: 8px;
+}
+
+.matterRecentList {
+  max-height: none;
+  overflow: visible;
 }
 
 .recentMatterItem {
@@ -184,6 +183,45 @@
   font-style: italic;
 }
 
+.researchStartTile {
+  width: calc(100% - 16px);
+  margin: 8px 8px 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #f7f2ec;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: #6f5e57;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.researchStartPlus {
+  font-family: "Newsreader", serif;
+  font-size: 22px;
+  line-height: 1;
+  color: #700d0d;
+}
+
+.researchStartLabel {
+  font-family: "Newsreader", serif;
+  font-size: 15px;
+  line-height: 1.2;
+  color: #700d0d;
+}
+
+.researchStartTile:hover {
+  border-color: #e0d0c3;
+  color: #700d0d;
+  background: #f3ece4;
+}
+
 .matterAddTile {
   width: 100%;
   border: 1px dashed #ccbcae;
@@ -209,6 +247,10 @@
   border-color: #9e7e70;
   background: #f3ece4;
   transform: translateY(-1px);
+}
+
+.matterAddTileSecondary {
+  margin-top: 8px;
 }
 
 .matterAddPlus {
@@ -242,6 +284,10 @@
   text-overflow: ellipsis;
 }
 
+.recentItemCompact {
+  display: none;
+}
+
 .leftRail.collapsed {
   width: 84px;
   padding: 24px 8px;
@@ -249,14 +295,62 @@
 
 .leftRail.collapsed .railItem span,
 .leftRail.collapsed .recentSectionHead h3,
-.leftRail.collapsed .recentMatterItem,
-.leftRail.collapsed .recentItemsList {
+.leftRail.collapsed .recentMatterItem:not(.matterRecentItem),
+.leftRail.collapsed .recentItemsList:not(.matterRecentList) {
   display: none;
+}
+
+.leftRail.collapsed .researchStartLabel {
+  display: none;
+}
+
+.leftRail.collapsed .researchStartTile {
+  width: 100%;
+  margin: 8px 0 0;
+  justify-content: center;
+  padding: 0;
 }
 
 .leftRail.collapsed .recentSectionHead {
   justify-content: center;
   padding: 0;
+}
+
+.leftRail.collapsed .matterRecentList {
+  display: grid;
+  gap: 8px;
+  max-height: none;
+  overflow: visible;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.leftRail.collapsed .matterRecentItem {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 10px;
+}
+
+.leftRail.collapsed .matterRecentItem .recentItemTitle {
+  display: none;
+}
+
+.leftRail.collapsed .matterRecentItem .recentItemCompact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 4px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4a302c;
 }
 
 .leftRail.collapsed .railItem {
@@ -267,6 +361,73 @@
 
 @media (max-width: 960px) {
   .leftRail {
+    width: 84px;
+    padding: 24px 8px;
+  }
+
+  .leftRail .railItem span,
+  .leftRail .recentSectionHead h3,
+  .leftRail .recentMatterItem:not(.matterRecentItem),
+  .leftRail .recentItemsList:not(.matterRecentList) {
     display: none;
+  }
+
+  .leftRail .researchStartLabel {
+    display: none;
+  }
+
+  .leftRail .researchStartTile {
+    width: 100%;
+    margin: 8px 0 0;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .leftRail .recentSectionHead {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .leftRail .matterRecentList {
+    display: grid;
+    gap: 8px;
+    max-height: none;
+    overflow: visible;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .leftRail .matterRecentItem {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0;
+    border-radius: 10px;
+  }
+
+  .leftRail .matterRecentItem .recentItemTitle {
+    display: none;
+  }
+
+  .leftRail .matterRecentItem .recentItemCompact {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 38px;
+    padding: 0 4px;
+    font-family: "Work Sans", sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #4a302c;
+  }
+
+  .leftRail .railItem {
+    justify-content: center;
+    padding: 0;
+    border-left: 0;
   }
 }

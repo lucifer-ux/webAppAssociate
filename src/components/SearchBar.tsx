@@ -1,7 +1,8 @@
 import "../componentStyling/SearchBar.css";
+import Button from "./Button";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { ArrowUp, Paperclip, Sparkles } from "lucide-react";
+import { ArrowUp, Paperclip } from "lucide-react";
 
 type SearchBarProps = {
   activeSection: "matterLibrary" | "activeResearch";
@@ -62,9 +63,7 @@ const SearchBar = ({
   return (
     <div className="chatDockWrap">
       <form className="chatDock" onSubmit={handleSubmit}>
-        <div className="chatSparkle">
-          <Sparkles size={18} />
-        </div>
+        <div className="chatSparkle">a.</div>
         <textarea
           ref={textareaRef}
           value={query}
@@ -81,22 +80,22 @@ const SearchBar = ({
           aria-label="AI search"
           rows={1}
         />
-        <button
+        <Button
           className="chatIconBtn"
           type="button"
           aria-label="Attach file"
           disabled={!isActiveResearchMode || isSubmitting}
         >
           <Paperclip size={16} />
-        </button>
-        <button
+        </Button>
+        <Button
           className="chatSendBtn"
           type="submit"
           aria-label="Send search"
           disabled={!isActiveResearchMode || !query.trim() || isSubmitting}
         >
           <ArrowUp size={18} />
-        </button>
+        </Button>
       </form>
     </div>
   );

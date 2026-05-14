@@ -5,8 +5,18 @@
   font-family: "Newsreader", serif;
   border: None;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .buttonStyle:active {
   transform: scale(0.95);
+}
+
+.buttonImage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }

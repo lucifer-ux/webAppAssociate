@@ -1,4 +1,5 @@
 import "../componentStyling/LoginSignUpPage.css";
+import Button from "./Button";
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -54,19 +55,19 @@ const LoginSignUpPage = () => {
             <input id="password" type="password" />
           </div>
 
-          <button className="signInButton" type="button" onClick={handleClick}>
+          <Button className="signInButton" type="button" onClick={handleClick}>
             Sign In
-          </button>
+          </Button>
 
           <div className="orDivider">
             <span>OR</span>
           </div>
 
-          <button className="ssoButton" type="button" onClick={handleSsoLogin}>
+          <Button className="ssoButton" type="button" onClick={handleSsoLogin}>
             Sign in with firm SSO
-          </button>
+          </Button>
 
-          <button className="googleButton" type="button" onClick={handleGoogleLogin}>
+          <Button className="googleButton" type="button" onClick={handleGoogleLogin}>
             <svg className="googleIcon" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 fill="#EA4335"
@@ -86,7 +87,7 @@ const LoginSignUpPage = () => {
               />
             </svg>
             <span>Continue with Google</span>
-          </button>
+          </Button>
 
           <p className="loginFooter">© 2026 Associate. All Restricted Access.</p>
         </div>

@@ -1,30 +1,67 @@
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import "../componentStyling/Button.css";
 
-interface ButtonProps {
-  backgroundColor: string;
-  text: string;
-  color: string;
-  width: number;
-  isBorder: boolean;
-  onClick: React.MouseEventHandler<HTMLButtonElement>;
-}
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  children?: ReactNode;
+  text?: string;
+  backgroundColor?: string;
+  color?: string;
+  width?: number | string;
+  isBorder?: boolean;
+  showImage?: boolean;
+  image?: ReactNode;
+  imagePosition?: "left" | "right";
+};
 
-const Button = (buttonProps: ButtonProps) => {
+const Button = ({
+  children,
+  text,
+  backgroundColor,
+  color,
+  width,
+  isBorder,
+  showImage = false,
+  image,
+  imagePosition = "left",
+  className,
+  style,
+  type = "button",
+  ...rest
+}: ButtonProps) => {
+  const resolvedClassName = ["buttonStyle", className].filter(Boolean).join(" ");
+  const resolvedWidth =
+    typeof width === "number" ? `${width}rem` : width;
+
+  const content = children ?? text;
+  const shouldRenderImage = showImage && Boolean(image);
+
   return (
-    <>
-      <button
-        onClick={buttonProps.onClick}
-        className="buttonStyle"
-        style={{
-          backgroundColor: buttonProps.backgroundColor,
-          color: buttonProps.color,
-          width: `${buttonProps.width}rem`,
-          border: "1px solid #1B1C19",
-        }}
-      >
-        {buttonProps.text}
-      </button>
-    </>
+    <button
+      type={type}
+      className={resolvedClassName}
+      style={{
+        ...(backgroundColor ? { backgroundColor } : {}),
+        ...(color ? { color } : {}),
+        ...(resolvedWidth ? { width: resolvedWidth } : {}),
+        ...(typeof isBorder === "boolean"
+          ? { border: isBorder ? "1px solid #1B1C19" : "none" }
+          : {}),
+        ...style,
+      }}
+      {...rest}
+    >
+      {shouldRenderImage && imagePosition === "left" ? (
+        <span className="buttonImage" aria-hidden="true">
+          {image}
+        </span>
+      ) : null}
+      {content}
+      {shouldRenderImage && imagePosition === "right" ? (
+        <span className="buttonImage" aria-hidden="true">
+          {image}
+        </span>
+      ) : null}
+    </button>
   );
 };
 

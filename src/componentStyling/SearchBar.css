@@ -50,6 +50,13 @@
   flex: 0 0 auto;
 }
 
+.chatIconBtn svg,
+.chatSendBtn svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 2.15;
+}
+
 .chatIconBtn:disabled,
 .chatSendBtn:disabled {
   opacity: 0.55;

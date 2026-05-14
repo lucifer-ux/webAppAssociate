@@ -53,8 +53,27 @@
   max-width: 520px;
 }
 
+.matterUploadLoaderStatusRow {
+  margin-top: 22px;
+  width: min(360px, 100%);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.matterUploadLoaderStatusRow strong,
+.matterUploadLoaderStatusRow span {
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6f4b42;
+}
+
 .matterUploadLoaderProgress {
-  margin-top: 32px;
+  margin-top: 10px;
   width: min(360px, 100%);
   height: 2px;
   background: rgba(116, 95, 90, 0.18);
@@ -64,16 +83,17 @@
 
 .matterUploadLoaderProgressBar {
   display: block;
-  width: 110px;
+  width: 0;
   height: 100%;
   background: linear-gradient(90deg, #7f1812 0%, #8f2d24 100%);
-  animation: matterUploadProgress 2s ease-in-out infinite;
+  transition: width 0.45s ease;
+  box-shadow: 0 0 16px rgba(127, 24, 18, 0.25);
 }
 
 .matterUploadLoaderSteps {
   margin-top: 34px;
   width: min(520px, 100%);
-  padding: 22px 20px;
+  padding: 22px 20px 18px;
   border-left: 2px solid #9c3027;
   background: rgba(255, 255, 255, 0.58);
   box-shadow: 0 12px 38px rgba(79, 57, 47, 0.05);
@@ -104,15 +124,11 @@
 }
 
 .matterUploadLoaderStepDone {
-  color: #a49b95;
-}
-
-.matterUploadLoaderStepDone .matterUploadLoaderStepText {
-  text-decoration: line-through;
+  color: #7b6d66;
 }
 
 .matterUploadLoaderStepDone .matterUploadLoaderStepIcon {
-  color: #beb4ae;
+  color: #9e7f73;
 }
 
 .matterUploadLoaderStepActive {
@@ -221,20 +237,6 @@
   border-radius: 2px;
   background: linear-gradient(180deg, #7b1a15 0%, #b14f42 100%);
   flex: 0 0 10px;
-}
-
-@keyframes matterUploadProgress {
-  0% {
-    transform: translateX(-10%);
-  }
-
-  50% {
-    transform: translateX(110%);
-  }
-
-  100% {
-    transform: translateX(210%);
-  }
 }
 
 @keyframes matterUploadSpin {

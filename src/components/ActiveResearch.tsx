@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import Button from "./Button";
 import { ArrowUpRight } from "lucide-react";
 import "../componentStyling/ActiveResearch.css";
 import SearchBar from "./SearchBar";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { RecentResearchItem } from "./ActiveResearchPage";
 
 type ActiveResearchProps = {
@@ -213,6 +215,8 @@ const ActiveResearch = ({
   onRecentResearchesChange,
   onActiveResearchChange,
 }: ActiveResearchProps) => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const apiBaseUrl =
     (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:4000";
 
@@ -220,6 +224,9 @@ const ActiveResearch = ({
   const [isLoading, setIsLoading] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState<"intake" | "deep" | null>(null);
   const [error, setError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
+  const [isSavingResearch, setIsSavingResearch] = useState(false);
   const [runningStepIndex, setRunningStepIndex] = useState(0);
 
   const thinkingMessages =
@@ -232,6 +239,15 @@ const ActiveResearch = ({
     }, 1200);
     return () => window.clearInterval(timer);
   }, [isLoading, thinkingMessages.length]);
+
+  useEffect(() => {
+    const navState = location.state as { autoResearchQuery?: string } | null;
+    const autoResearchQuery = navState?.autoResearchQuery?.trim();
+    if (!autoResearchQuery || isLoading) return;
+
+    void runIntake(autoResearchQuery);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, isLoading]);
 
   const activeResearch = useMemo(
     () => researchRuns.find((item) => item.id === activeResearchId) || null,
@@ -407,6 +423,43 @@ const ActiveResearch = ({
     );
   };
 
+  const handleSaveResearch = async () => {
+    if (!activeResearch) return;
+    setSaveError("");
+    setSaveSuccess("");
+    setIsSavingResearch(true);
+    try {
+      const orgName = window.localStorage.getItem("orgName") || null;
+      const response = await fetch(`${apiBaseUrl}/api/researches/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orgName,
+          query: activeResearch.query,
+          createdAt: activeResearch.createdAt,
+          intakePayload: activeResearch.intakePayload,
+          finalPayload: activeResearch.finalPayload,
+          selectedLaneId: activeResearch.selectedLaneId,
+          clarificationAnswer: activeResearch.clarificationAnswer,
+        }),
+      });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        details?: string;
+      };
+      if (!response.ok || !payload.success) {
+        setSaveError(payload.error || payload.details || "Failed to save research.");
+        return;
+      }
+      setSaveSuccess("Research saved.");
+    } catch {
+      setSaveError("Failed to save research.");
+    } finally {
+      setIsSavingResearch(false);
+    }
+  };
+
   const intake = activeResearch?.intakePayload || null;
   const agent1 = intake?.agent_1_output;
   const agent2 = intake?.agent_2_output;
@@ -427,6 +480,20 @@ const ActiveResearch = ({
         <div className="researchHead">
           <h1>Active Research</h1>
           <p>Discovery, Pathway Selection, and Targeted Research</p>
+          <div className="researchSaveRow">
+            <Button
+              type="button"
+              className="continueResearchButton"
+              onClick={() => {
+                void handleSaveResearch();
+              }}
+              disabled={!activeResearch || isSavingResearch}
+            >
+              {isSavingResearch ? "Saving..." : "Save research"}
+            </Button>
+            {saveSuccess ? <small className="researchSaveSuccess">{saveSuccess}</small> : null}
+            {saveError ? <small className="researchSaveError">{saveError}</small> : null}
+          </div>
         </div>
 
         <div className="researchOutputPanel chatOnlyPanel">
@@ -508,7 +575,7 @@ const ActiveResearch = ({
                           {agent2.clarification_required.options.length > 0 && (
                             <div className="clarificationOptionsGrid">
                               {agent2.clarification_required.options.map((option) => (
-                                <button
+                                <Button
                                   key={option}
                                   type="button"
                                   className="clarificationOptionCard"
@@ -517,7 +584,7 @@ const ActiveResearch = ({
                                   }}
                                 >
                                   {option}
-                                </button>
+                                </Button>
                               ))}
                             </div>
                           )}
@@ -531,7 +598,7 @@ const ActiveResearch = ({
                       <h4>Implementation Plans</h4>
                       <div className="lanesGrid">
                         {agent2.lanes.map((lane) => (
-                          <button
+                          <Button
                             key={lane.lane_id}
                             type="button"
                             className={`laneCard ${
@@ -545,14 +612,14 @@ const ActiveResearch = ({
                             </span>
                             <p>{lane.one_line}</p>
                             <small>{lane.what_this_route_argues}</small>
-                          </button>
+                          </Button>
                         ))}
                       </div>
                       <p>{agent2.recommendation.reason}</p>
                       <p>{agent2.what_happens_next}</p>
                       {intake?.status === "lane_selection_required" && !finalResponse && (
                         <div className="continueResearchRow">
-                          <button
+                          <Button
                             type="button"
                             className="continueResearchButton"
                             onClick={() => {
@@ -561,7 +628,7 @@ const ActiveResearch = ({
                             disabled={!activeResearch.selectedLaneId}
                           >
                             Continue research
-                          </button>
+                          </Button>
                         </div>
                       )}
                     </>

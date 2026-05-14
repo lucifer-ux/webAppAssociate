@@ -5,7 +5,7 @@
   right: 0;
   z-index: 40;
   height: 64px;
-  background: #fbf9f4;
+  background: #f6f3eb;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -23,6 +23,7 @@
 .draftChromeMenuRow {
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .topBarLeft {
@@ -67,6 +68,38 @@
   gap: 10px;
 }
 
+.sectionRouteNav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+}
+
+.sectionRouteBtn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #6f625a;
+  min-height: 30px;
+  padding: 0 10px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.sectionRouteBtn:hover {
+  border-color: #dfbfbc;
+  background: #f1ece5;
+  color: #5c302d;
+}
+
+.sectionRouteBtn.active {
+  border-color: #cfb2ae;
+  background: #f7f2ec;
+  color: #700d0d;
+}
+
 .topBarLogo {
   width: 92px;
   height: 30px;
@@ -102,6 +135,19 @@
   background: #f1ece5;
 }
 
+.toolbarIconBtn[data-active="true"],
+.toolbarColorBtn[data-active="true"] {
+  background: #ede2dc;
+  box-shadow: inset 0 0 0 1px #b99690;
+  color: #4c0003;
+}
+
+.toolbarIconBtn:disabled,
+.toolbarColorBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .notifyDot {
   position: absolute;
   right: 8px;
@@ -114,6 +160,82 @@
 
 .avatarBtn {
   background: #fbf9f4;
+}
+
+.profileMenuWrap {
+  position: relative;
+}
+
+.profileMenuPanel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 320px;
+  border: 1px solid #dfbfbc;
+  background: #fbf9f4;
+  padding: 12px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+  z-index: 50;
+}
+
+.profileMenuHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eadfd8;
+}
+
+.profileMenuHead strong {
+  font-family: "Newsreader", serif;
+  font-size: 18px;
+  color: #2f2422;
+}
+
+.profileMenuHead span {
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #700d0d;
+}
+
+.profileMenuSection {
+  padding-top: 10px;
+}
+
+.profileMenuSection h4 {
+  margin: 0 0 6px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6f625a;
+}
+
+.profileMenuSection p {
+  margin: 0 0 4px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  color: #3d3431;
+}
+
+.upgradePlanBtn {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid #4c0003;
+  background: #700d0d;
+  color: #fff;
+  min-height: 36px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.upgradePlanBtn:hover {
+  background: #4c0003;
 }
 
 .draftingChromeBar {
@@ -143,10 +265,13 @@
 .draftChromeTitleBlock {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .draftChromeTitleInput {
   min-width: 280px;
+  max-width: min(42vw, 520px);
+  text-overflow: ellipsis;
   font-family: "Newsreader", serif;
   font-size: 20px;
   color: #2f2422;
@@ -268,6 +393,17 @@
   color: #4a3c34;
 }
 
+.toolbarSizeControl input {
+  width: 56px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  text-align: center;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  color: #2d2420;
+}
+
 .toolbarColorSwatches {
   display: flex;
   align-items: center;
@@ -279,11 +415,16 @@
   width: 16px;
   height: 16px;
   border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
 }
 
 @media (max-width: 960px) {
   .searchWrap {
     width: 220px;
+  }
+
+  .sectionRouteNav {
+    display: none;
   }
 
   .topBarLogo {

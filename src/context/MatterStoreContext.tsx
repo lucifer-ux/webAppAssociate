@@ -24,6 +24,7 @@ export type MatterValidationSummary = {
 
 export type MatterUploadPayload = {
   id: string;
+  job_id: string;
   title: string;
   fileName: string;
   mimeType: string;
@@ -36,6 +37,27 @@ export type MatterUploadPayload = {
   sha256: string;
   kind: "pdf";
   versionFingerprint: string;
+  storage?: {
+    provider: string;
+    bucketId: string;
+    bucketName: string;
+    fileId: string;
+    fileName: string;
+    url: string;
+    uploadedAt: string;
+  };
+  extraction_artifact?: {
+    path: string;
+    storage: {
+      provider: string;
+      bucketId: string;
+      bucketName: string;
+      fileId: string;
+      fileName: string;
+      url: string;
+      uploadedAt: string;
+    };
+  };
 };
 
 export type MatterPreviewSource = "server" | "none";
@@ -124,6 +146,8 @@ export type MatterExtractedFields = {
   notice_period: { value: string | null; confidence: string };
 };
 
+export type MatterExtractedFieldsStatus = "processing" | "ready" | "failed";
+
 export type MatterPerson = {
   id: string;
   initials: string;
@@ -132,6 +156,64 @@ export type MatterPerson = {
   description: string;
   source: "extracted" | "manual";
   confidence?: string;
+};
+
+export type ObligationParty = "ippb" | "service_provider" | "mutual";
+
+export type ObligationItem = {
+  clause_id: string;
+  party: ObligationParty;
+  confidence: "high" | "medium" | "low";
+  rationale_short: string;
+};
+
+export type ObligationMapResult = {
+  matter_id: string;
+  version_fingerprint: string;
+  counts: {
+    ippb: number;
+    service_provider: number;
+    mutual: number;
+  };
+  imbalance: {
+    level: "red" | "amber" | "green";
+    ratio: number | null;
+  };
+  obligations: ObligationItem[];
+  generated_at: string;
+};
+
+export type ClauseRiskOrientation =
+  | "favors_ippb"
+  | "favors_service_provider"
+  | "mutual";
+
+export type ClauseRiskBucket = "high" | "review" | "clean";
+
+export type SectionClauseRiskItem = {
+  clause_id: string;
+  orientation: ClauseRiskOrientation;
+  risk: ClauseRiskBucket;
+  confidence: "high" | "medium" | "low";
+};
+
+export type SectionRiskMapResult = {
+  matter_id: string;
+  version_fingerprint: string;
+  section_id: string;
+  section_label: string;
+  section_flag:
+    | "FAVORS IPPB"
+    | "FAVORS SERVICE PROVIDER"
+    | "MUTUAL"
+    | "REVIEW";
+  counts: {
+    high: number;
+    review: number;
+    clean: number;
+  };
+  items: SectionClauseRiskItem[];
+  generated_at: string;
 };
 
 export type MatterHealth = {
@@ -144,6 +226,21 @@ export type MatterNextStep =
   | "BUILD_PAGE_AWARE_STRUCTURE"
   | "RUN_OCR_OR_ASK_USER_FOR_BETTER_COPY";
 
+export type AcceptedRedline = {
+  id: string;
+  matterId: string;
+  clauseId: string;
+  title: string;
+  clauseHeading: string;
+  clauseType: string;
+  sectionLabel: string;
+  representedParty: "ippb" | "service_provider";
+  position: "aggressive" | "market" | "fallback";
+  originalText: string;
+  rewrittenText: string;
+  acceptedAt: string;
+};
+
 export type MatterRecord = MatterUploadPayload & {
   version: number;
   validation: MatterValidationSummary;
@@ -154,6 +251,8 @@ export type MatterRecord = MatterUploadPayload & {
   pageAwareStructure: PageAwareStructure;
   pageIndex: MatterPageIndexItem[];
   extractedFields: MatterExtractedFields;
+  extractedFieldsStatus: MatterExtractedFieldsStatus;
+  extractedFieldsError: string | null;
   health: MatterHealth;
   people: MatterPerson[];
 };
@@ -168,6 +267,8 @@ export type MatterProcessedResult = {
   page_aware_structure: PageAwareStructure;
   page_index: MatterPageIndexItem[];
   extracted_fields: MatterExtractedFields;
+  extracted_fields_status: MatterExtractedFieldsStatus;
+  extracted_fields_error: string | null;
   health: MatterHealth;
 };
 
@@ -176,10 +277,36 @@ type MatterStoreContextValue = {
   activeMatterId: string | null;
   activeMatter: MatterRecord | null;
   addMatter: (result: MatterProcessedResult) => MatterRecord;
+  updateMatter: (result: MatterProcessedResult) => void;
+  setMattersFromServer: (results: MatterProcessedResult[]) => void;
+  deleteMatter: (matterId: string) => void;
   addPersonToMatter: (
     matterId: string,
     person: Omit<MatterPerson, "id" | "initials" | "source">,
   ) => void;
+  removePersonFromMatter: (matterId: string, personId: string) => void;
+  getObligationMap: (matterId: string) => ObligationMapResult | null;
+  setObligationMap: (matterId: string, map: ObligationMapResult) => void;
+  clearObligationMap: (matterId: string) => void;
+  getSectionRiskMap: (
+    matterId: string,
+    sectionId: string,
+  ) => SectionRiskMapResult | null;
+  setSectionRiskMap: (
+    matterId: string,
+    sectionId: string,
+    map: SectionRiskMapResult,
+  ) => void;
+  clearSectionRiskMaps: (matterId: string) => void;
+  getHighRiskClauseCount: (matterId: string) => number;
+  getAcceptedRedlines: (matterId: string) => AcceptedRedline[];
+  addAcceptedRedline: (redline: AcceptedRedline) => void;
+  updateAcceptedRedline: (
+    matterId: string,
+    redlineId: string,
+    patch: Partial<Pick<AcceptedRedline, "title" | "rewrittenText">>,
+  ) => void;
+  getPendingRedlineCount: (matterId: string) => number;
   setActiveMatterId: (id: string | null) => void;
 };
 
@@ -207,9 +334,47 @@ const peopleFromExtractedParties = (
     confidence: party.confidence,
   }));
 
+const mergePeople = (
+  existingPeople: MatterPerson[],
+  extractedParties: MatterExtractedFields["parties"],
+) => {
+  const manualPeople = existingPeople.filter((person) => person.source === "manual");
+  return [...peopleFromExtractedParties(extractedParties), ...manualPeople];
+};
+
+const buildMatterRecord = (
+  result: MatterProcessedResult,
+  version: number,
+  existingPeople: MatterPerson[] = [],
+): MatterRecord => ({
+  ...result.matter,
+  version,
+  validation: result.validation,
+  previewText: result.preview_text,
+  previewTextSource: result.preview_text_source || "server",
+  textQuality: result.text_quality,
+  nextStep: result.next_step,
+  pageAwareStructure: result.page_aware_structure,
+  pageIndex: result.page_index,
+  extractedFields: result.extracted_fields,
+  extractedFieldsStatus: result.extracted_fields_status,
+  extractedFieldsError: result.extracted_fields_error,
+  health: result.health,
+  people: mergePeople(existingPeople, result.extracted_fields.parties || []),
+});
+
 export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
   const [matters, setMatters] = useState<MatterRecord[]>([]);
   const [activeMatterId, setActiveMatterId] = useState<string | null>(null);
+  const [obligationMapByMatter, setObligationMapByMatter] = useState<
+    Record<string, ObligationMapResult>
+  >({});
+  const [sectionRiskMapByMatter, setSectionRiskMapByMatter] = useState<
+    Record<string, Record<string, SectionRiskMapResult>>
+  >({});
+  const [acceptedRedlinesByMatter, setAcceptedRedlinesByMatter] = useState<
+    Record<string, AcceptedRedline[]>
+  >({});
 
   const addMatter = (result: MatterProcessedResult) => {
     let createdRecord: MatterRecord | null = null;
@@ -217,8 +382,14 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     setMatters((prev) => {
       const duplicate = prev.find((item) => item.sha256 === result.matter.sha256);
       if (duplicate) {
-        createdRecord = duplicate;
-        return prev;
+        createdRecord = buildMatterRecord(
+          result,
+          duplicate.version,
+          duplicate.people,
+        );
+        return prev.map((item) =>
+          item.id === duplicate.id ? (createdRecord as MatterRecord) : item,
+        );
       }
 
       const matchingNameVersions = prev.filter(
@@ -230,43 +401,75 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
           0,
         ) + 1;
 
-      createdRecord = {
-        ...result.matter,
-        version: nextVersion,
-        validation: result.validation,
-        previewText: result.preview_text,
-        previewTextSource: result.preview_text_source || "server",
-        textQuality: result.text_quality,
-        nextStep: result.next_step,
-        pageAwareStructure: result.page_aware_structure,
-        pageIndex: result.page_index,
-        extractedFields: result.extracted_fields,
-        health: result.health,
-        people: peopleFromExtractedParties(result.extracted_fields.parties || []),
-      };
+      createdRecord = buildMatterRecord(result, nextVersion);
 
       return [createdRecord, ...prev];
     });
 
     const finalRecord =
       createdRecord ||
-      ({
-        ...result.matter,
-        version: 1,
-        validation: result.validation,
-        previewText: result.preview_text,
-        previewTextSource: result.preview_text_source || "server",
-        textQuality: result.text_quality,
-        nextStep: result.next_step,
-        pageAwareStructure: result.page_aware_structure,
-        pageIndex: result.page_index,
-        extractedFields: result.extracted_fields,
-        health: result.health,
-        people: peopleFromExtractedParties(result.extracted_fields.parties || []),
-      } satisfies MatterRecord);
+      (buildMatterRecord(result, 1) satisfies MatterRecord);
 
     setActiveMatterId(finalRecord.id);
     return finalRecord;
+  };
+
+  const updateMatter = (result: MatterProcessedResult) => {
+    setMatters((prev) =>
+      prev.map((matter) => {
+        if (matter.id !== result.matter.id && matter.sha256 !== result.matter.sha256) {
+          return matter;
+        }
+
+        return buildMatterRecord(result, matter.version, matter.people);
+      }),
+    );
+  };
+
+  const setMattersFromServer = (results: MatterProcessedResult[]) => {
+    if (!Array.isArray(results) || !results.length) return;
+
+    setMatters((prev) => {
+      const next = [...prev];
+      results.forEach((result) => {
+        const existing = next.find(
+          (item) => item.id === result.matter.id || item.sha256 === result.matter.sha256,
+        );
+        if (existing) {
+          const patched = buildMatterRecord(result, existing.version, existing.people);
+          const index = next.findIndex((item) => item.id === existing.id);
+          next[index] = patched;
+          return;
+        }
+        next.push(buildMatterRecord(result, 1));
+      });
+
+      next.sort(
+        (a, b) =>
+          new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
+      );
+      return next;
+    });
+  };
+
+  const deleteMatter = (matterId: string) => {
+    setMatters((prev) => prev.filter((matter) => matter.id !== matterId));
+    setObligationMapByMatter((prev) => {
+      const next = { ...prev };
+      delete next[matterId];
+      return next;
+    });
+    setSectionRiskMapByMatter((prev) => {
+      const next = { ...prev };
+      delete next[matterId];
+      return next;
+    });
+    setAcceptedRedlinesByMatter((prev) => {
+      const next = { ...prev };
+      delete next[matterId];
+      return next;
+    });
+    setActiveMatterId((current) => (current === matterId ? null : current));
   };
 
   const addPersonToMatter = (
@@ -290,8 +493,112 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     );
   };
 
+  const removePersonFromMatter = (matterId: string, personId: string) => {
+    setMatters((prev) =>
+      prev.map((matter) => {
+        if (matter.id !== matterId) return matter;
+        return {
+          ...matter,
+          people: matter.people.filter((person) => person.id !== personId),
+        };
+      }),
+    );
+  };
+
   const activeMatter =
     matters.find((matter) => matter.id === activeMatterId) || null;
+
+  const getObligationMap = (matterId: string) =>
+    obligationMapByMatter[matterId] || null;
+
+  const setObligationMap = (matterId: string, map: ObligationMapResult) => {
+    setObligationMapByMatter((prev) => ({ ...prev, [matterId]: map }));
+  };
+
+  const clearObligationMap = (matterId: string) => {
+    setObligationMapByMatter((prev) => {
+      const next = { ...prev };
+      delete next[matterId];
+      return next;
+    });
+  };
+
+  const getSectionRiskMap = (matterId: string, sectionId: string) =>
+    sectionRiskMapByMatter[matterId]?.[sectionId] || null;
+
+  const setSectionRiskMap = (
+    matterId: string,
+    sectionId: string,
+    map: SectionRiskMapResult,
+  ) => {
+    setSectionRiskMapByMatter((prev) => ({
+      ...prev,
+      [matterId]: {
+        ...(prev[matterId] || {}),
+        [sectionId]: map,
+      },
+    }));
+  };
+
+  const clearSectionRiskMaps = (matterId: string) => {
+    setSectionRiskMapByMatter((prev) => {
+      const next = { ...prev };
+      delete next[matterId];
+      return next;
+    });
+  };
+
+  const getHighRiskClauseCount = (matterId: string) =>
+    Object.values(sectionRiskMapByMatter[matterId] || {}).reduce(
+      (total, section) => total + (section.counts.high || 0),
+      0,
+    );
+
+  const getAcceptedRedlines = (matterId: string) =>
+    acceptedRedlinesByMatter[matterId] || [];
+
+  const addAcceptedRedline = (redline: AcceptedRedline) => {
+    setAcceptedRedlinesByMatter((prev) => {
+      const current = prev[redline.matterId] || [];
+      const duplicate = current.find(
+        (item) =>
+          item.clauseId === redline.clauseId &&
+          item.position === redline.position &&
+          item.rewrittenText === redline.rewrittenText,
+      );
+      if (duplicate) return prev;
+      return {
+        ...prev,
+        [redline.matterId]: [redline, ...current],
+      };
+    });
+  };
+
+  const updateAcceptedRedline = (
+    matterId: string,
+    redlineId: string,
+    patch: Partial<Pick<AcceptedRedline, "title" | "rewrittenText">>,
+  ) => {
+    setAcceptedRedlinesByMatter((prev) => {
+      const current = prev[matterId] || [];
+      if (!current.length) return prev;
+      const next = current.map((item) =>
+        item.id === redlineId
+          ? {
+              ...item,
+              ...(typeof patch.title === "string" ? { title: patch.title } : {}),
+              ...(typeof patch.rewrittenText === "string"
+                ? { rewrittenText: patch.rewrittenText }
+                : {}),
+            }
+          : item,
+      );
+      return { ...prev, [matterId]: next };
+    });
+  };
+
+  const getPendingRedlineCount = (matterId: string) =>
+    (acceptedRedlinesByMatter[matterId] || []).length;
 
   return (
     <MatterStoreContext.Provider
@@ -300,7 +607,22 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
         activeMatterId,
         activeMatter,
         addMatter,
+        updateMatter,
+        setMattersFromServer,
+        deleteMatter,
         addPersonToMatter,
+        removePersonFromMatter,
+        getObligationMap,
+        setObligationMap,
+        clearObligationMap,
+        getSectionRiskMap,
+        setSectionRiskMap,
+        clearSectionRiskMaps,
+        getHighRiskClauseCount,
+        getAcceptedRedlines,
+        addAcceptedRedline,
+        updateAcceptedRedline,
+        getPendingRedlineCount,
         setActiveMatterId,
       }}
     >

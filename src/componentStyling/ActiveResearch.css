@@ -6,6 +6,28 @@
   max-width: 1000px;
 }
 
+.researchHead {
+  border-bottom: 2px solid rgba(112, 13, 13, 0.35);
+  padding-bottom: 8px;
+}
+
+.researchHead h1 {
+  position: relative;
+  padding-left: 16px;
+  padding-bottom: 8px;
+}
+
+.researchHead h1::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 999px;
+  background: #700d0d;
+}
+
 .mockDataToggleRow {
   margin-top: 10px;
 }
@@ -461,6 +483,14 @@
   margin-top: 14px;
 }
 
+.researchSaveRow {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .continueResearchButton {
   border: 1px solid var(--line-strong);
   background: transparent;
@@ -483,6 +513,21 @@
 .continueResearchButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.researchSaveSuccess {
+  color: #0c7b43;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.researchSaveError {
+  color: #9a1f1f;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .finalAuthorityList {

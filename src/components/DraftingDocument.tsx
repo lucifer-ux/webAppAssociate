@@ -1,58 +1,86 @@
 import "../componentStyling/DraftingDocument.css";
+import Button from "./Button";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import { EditorContent, useEditor } from "@tiptap/react";
+import type { Editor, JSONContent } from "@tiptap/core";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { MessageSquarePlus, SmilePlus } from "lucide-react";
+import { buildDraftingExtensions } from "./draftingExtensions";
+import type {
+  AccessRole,
+  DraftComment,
+  DraftDetail,
+  PendingAnnotation,
+  ParagraphStyle,
+  ZoomLevel,
+} from "./draftingApi";
 
-export type AccessRole = "viewer" | "editor";
-export type ParagraphStyle = "normal" | "heading-1" | "heading-2" | "quote";
-export type ZoomLevel = "80%" | "100%" | "125%";
-export type AnnotationType = "comment" | "reaction";
+export type { AccessRole, DraftComment, PendingAnnotation, ParagraphStyle, ZoomLevel } from "./draftingApi";
 
-export type DraftDocumentTab = {
+export type DraftHeadingItem = {
   id: string;
-  title: string;
-  html: string;
+  level: number;
+  text: string;
+  position: number;
+  wordCount: number;
+  characterCount: number;
 };
 
-export type DraftComment = {
-  id: string;
-  author: string;
-  excerpt: string;
-  note: string;
-  type: AnnotationType;
-  anchorId: string;
-  status: "pending" | "accepted" | "rejected";
-};
-
-export type PendingAnnotation = {
-  anchorId: string;
-  excerpt: string;
-  type: AnnotationType;
+export type DraftingToolbarState = {
+  paragraphStyle: ParagraphStyle;
+  fontFamily: string;
+  fontSize: number;
+  textColor: string;
+  blankFieldCount: number;
+  wordCount: number;
+  characterCount: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  isBoldActive: boolean;
+  isItalicActive: boolean;
+  isUnderlineActive: boolean;
+  isStrikeActive: boolean;
+  isHighlightActive: boolean;
+  isLinkActive: boolean;
+  isAlignLeftActive: boolean;
+  isAlignCenterActive: boolean;
+  isAlignRightActive: boolean;
+  isAlignJustifyActive: boolean;
+  isBulletListActive: boolean;
+  isOrderedListActive: boolean;
+  headings: DraftHeadingItem[];
 };
 
 export type DraftingEditorHandle = {
   applyCommand: (command: string, value?: string) => void;
   insertLink: () => void;
   insertImage: () => void;
+  insertTable: () => void;
   focus: () => void;
   getSelectionExcerpt: () => string;
-  removeAnchor: (anchorId: string) => void;
+  startCommentSelection: () => void;
+  openFindReplace: () => void;
 };
 
 type DraftingDocumentProps = {
-  activeDocument: DraftDocumentTab;
+  draft: DraftDetail;
   currentRole: AccessRole;
   zoomLevel: ZoomLevel;
   comments: DraftComment[];
   activeAnnotationId: string | null;
   pendingAnnotation: PendingAnnotation | null;
   commentDraft: string;
-  onDocumentChange: (html: string) => void;
+  onDocumentChange: (contentJson: JSONContent) => void;
+  onToolbarStateChange: (state: DraftingToolbarState) => void;
   onCommentDraftChange: (value: string) => void;
   onStartAnnotation: (annotation: PendingAnnotation) => void;
   onClearPendingAnnotation: () => void;
@@ -61,14 +89,169 @@ type DraftingDocumentProps = {
   onSelectAnnotation: (id: string) => void;
   onAcceptComment: (id: string) => void;
   onRejectComment: (id: string) => void;
+  onUpdateComment: (id: string, note: string) => void;
+  onDeleteComment: (id: string) => void;
+  onAddReply: (id: string, note: string) => void;
+  onMapComments: (comments: DraftComment[]) => void;
+  onRequestSave: () => void;
+};
+
+type FindReplaceMatch = {
+  from: number;
+  to: number;
+  text: string;
 };
 
 const roleCanEdit = (role: AccessRole) => role === "editor";
 
+const findReplacePluginKey = new PluginKey("draftFindReplacePlugin");
+
+const clampPosition = (value: number, max: number) =>
+  Math.max(1, Math.min(Math.max(1, max - 1), value));
+
+const isWholeWordBoundary = (text: string, start: number, end: number) => {
+  const left = start > 0 ? text[start - 1] : "";
+  const right = end < text.length ? text[end] : "";
+  return !/[A-Za-z0-9_]/.test(left) && !/[A-Za-z0-9_]/.test(right);
+};
+
+const collectFindMatches = (
+  editor: Editor | null,
+  query: string,
+  options: { matchCase: boolean; wholeWord: boolean },
+) => {
+  if (!editor || !query.trim()) return [];
+
+  const needle = options.matchCase ? query : query.toLowerCase();
+  const matches: FindReplaceMatch[] = [];
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) return;
+
+    const haystack = options.matchCase ? node.text : node.text.toLowerCase();
+    let searchFrom = 0;
+
+    while (searchFrom <= haystack.length) {
+      const index = haystack.indexOf(needle, searchFrom);
+      if (index < 0) break;
+      const end = index + needle.length;
+      if (!options.wholeWord || isWholeWordBoundary(node.text || "", index, end)) {
+        matches.push({
+          from: pos + index,
+          to: pos + end,
+          text: node.text.slice(index, end),
+        });
+      }
+      searchFrom = end || index + 1;
+    }
+  });
+
+  return matches;
+};
+
+const getSelectionExcerpt = (editor: Editor | null) => {
+  if (!editor) return "";
+  const { from, to, empty } = editor.state.selection;
+  if (empty) return "";
+  return editor.state.doc.textBetween(from, to, " ").trim();
+};
+
+const getToolbarParagraphStyle = (editor: Editor): ParagraphStyle => {
+  if (editor.isActive("title")) return "title";
+  if (editor.isActive("blockquote")) return "quote";
+  for (let level = 1; level <= 6; level += 1) {
+    if (editor.isActive("heading", { level })) {
+      return `heading-${level}` as ParagraphStyle;
+    }
+  }
+  return "normal";
+};
+
+const getHeadings = (editor: Editor): DraftHeadingItem[] => {
+  const headings: DraftHeadingItem[] = [];
+
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== "heading") return;
+    const level = Number(node.attrs.level || 1);
+    if (level > 3) return;
+    const text = String(node.textContent || "").trim();
+    if (!text) return;
+    headings.push({
+      id: String(node.attrs.id || `heading-${pos}`),
+      level,
+      text,
+      position: pos + 1,
+      wordCount: text.split(/\s+/).filter(Boolean).length,
+      characterCount: text.length,
+    });
+  });
+
+  return headings;
+};
+
+const createFindReplacePlugin = (
+  getState: () => {
+    isOpen: boolean;
+    query: string;
+    matchCase: boolean;
+    wholeWord: boolean;
+    activeIndex: number;
+  },
+) =>
+  new Plugin({
+    key: findReplacePluginKey,
+    state: {
+      init: () => 0,
+      apply(tr, value) {
+        return tr.getMeta(findReplacePluginKey) || value;
+      },
+    },
+    props: {
+      decorations(state) {
+        const data = getState();
+        if (!data.isOpen || !data.query.trim()) {
+          return DecorationSet.empty;
+        }
+
+        const normalizedNeedle = data.matchCase
+          ? data.query
+          : data.query.toLowerCase();
+        const decorations: Decoration[] = [];
+        let matchIndex = 0;
+
+        state.doc.descendants((node, pos) => {
+          if (!node.isText || !node.text) return;
+
+          const haystack = data.matchCase ? node.text : node.text.toLowerCase();
+          let searchFrom = 0;
+          while (searchFrom <= haystack.length) {
+            const index = haystack.indexOf(normalizedNeedle, searchFrom);
+            if (index < 0) break;
+            const end = index + normalizedNeedle.length;
+            if (!data.wholeWord || isWholeWordBoundary(node.text || "", index, end)) {
+              decorations.push(
+                Decoration.inline(pos + index, pos + end, {
+                  class:
+                    matchIndex === data.activeIndex
+                      ? "draftFindMatch is-active"
+                      : "draftFindMatch",
+                }),
+              );
+              matchIndex += 1;
+            }
+            searchFrom = end || index + 1;
+          }
+        });
+
+        return DecorationSet.create(state.doc, decorations);
+      },
+    },
+  });
+
 const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>(
   (
     {
-      activeDocument,
+      draft,
       currentRole,
       zoomLevel,
       comments,
@@ -76,6 +259,7 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       pendingAnnotation,
       commentDraft,
       onDocumentChange,
+      onToolbarStateChange,
       onCommentDraftChange,
       onStartAnnotation,
       onClearPendingAnnotation,
@@ -84,254 +268,596 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       onSelectAnnotation,
       onAcceptComment,
       onRejectComment,
+      onUpdateComment,
+      onDeleteComment,
+      onAddReply,
+      onMapComments,
+      onRequestSave,
     },
     ref,
   ) => {
-    const editorRef = useRef<HTMLDivElement | null>(null);
     const sheetRef = useRef<HTMLDivElement | null>(null);
-    const selectionRangeRef = useRef<Range | null>(null);
-    const [selectionMenu, setSelectionMenu] = useState<{ top: number; visible: boolean }>({
-      top: 0,
-      visible: false,
+    const commentsRef = useRef(comments);
+    const hydratedKeyRef = useRef("");
+    const findReplaceStateRef = useRef({
+      isOpen: false,
+      query: "",
+      matchCase: false,
+      wholeWord: false,
+      activeIndex: 0,
+    });
+    const [selectionMenuTop, setSelectionMenuTop] = useState<number | null>(null);
+    const [openCommentMenuId, setOpenCommentMenuId] = useState<string | null>(null);
+    const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+    const [editingDraft, setEditingDraft] = useState("");
+    const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+    const [findQuery, setFindQuery] = useState("");
+    const [replaceQuery, setReplaceQuery] = useState("");
+    const [matchCase, setMatchCase] = useState(false);
+    const [wholeWord, setWholeWord] = useState(false);
+    const [findPanelOpen, setFindPanelOpen] = useState(false);
+    const [activeFindIndex, setActiveFindIndex] = useState(0);
+    const [commentLayout, setCommentLayout] = useState<Record<string, number>>({});
+    const [pendingTop, setPendingTop] = useState<number | null>(null);
+
+    commentsRef.current = comments;
+    findReplaceStateRef.current = {
+      isOpen: findPanelOpen,
+      query: findQuery,
+      matchCase,
+      wholeWord,
+      activeIndex: activeFindIndex,
+    };
+
+    const findReplacePlugin = useMemo(
+      () => createFindReplacePlugin(() => findReplaceStateRef.current),
+      [],
+    );
+
+    const syncToolbarState = useCallback(
+      (editorInstance: Editor) => {
+        const fontSizeValue = Number.parseInt(
+          String(editorInstance.getAttributes("textStyle").fontSize || "12"),
+          10,
+        );
+        onToolbarStateChange({
+          paragraphStyle: getToolbarParagraphStyle(editorInstance),
+          fontFamily:
+            String(editorInstance.getAttributes("textStyle").fontFamily || "").trim() ||
+            "Newsreader",
+          fontSize: Number.isFinite(fontSizeValue) ? fontSizeValue : 12,
+          textColor:
+            String(editorInstance.getAttributes("textStyle").color || "").trim() || "#1b1c19",
+          blankFieldCount: Number(editorInstance.storage.blankField?.count || 0),
+          wordCount: Number(editorInstance.storage.characterCount?.words?.() || 0),
+          characterCount: Number(editorInstance.storage.characterCount?.characters?.() || 0),
+          canUndo: editorInstance.can().chain().focus().undo().run(),
+          canRedo: editorInstance.can().chain().focus().redo().run(),
+          isBoldActive: editorInstance.isActive("bold"),
+          isItalicActive: editorInstance.isActive("italic"),
+          isUnderlineActive: editorInstance.isActive("underline"),
+          isStrikeActive: editorInstance.isActive("strike"),
+          isHighlightActive: editorInstance.isActive("highlight"),
+          isLinkActive: editorInstance.isActive("link"),
+          isAlignLeftActive: editorInstance.isActive({ textAlign: "left" }),
+          isAlignCenterActive: editorInstance.isActive({ textAlign: "center" }),
+          isAlignRightActive: editorInstance.isActive({ textAlign: "right" }),
+          isAlignJustifyActive: editorInstance.isActive({ textAlign: "justify" }),
+          isBulletListActive: editorInstance.isActive("bulletList"),
+          isOrderedListActive: editorInstance.isActive("orderedList"),
+          headings: getHeadings(editorInstance),
+        });
+      },
+      [onToolbarStateChange],
+    );
+
+    const refreshFindDecorations = useCallback(
+      (editorInstance: Editor | null) => {
+        if (!editorInstance) return;
+        editorInstance.view.dispatch(
+          editorInstance.state.tr.setMeta(findReplacePluginKey, Date.now()),
+        );
+      },
+      [],
+    );
+
+    const refreshSelectionMenu = useCallback((editorInstance: Editor | null) => {
+      if (!editorInstance || !roleCanEdit(currentRole)) {
+        setSelectionMenuTop(null);
+        return;
+      }
+      const { from, to, empty } = editorInstance.state.selection;
+      if (empty || from === to || !sheetRef.current) {
+        setSelectionMenuTop(null);
+        return;
+      }
+      const startCoords = editorInstance.view.coordsAtPos(from);
+      const endCoords = editorInstance.view.coordsAtPos(to);
+      const sheetRect = sheetRef.current.getBoundingClientRect();
+      setSelectionMenuTop(
+        Math.max(0, (startCoords.top + endCoords.bottom) / 2 - sheetRect.top - 26),
+      );
+    }, [currentRole]);
+
+    const measureCommentLayout = useCallback((editorInstance: Editor | null) => {
+      if (!editorInstance || !sheetRef.current) {
+        setCommentLayout({});
+        setPendingTop(null);
+        return;
+      }
+
+      const sheetRect = sheetRef.current.getBoundingClientRect();
+      const maxPos = editorInstance.state.doc.content.size;
+      const nextLayout: Record<string, number> = {};
+
+      comments.forEach((comment) => {
+        try {
+          const coords = editorInstance.view.coordsAtPos(clampPosition(comment.from, maxPos));
+          nextLayout[comment.id] = Math.max(0, coords.top - sheetRect.top);
+        } catch {
+          nextLayout[comment.id] = 0;
+        }
+      });
+
+      if (pendingAnnotation) {
+        try {
+          const coords = editorInstance.view.coordsAtPos(
+            clampPosition(pendingAnnotation.from, maxPos),
+          );
+          setPendingTop(Math.max(0, coords.top - sheetRect.top));
+        } catch {
+          setPendingTop(0);
+        }
+      } else {
+        setPendingTop(null);
+      }
+
+      setCommentLayout(nextLayout);
+    }, [comments, pendingAnnotation]);
+
+    const startAnnotation = useCallback(
+      (editorInstance: Editor | null, type: PendingAnnotation["type"]) => {
+        if (!editorInstance) return;
+        const { from, to, empty } = editorInstance.state.selection;
+        if (empty || from === to) return;
+        const excerpt = getSelectionExcerpt(editorInstance);
+        if (!excerpt) return;
+        onStartAnnotation({
+          from,
+          to,
+          excerpt,
+          type,
+        });
+        setSelectionMenuTop(null);
+      },
+      [onStartAnnotation],
+    );
+
+    const editor = useEditor({
+      immediatelyRender: true,
+      autofocus: true,
+      editable: roleCanEdit(currentRole),
+      extensions: buildDraftingExtensions({
+        definedTerms: draft.context.definedTerms,
+        onSaveShortcut: onRequestSave,
+        onOpenFindShortcut: () => setFindPanelOpen(true),
+      }),
+      content: draft.contentJson,
+      editorProps: {
+        attributes: {
+          class: `draftPaperEditor ${roleCanEdit(currentRole) ? "" : "readOnly"}`,
+          spellcheck: "true",
+        },
+      },
+      onCreate: ({ editor: editorInstance }) => {
+        editorInstance.registerPlugin(findReplacePlugin);
+        syncToolbarState(editorInstance);
+        measureCommentLayout(editorInstance);
+      },
+      onSelectionUpdate: ({ editor: editorInstance }) => {
+        syncToolbarState(editorInstance);
+        refreshSelectionMenu(editorInstance);
+      },
+      onUpdate: ({ editor: editorInstance }) => {
+        onDocumentChange(editorInstance.getJSON());
+        syncToolbarState(editorInstance);
+        measureCommentLayout(editorInstance);
+      },
+      onTransaction: ({ editor: editorInstance, transaction }) => {
+        if (transaction.docChanged) {
+          const maxPos = editorInstance.state.doc.content.size;
+          const mappedComments = commentsRef.current.map((comment) => {
+            const nextFrom = clampPosition(transaction.mapping.map(comment.from, -1), maxPos);
+            const nextTo = clampPosition(transaction.mapping.map(comment.to, 1), maxPos);
+            return {
+              ...comment,
+              from: Math.min(nextFrom, nextTo),
+              to: Math.max(nextFrom, nextTo),
+            };
+          });
+
+          const changed = mappedComments.some((comment, index) => {
+            const current = commentsRef.current[index];
+            return current && (current.from !== comment.from || current.to !== comment.to);
+          });
+          if (changed) {
+            onMapComments(mappedComments);
+          }
+        }
+        refreshSelectionMenu(editorInstance);
+      },
     });
 
     useEffect(() => {
-      if (!editorRef.current) {
-        return;
-      }
-
-      if (editorRef.current.innerHTML !== activeDocument.html) {
-        editorRef.current.innerHTML = activeDocument.html;
-      }
-    }, [activeDocument]);
+      if (!editor) return;
+      const hydrationKey = `${draft.id}:${draft.contentHash}`;
+      if (hydratedKeyRef.current === hydrationKey) return;
+      hydratedKeyRef.current = hydrationKey;
+      editor.commands.setContent(draft.contentJson);
+      syncToolbarState(editor);
+      measureCommentLayout(editor);
+    }, [draft.id, draft.contentHash, draft.contentJson, editor, measureCommentLayout, syncToolbarState]);
 
     useEffect(() => {
-      document.execCommand("styleWithCSS", false, "true");
+      if (!editor) return;
+      refreshFindDecorations(editor);
+    }, [activeFindIndex, editor, findPanelOpen, findQuery, matchCase, refreshFindDecorations, wholeWord]);
+
+    useEffect(() => {
+      if (!editor || !activeAnnotationId) return;
+      const comment = comments.find((item) => item.id === activeAnnotationId);
+      if (!comment) return;
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from: comment.from, to: comment.to })
+        .scrollIntoView()
+        .run();
+    }, [activeAnnotationId, comments, editor]);
+
+    useEffect(() => {
+      if (!editor) return;
+      measureCommentLayout(editor);
+    }, [commentDraft, editor, measureCommentLayout, zoomLevel]);
+
+    const applyCommand = useCallback(
+      (command: string, value?: string) => {
+        if (!editor || !roleCanEdit(currentRole)) {
+          return;
+        }
+
+        switch (command) {
+          case "undo":
+            editor.chain().focus().undo().run();
+            break;
+          case "redo":
+            editor.chain().focus().redo().run();
+            break;
+          case "bold":
+            editor.chain().focus().toggleBold().run();
+            break;
+          case "italic":
+            editor.chain().focus().toggleItalic().run();
+            break;
+          case "underline":
+            editor.chain().focus().toggleUnderline().run();
+            break;
+          case "strike":
+            editor.chain().focus().toggleStrike().run();
+            break;
+          case "justifyLeft":
+            editor.chain().focus().setTextAlign("left").run();
+            break;
+          case "justifyCenter":
+            editor.chain().focus().setTextAlign("center").run();
+            break;
+          case "justifyRight":
+            editor.chain().focus().setTextAlign("right").run();
+            break;
+          case "justifyFull":
+            editor.chain().focus().setTextAlign("justify").run();
+            break;
+          case "insertUnorderedList":
+            editor.chain().focus().toggleBulletList().run();
+            break;
+          case "insertOrderedList":
+            editor.chain().focus().toggleOrderedList().run();
+            break;
+          case "indent":
+            editor.chain().focus().sinkListItem("listItem").run();
+            break;
+          case "outdent":
+            editor.chain().focus().liftListItem("listItem").run();
+            break;
+          case "createLink":
+            if (value) {
+              editor.chain().focus().extendMarkRange("link").setLink({ href: value }).run();
+            }
+            break;
+          case "formatBlock":
+            if (value === "TITLE") {
+              editor.commands.setTitle();
+            } else if (value === "BLOCKQUOTE") {
+              editor.chain().focus().setBlockquote().run();
+            } else if (value === "P") {
+              editor.chain().focus().setParagraph().run();
+            } else if (/^H[1-6]$/.test(String(value || ""))) {
+              editor
+                .chain()
+                .focus()
+                .setHeading({ level: Number(String(value).replace("H", "")) as 1 | 2 | 3 | 4 | 5 | 6 })
+                .run();
+            }
+            break;
+          case "fontName":
+            if (value) {
+              editor.chain().focus().setFontFamily(value).run();
+            }
+            break;
+          case "foreColor":
+            if (value) {
+              editor.chain().focus().setColor(value).run();
+            }
+            break;
+          case "hiliteColor":
+            editor.chain().focus().toggleHighlight({ color: value || "#fff0b8" }).run();
+            break;
+          case "fontSize":
+            if (value) {
+              editor.commands.setFontSize(value);
+            }
+            break;
+          case "insertTable":
+            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+            break;
+          default:
+            break;
+        }
+        syncToolbarState(editor);
+      },
+      [currentRole, editor, syncToolbarState],
+    );
+
+    const insertLink = useCallback(() => {
+      if (!editor || !roleCanEdit(currentRole)) return;
+      const existingHref = String(editor.getAttributes("link").href || "");
+      const url = window.prompt("Enter link URL", existingHref || "https://");
+      if (url === null) return;
+      if (!url.trim()) {
+        editor.chain().focus().unsetLink().run();
+        return;
+      }
+      applyCommand("createLink", url.trim());
+    }, [applyCommand, currentRole, editor]);
+
+    const insertImage = useCallback(() => {
+      if (!editor || !roleCanEdit(currentRole)) return;
+      const url = window.prompt("Paste image URL");
+      if (!url?.trim()) return;
+      editor.chain().focus().setImage({ src: url.trim() }).run();
+    }, [currentRole, editor]);
+
+    const insertTable = useCallback(() => {
+      applyCommand("insertTable");
+    }, [applyCommand]);
+
+    const openFindReplace = useCallback(() => {
+      setFindPanelOpen(true);
+      setSelectionMenuTop(null);
     }, []);
 
-    useEffect(() => {
-      const editor = editorRef.current;
-      if (!editor) {
-        return;
-      }
+    const focus = useCallback(() => {
+      editor?.commands.focus();
+    }, [editor]);
 
-      editor.querySelectorAll(".draftAnnotationAnchor.is-active").forEach((node) => {
-        node.classList.remove("is-active");
-      });
+    const getSelectedExcerpt = useCallback(() => getSelectionExcerpt(editor), [editor]);
 
-      if (!activeAnnotationId) {
-        return;
-      }
+    const startCommentSelection = useCallback(() => {
+      startAnnotation(editor, "comment");
+    }, [editor, startAnnotation]);
 
-      const activeAnchor = editor.querySelector(
-        `[data-anchor-id="${activeAnnotationId}"]`,
-      ) as HTMLElement | null;
+    useImperativeHandle(
+      ref,
+      () => ({
+        applyCommand,
+        insertLink,
+        insertImage,
+        insertTable,
+        focus,
+        getSelectionExcerpt: getSelectedExcerpt,
+        startCommentSelection,
+        openFindReplace,
+      }),
+      [
+        applyCommand,
+        focus,
+        getSelectedExcerpt,
+        insertImage,
+        insertLink,
+        insertTable,
+        openFindReplace,
+        startCommentSelection,
+      ],
+    );
 
-      if (activeAnchor) {
-        activeAnchor.classList.add("is-active");
-        activeAnchor.scrollIntoView({ block: "center", behavior: "smooth" });
-      }
-    }, [activeAnnotationId, comments]);
+    const findMatches = collectFindMatches(editor, findQuery, { matchCase, wholeWord });
 
-    const focus = () => {
-      editorRef.current?.focus();
+    const moveToMatch = (index: number) => {
+      if (!editor || !findMatches.length) return;
+      const nextIndex = (index + findMatches.length) % findMatches.length;
+      setActiveFindIndex(nextIndex);
+      const match = findMatches[nextIndex];
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from: match.from, to: match.to })
+        .scrollIntoView()
+        .run();
     };
 
-    const updateDocumentHtml = () => {
-      onDocumentChange(editorRef.current?.innerHTML || "");
-    };
-
-    const clearSelectionUi = () => {
-      selectionRangeRef.current = null;
-      setSelectionMenu({ top: 0, visible: false });
-    };
-
-    const getSelectionExcerpt = () => {
-      const selection = window.getSelection();
-      return String(selection?.toString() || "").trim();
-    };
-
-    const applyCommand = (command: string, value?: string) => {
-      if (!roleCanEdit(currentRole)) {
-        return;
-      }
-
-      focus();
-      document.execCommand(command, false, value);
-      updateDocumentHtml();
-    };
-
-    const insertLink = () => {
-      if (!roleCanEdit(currentRole)) {
-        return;
-      }
-
-      const url = window.prompt("Enter link URL");
-      if (!url) {
-        return;
-      }
-
-      applyCommand("createLink", url);
-    };
-
-    const insertImage = () => {
-      if (!roleCanEdit(currentRole)) {
-        return;
-      }
-
-      const url = window.prompt("Paste image URL");
-      if (!url) {
-        return;
-      }
-
-      applyCommand("insertImage", url);
-    };
-
-    const refreshSelectionMenu = () => {
-      if (!roleCanEdit(currentRole)) {
-        clearSelectionUi();
-        return;
-      }
-
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-        clearSelectionUi();
-        return;
-      }
-
-      const range = selection.getRangeAt(0);
-      const excerpt = String(range.toString() || "").trim();
-      if (!excerpt || !editorRef.current?.contains(range.commonAncestorContainer)) {
-        clearSelectionUi();
-        return;
-      }
-
-      const rect = range.getBoundingClientRect();
-      const sheetRect = sheetRef.current?.getBoundingClientRect();
-      if (!sheetRect) {
-        clearSelectionUi();
-        return;
-      }
-
-      selectionRangeRef.current = range.cloneRange();
-      setSelectionMenu({
-        top: rect.top - sheetRect.top + rect.height / 2 - 26,
-        visible: true,
+    const replaceCurrentMatch = () => {
+      if (!editor || !findMatches.length) return;
+      const match = findMatches[activeFindIndex] || findMatches[0];
+      editor.commands.insertContentAt({ from: match.from, to: match.to }, replaceQuery);
+      refreshFindDecorations(editor);
+      window.requestAnimationFrame(() => {
+        const nextMatches = collectFindMatches(editor, findQuery, { matchCase, wholeWord });
+        if (nextMatches.length > 0) {
+          setActiveFindIndex((current) => Math.min(current, nextMatches.length - 1));
+        } else {
+          setActiveFindIndex(0);
+        }
       });
     };
 
-    const wrapSelectionWithAnchor = (type: AnnotationType) => {
-      const range = selectionRangeRef.current;
-      const editor = editorRef.current;
-      if (!range || !editor) {
-        return null;
-      }
-
-      const excerpt = String(range.toString() || "").trim();
-      if (!excerpt) {
-        return null;
-      }
-
-      const anchorId = crypto.randomUUID();
-      const span = document.createElement("span");
-      span.className = `draftAnnotationAnchor type-${type}`;
-      span.dataset.anchorId = anchorId;
-
-      try {
-        span.appendChild(range.extractContents());
-        range.insertNode(span);
-      } catch {
-        return null;
-      }
-
-      updateDocumentHtml();
-      clearSelectionUi();
-      return { anchorId, excerpt };
+    const replaceAllMatches = () => {
+      if (!editor || !findMatches.length) return;
+      const tr = editor.state.tr;
+      [...findMatches]
+        .reverse()
+        .forEach((match) => {
+          tr.insertText(replaceQuery, match.from, match.to);
+        });
+      editor.view.dispatch(tr);
+      setActiveFindIndex(0);
+      refreshFindDecorations(editor);
     };
 
-    const removeAnchor = (anchorId: string) => {
-      const editor = editorRef.current;
-      if (!editor) {
-        return;
-      }
+    const headingItems = editor ? getHeadings(editor) : [];
 
-      const anchor = editor.querySelector(`[data-anchor-id="${anchorId}"]`) as HTMLElement | null;
-      if (!anchor || !anchor.parentNode) {
-        return;
-      }
-
-      const parent = anchor.parentNode;
-      while (anchor.firstChild) {
-        parent.insertBefore(anchor.firstChild, anchor);
-      }
-      parent.removeChild(anchor);
-      parent.normalize();
-      updateDocumentHtml();
-    };
-
-    const startAnnotation = (type: AnnotationType) => {
-      const annotation = wrapSelectionWithAnchor(type);
-      if (!annotation) {
-        return;
-      }
-
-      onStartAnnotation({
-        anchorId: annotation.anchorId,
-        excerpt: annotation.excerpt,
-        type,
-      });
-    };
-
-    useImperativeHandle(ref, () => ({
-      applyCommand,
-      insertLink,
-      insertImage,
-      focus,
-      getSelectionExcerpt,
-      removeAnchor,
-    }));
+    const sortedComments = [...comments].sort(
+      (left, right) => (commentLayout[left.id] || 0) - (commentLayout[right.id] || 0),
+    );
 
     return (
       <section className="draftingCanvasShell">
         <main className="draftingCanvasArea soloCanvas">
-          <div ref={sheetRef} className={`draftPaperSheet compact zoom-${zoomLevel.replace("%", "")}`}>
-            <div
-              ref={editorRef}
-              className={`draftPaperEditor ${roleCanEdit(currentRole) ? "" : "readOnly"}`}
-              contentEditable={roleCanEdit(currentRole)}
-              suppressContentEditableWarning
-              onInput={updateDocumentHtml}
-              onMouseUp={refreshSelectionMenu}
-              onKeyUp={refreshSelectionMenu}
-              onBlur={() => {
-                window.setTimeout(() => {
-                  const active = document.activeElement as HTMLElement | null;
-                  if (active?.closest(".draftSelectionBubble")) {
-                    return;
-                  }
-                  if (!pendingAnnotation) {
-                    clearSelectionUi();
-                  }
-                }, 120);
-              }}
-              spellCheck
-            />
+          <aside className="draftNavigatorRail">
+            <div className="draftNavigatorCard">
+              <p className="draftTemplateEyebrow">Navigator</p>
+              <div className="draftNavigatorList">
+                {headingItems.length > 0 ? (
+                  headingItems.map((heading) => (
+                    <Button
+                      key={heading.id}
+                      type="button"
+                      className={`draftNavigatorItem level-${heading.level}`}
+                      onClick={() => {
+                        if (!editor) return;
+                        editor
+                          .chain()
+                          .focus()
+                          .setTextSelection(heading.position)
+                          .scrollIntoView()
+                          .run();
+                      }}
+                    >
+                      {heading.text}
+                    </Button>
+                  ))
+                ) : (
+                  <p className="draftNavigatorEmpty">Add headings to build section navigation.</p>
+                )}
+              </div>
+            </div>
+          </aside>
 
-            {selectionMenu.visible && (
-              <div className="draftSelectionBubble" style={{ top: `${selectionMenu.top}px` }}>
-                <button type="button" onClick={() => startAnnotation("comment")} aria-label="Add comment">
-                  <MessageSquarePlus size={18} />
-                </button>
-                <button type="button" onClick={() => startAnnotation("reaction")} aria-label="Add reaction">
-                  <SmilePlus size={18} />
-                </button>
+          <div
+            ref={sheetRef}
+            className={`draftPaperSheet compact zoom-${zoomLevel.replace("%", "")}`}
+          >
+            <EditorContent editor={editor} />
+
+            {selectionMenuTop !== null && (
+              <div className="draftSelectionBubble" style={{ top: `${selectionMenuTop}px` }}>
+                <Button
+                  type="button"
+                  onClick={() => startAnnotation(editor, "comment")}
+                  aria-label="Add comment"
+                >
+                  <MessageSquarePlus size={22} />
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => startAnnotation(editor, "reaction")}
+                  aria-label="Add reaction"
+                >
+                  <SmilePlus size={22} />
+                </Button>
+              </div>
+            )}
+
+            {findPanelOpen && (
+              <div className="draftFindPanel">
+                <div className="draftFindPanelHeader">
+                  <strong>Find and Replace</strong>
+                  <Button type="button" onClick={() => setFindPanelOpen(false)}>
+                    Close
+                  </Button>
+                </div>
+                <label>
+                  <span>Find</span>
+                  <input
+                    value={findQuery}
+                    onChange={(event) => {
+                      setFindQuery(event.target.value);
+                      setActiveFindIndex(0);
+                    }}
+                    placeholder="Find text"
+                  />
+                </label>
+                <label>
+                  <span>Replace</span>
+                  <input
+                    value={replaceQuery}
+                    onChange={(event) => setReplaceQuery(event.target.value)}
+                    placeholder="Replace with"
+                  />
+                </label>
+                <div className="draftFindToggleRow">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={matchCase}
+                      onChange={(event) => setMatchCase(event.target.checked)}
+                    />
+                    Match case
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={wholeWord}
+                      onChange={(event) => setWholeWord(event.target.checked)}
+                    />
+                    Whole word
+                  </label>
+                </div>
+                <div className="draftFindActions">
+                  <Button type="button" onClick={() => moveToMatch(activeFindIndex + 1)}>
+                    Find next
+                  </Button>
+                  <Button type="button" onClick={replaceCurrentMatch} disabled={!findMatches.length}>
+                    Replace
+                  </Button>
+                  <Button type="button" onClick={replaceAllMatches} disabled={!findMatches.length}>
+                    Replace all
+                  </Button>
+                </div>
+                <p className="draftFindMeta">
+                  {findMatches.length
+                    ? `${Math.min(activeFindIndex + 1, findMatches.length)} of ${findMatches.length} matches`
+                    : "No matches"}
+                </p>
               </div>
             )}
           </div>
 
           <aside className="draftCommentRail">
             {pendingAnnotation && (
-              <div className="draftCommentComposerInline">
+              <div
+                className="draftCommentComposerInline"
+                style={{ top: `${pendingTop || 0}px` }}
+              >
                 <div className="composerExcerptLine">{pendingAnnotation.excerpt}</div>
                 {pendingAnnotation.type === "comment" ? (
                   <>
@@ -342,51 +868,170 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                       disabled={!roleCanEdit(currentRole)}
                     />
                     <div className="pendingAnnotationActions">
-                      <button type="button" className="commentInlineSecondaryBtn" onClick={onClearPendingAnnotation}>
+                      <Button
+                        type="button"
+                        className="commentInlineSecondaryBtn"
+                        onClick={onClearPendingAnnotation}
+                      >
                         Cancel
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         className="commentInlineActionBtn"
                         onClick={onAddPendingComment}
                         disabled={!roleCanEdit(currentRole) || !commentDraft.trim()}
                       >
                         Add comment
-                      </button>
+                      </Button>
                     </div>
                   </>
                 ) : (
                   <div className="reactionPickerRow">
                     {["👍", "✅", "⚠️", "💡"].map((emoji) => (
-                      <button key={emoji} type="button" onClick={() => onAddReaction(emoji)}>
+                      <Button key={emoji} type="button" onClick={() => onAddReaction(emoji)}>
                         {emoji}
-                      </button>
+                      </Button>
                     ))}
-                    <button type="button" className="commentInlineSecondaryBtn" onClick={onClearPendingAnnotation}>
+                    <Button
+                      type="button"
+                      className="commentInlineSecondaryBtn"
+                      onClick={onClearPendingAnnotation}
+                    >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
             )}
 
             <div className="commentInlineList">
-              {comments.map((comment) => (
+              {sortedComments.map((comment) => (
                 <article
                   key={comment.id}
-                  className={`inlineCommentCard ${comment.status} ${comment.type}`}
-                  onClick={() => onSelectAnnotation(comment.anchorId)}
+                  className={`inlineCommentCard ${comment.status} ${comment.type} ${
+                    comment.id === activeAnnotationId ? "active" : ""
+                  }`}
+                  style={{ top: `${commentLayout[comment.id] || 0}px` }}
+                  onClick={() => onSelectAnnotation(comment.id)}
                 >
-                  <strong>{comment.author}</strong>
+                  <div className="inlineCommentHeader">
+                    <strong>{comment.author}</strong>
+                    <div className="commentOverflowWrap">
+                      <Button
+                        type="button"
+                        className="commentOverflowBtn"
+                        aria-label="Comment options"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenCommentMenuId((current) =>
+                            current === comment.id ? null : comment.id,
+                          );
+                        }}
+                      >
+                        ...
+                      </Button>
+                      {openCommentMenuId === comment.id && (
+                        <div className="commentOverflowMenu">
+                          <Button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setEditingCommentId(comment.id);
+                              setEditingDraft(comment.note);
+                              setOpenCommentMenuId(null);
+                            }}
+                          >
+                            Edit comment
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDeleteComment(comment.id);
+                              setOpenCommentMenuId(null);
+                            }}
+                          >
+                            Delete comment
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   <blockquote>{comment.excerpt}</blockquote>
-                  <p>{comment.note}</p>
+                  {editingCommentId === comment.id ? (
+                    <div className="inlineCommentEdit">
+                      <textarea
+                        value={editingDraft}
+                        onChange={(event) => setEditingDraft(event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                      <div className="inlineCommentActions">
+                        <Button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setEditingCommentId(null);
+                            setEditingDraft("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (!editingDraft.trim()) return;
+                            onUpdateComment(comment.id, editingDraft.trim());
+                            setEditingCommentId(null);
+                            setEditingDraft("");
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p>{comment.note}</p>
+                  )}
+                  {comment.replies.length > 0 && (
+                    <div className="commentReplyList">
+                      {comment.replies.map((reply) => (
+                        <p key={reply.id}>
+                          <strong>{reply.author}</strong> {reply.note}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="commentReplyBox" onClick={(event) => event.stopPropagation()}>
+                    <textarea
+                      value={replyDrafts[comment.id] || ""}
+                      onChange={(event) =>
+                        setReplyDrafts((current) => ({
+                          ...current,
+                          [comment.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Reply..."
+                    />
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const reply = (replyDrafts[comment.id] || "").trim();
+                        if (!reply) return;
+                        onAddReply(comment.id, reply);
+                        setReplyDrafts((current) => ({ ...current, [comment.id]: "" }));
+                      }}
+                    >
+                      Reply
+                    </Button>
+                  </div>
                   <div className="inlineCommentActions">
-                    <button type="button" onClick={() => onAcceptComment(comment.id)}>
+                    <Button type="button" onClick={() => onAcceptComment(comment.id)}>
                       Accept
-                    </button>
-                    <button type="button" onClick={() => onRejectComment(comment.id)}>
+                    </Button>
+                    <Button type="button" onClick={() => onRejectComment(comment.id)}>
                       Reject
-                    </button>
+                    </Button>
                   </div>
                 </article>
               ))}

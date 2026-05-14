@@ -1,0 +1,101 @@
+.userProfileOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(21, 15, 12, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 120;
+}
+
+.userProfileModal {
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(85vh, 720px);
+  overflow-y: auto;
+  border: 1px solid #dfbfbc;
+  background: #fbf9f4;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16);
+  padding: 16px;
+}
+
+.userProfileHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #eadfd8;
+  padding-bottom: 10px;
+}
+
+.userProfileHead strong {
+  font-family: "Newsreader", serif;
+  font-size: 24px;
+  color: #2f2422;
+}
+
+.userProfileCloseBtn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e0c8c5;
+  background: #fff;
+  color: #6f625a;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.userProfileCloseBtn:hover {
+  border-color: #cda9a4;
+  color: #700d0d;
+}
+
+.userProfilePlanChip {
+  margin-top: 12px;
+  display: inline-flex;
+  border: 1px solid #cfb2ae;
+  background: #f7f2ec;
+  color: #700d0d;
+  padding: 4px 8px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.userProfileSection {
+  margin-top: 14px;
+}
+
+.userProfileSection h4 {
+  margin: 0 0 6px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6f625a;
+}
+
+.userProfileSection p {
+  margin: 0 0 5px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  color: #3d3431;
+}
+
+.userProfileUpgradeBtn {
+  width: 100%;
+  margin-top: 14px;
+  border: 1px solid #4c0003;
+  background: #700d0d;
+  color: #fff;
+  min-height: 38px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.userProfileUpgradeBtn:hover {
+  background: #4c0003;
+}

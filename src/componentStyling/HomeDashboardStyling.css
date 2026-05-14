@@ -13,6 +13,8 @@
 
 .homeDashPage {
   min-height: 100vh;
+  max-width: 100vw;
+  overflow-x: hidden;
   background: #fbf9f4;
   color: var(--ink);
   font-family: "Newsreader", serif;
@@ -46,6 +48,7 @@
   gap: 6px;
   height: 64px;
   cursor: pointer;
+  position: relative;
 }
 
 .toolRailItem:hover {
@@ -53,16 +56,50 @@
   color: var(--brand-soft);
 }
 
+.toolRailItem.active {
+  background: #f1ece5;
+  color: var(--brand-soft);
+}
+
+.toolRailBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #c88f82;
+  background: #fff0ea;
+  color: #8b2e24;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Work Sans", sans-serif;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 5px;
+}
+
 .homeDashMain {
   padding-top: 64px;
   padding-left: 256px;
   padding-right: 80px;
   min-height: 100vh;
+  max-width: 100vw;
+  min-width: 0;
+  overflow-x: clip;
+  box-sizing: border-box;
   transition: padding-left 0.2s ease;
 }
 
 .homeDashMain.sidebarCollapsed {
   padding-left: 84px;
+}
+
+.homeDashMain.withRightPanel {
+  padding-right: 800px;
 }
 
 .welcomeBlock,
@@ -455,6 +492,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font-family: "Fraunces", serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .chatDock textarea {
@@ -488,13 +529,20 @@
 .chatSendBtn {
   border: 0;
   background: transparent;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   color: #6d6660;
+}
+
+.chatIconBtn svg,
+.chatSendBtn svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 2.15;
 }
 
 .chatIconBtn:hover {
@@ -503,8 +551,8 @@
 }
 
 .chatSendBtn {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   background: var(--brand);
   color: #fff;
@@ -520,6 +568,10 @@
   }
 
   .homeDashMain {
+    padding-right: 0;
+  }
+
+  .homeDashMain.withRightPanel {
     padding-right: 0;
   }
 
@@ -593,13 +645,29 @@
   align-items: center;
   justify-content: flex-start;
   gap: 12px;
+  border-bottom: 2px solid rgba(112, 13, 13, 0.35);
+  padding-bottom: 8px;
 }
 
 .activeResearchesHead h2 {
+  position: relative;
   margin: 0;
   font-size: 30px;
   font-weight: 500;
   color: #2f201d;
+  padding-left: 16px;
+  padding-bottom: 6px;
+}
+
+.activeResearchesHead h2::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 4px;
+  border-radius: 999px;
+  background: #700d0d;
 }
 
 .activeResearchesGrid {
@@ -668,11 +736,17 @@
 }
 
 .researchDemoCard.startNew {
+  border: 1px solid #eadfce;
+  background: #f7f2ec;
   min-height: 100%;
   display: grid;
   place-items: center;
   align-content: center;
   gap: 4px;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .researchDemoTitleRow {
@@ -690,21 +764,25 @@
   font-family: "Fraunces", serif;
   font-size: 34px;
   line-height: 1;
-  color: #6f625a;
+  color: #700d0d;
 }
 
 .startNewHint {
-  opacity: 0;
-  transform: translateY(3px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  opacity: 1;
+  transform: translateY(0);
+  transition: color 0.18s ease;
   font-family: "Fraunces", serif;
   font-size: 13px;
-  color: #857f72;
+  color: #700d0d;
 }
 
 .researchDemoCard.startNew:hover .startNewHint {
-  opacity: 1;
-  transform: translateY(0);
+  color: #700d0d;
+}
+
+.researchDemoCard.startNew:hover {
+  border-color: #d9c6b8;
+  background: #f3ece4;
 }
 
 .matterStatus {
