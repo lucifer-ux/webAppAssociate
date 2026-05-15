@@ -300,7 +300,9 @@ type MatterStoreContextValue = {
   clearSectionRiskMaps: (matterId: string) => void;
   getHighRiskClauseCount: (matterId: string) => number;
   getAcceptedRedlines: (matterId: string) => AcceptedRedline[];
+  setAcceptedRedlines: (matterId: string, redlines: AcceptedRedline[]) => void;
   addAcceptedRedline: (redline: AcceptedRedline) => void;
+  removeAcceptedRedline: (matterId: string, redlineId: string) => void;
   updateAcceptedRedline: (
     matterId: string,
     redlineId: string,
@@ -557,6 +559,13 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
   const getAcceptedRedlines = (matterId: string) =>
     acceptedRedlinesByMatter[matterId] || [];
 
+  const setAcceptedRedlines = (matterId: string, redlines: AcceptedRedline[]) => {
+    setAcceptedRedlinesByMatter((prev) => ({
+      ...prev,
+      [matterId]: Array.isArray(redlines) ? redlines : [],
+    }));
+  };
+
   const addAcceptedRedline = (redline: AcceptedRedline) => {
     setAcceptedRedlinesByMatter((prev) => {
       const current = prev[redline.matterId] || [];
@@ -571,6 +580,15 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
         ...prev,
         [redline.matterId]: [redline, ...current],
       };
+    });
+  };
+
+  const removeAcceptedRedline = (matterId: string, redlineId: string) => {
+    setAcceptedRedlinesByMatter((prev) => {
+      const current = prev[matterId] || [];
+      if (!current.length) return prev;
+      const next = current.filter((item) => item.id !== redlineId);
+      return { ...prev, [matterId]: next };
     });
   };
 
@@ -620,7 +638,9 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
         clearSectionRiskMaps,
         getHighRiskClauseCount,
         getAcceptedRedlines,
+        setAcceptedRedlines,
         addAcceptedRedline,
+        removeAcceptedRedline,
         updateAcceptedRedline,
         getPendingRedlineCount,
         setActiveMatterId,

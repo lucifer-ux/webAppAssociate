@@ -5,14 +5,7 @@ import "../componentStyling/ActiveResearch.css";
 import SearchBar from "./SearchBar";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { RecentResearchItem } from "./ActiveResearchPage";
-
-type ActiveResearchProps = {
-  activeSection: "matterLibrary" | "activeResearch";
-  recentResearches: RecentResearchItem[];
-  activeResearchId: string | null;
-  onRecentResearchesChange: (items: RecentResearchItem[]) => void;
-  onActiveResearchChange: (id: string | null) => void;
-};
+import { buildApiUrl } from "../lib/apiBase";
 
 type Agent1Output = {
   query_meta: {
@@ -180,6 +173,25 @@ type ResearchRecord = RecentResearchItem & {
   clarificationAnswer: string | null;
 };
 
+export type SavedResearchApiItem = {
+  id: string;
+  query: string;
+  createdAt: string;
+  intakePayload: IntakeResponse | null;
+  finalPayload: DeepResearchResponse | null;
+  selectedLaneId: string | null;
+  clarificationAnswer: string | null;
+};
+
+type ActiveResearchProps = {
+  activeSection: "matterLibrary" | "activeResearch";
+  recentResearches: RecentResearchItem[];
+  activeResearchId: string | null;
+  onRecentResearchesChange: (items: RecentResearchItem[]) => void;
+  onActiveResearchChange: (id: string | null) => void;
+  initialResearches?: SavedResearchApiItem[];
+};
+
 const THINKING_MESSAGES = {
   intake: [
     "Mapping your query to legal memory-bank domains.",
@@ -214,15 +226,25 @@ const ActiveResearch = ({
   activeResearchId,
   onRecentResearchesChange,
   onActiveResearchChange,
+  initialResearches = [],
 }: ActiveResearchProps) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const apiBaseUrl =
-    (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:4000";
-
-  const [researchRuns, setResearchRuns] = useState<ResearchRecord[]>([]);
+  const [researchRuns, setResearchRuns] = useState<ResearchRecord[]>(() =>
+    (initialResearches || []).map((item) => ({
+      id: String(item.id),
+      query: String(item.query || ""),
+      createdAt: String(item.createdAt || new Date().toISOString()),
+      intakePayload: item.intakePayload || null,
+      finalPayload: item.finalPayload || null,
+      selectedLaneId: item.selectedLaneId || null,
+      clarificationAnswer: item.clarificationAnswer || null,
+    })),
+  );
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingPhase, setLoadingPhase] = useState<"intake" | "deep" | null>(null);
+  const [loadingPhase, setLoadingPhase] = useState<"intake" | "deep" | null>(
+    null,
+  );
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
@@ -249,6 +271,51 @@ const ActiveResearch = ({
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, isLoading]);
 
+  useEffect(() => {
+    if (initialResearches.length) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          buildApiUrl("/api/researches?limit=50"),
+        );
+        const payload = (await response.json()) as {
+          success?: boolean;
+          researches?: SavedResearchApiItem[];
+        };
+        if (!response.ok || !payload?.success || !Array.isArray(payload.researches)) {
+          return;
+        }
+        if (cancelled) return;
+        const nextRuns: ResearchRecord[] = payload.researches.map((item) => ({
+          id: String(item.id),
+          query: String(item.query || ""),
+          createdAt: String(item.createdAt || new Date().toISOString()),
+          intakePayload: item.intakePayload || null,
+          finalPayload: item.finalPayload || null,
+          selectedLaneId: item.selectedLaneId || null,
+          clarificationAnswer: item.clarificationAnswer || null,
+        }));
+        setResearchRuns(nextRuns);
+        const nextRecent = nextRuns.map((item) => ({
+          id: item.id,
+          query: item.query,
+          createdAt: item.createdAt,
+        }));
+        onRecentResearchesChange(nextRecent);
+        if (!activeResearchId && nextRuns.length > 0) {
+          onActiveResearchChange(nextRuns[0].id);
+        }
+      } catch {
+        // no-op: page can still work without persisted hydrate
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeResearchId, initialResearches, onActiveResearchChange, onRecentResearchesChange]);
+
   const activeResearch = useMemo(
     () => researchRuns.find((item) => item.id === activeResearchId) || null,
     [researchRuns, activeResearchId],
@@ -273,18 +340,22 @@ const ActiveResearch = ({
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/agent/research-intent-continue`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: record.query,
-          jurisdiction: "India",
-          agent_1_output: intakePayload.agent_1_output,
-          agent_1_output_for_agent_2: intakePayload.agent_1_output_for_agent_2,
-          agent_2_output: intakePayload.agent_2_output,
-          selected_lane_id: selectedLaneId,
-        }),
-      });
+      const response = await fetch(
+        buildApiUrl("/api/agent/research-intent-continue"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: record.query,
+            jurisdiction: "India",
+            agent_1_output: intakePayload.agent_1_output,
+            agent_1_output_for_agent_2:
+              intakePayload.agent_1_output_for_agent_2,
+            agent_2_output: intakePayload.agent_2_output,
+            selected_lane_id: selectedLaneId,
+          }),
+        },
+      );
 
       const payload = (await response.json()) as DeepResearchResponse & {
         error?: string;
@@ -292,7 +363,9 @@ const ActiveResearch = ({
       };
 
       if (!response.ok || !payload?.success) {
-        setError(payload.error || payload.details || "Deep research run failed.");
+        setError(
+          payload.error || payload.details || "Deep research run failed.",
+        );
         return;
       }
 
@@ -309,27 +382,28 @@ const ActiveResearch = ({
     }
   };
 
-  const runIntake = async (
+  async function runIntake(
     query: string,
     recordId?: string,
     clarificationAnswer?: string,
-  ) => {
+  ) {
     setError("");
     setLoadingPhase("intake");
     setRunningStepIndex(0);
     setIsLoading(true);
-    let startedDeepResearch = false;
-
     try {
-      const response = await fetch(`${apiBaseUrl}/api/agent/research-intent-intake`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query,
-          jurisdiction: "India",
-          clarification_answer: clarificationAnswer || null,
-        }),
-      });
+      const response = await fetch(
+        buildApiUrl("/api/agent/research-intent-intake"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            jurisdiction: "India",
+            clarification_answer: clarificationAnswer || null,
+          }),
+        },
+      );
 
       const payload = (await response.json()) as IntakeResponse & {
         error?: string;
@@ -337,13 +411,16 @@ const ActiveResearch = ({
       };
 
       if (!response.ok || !payload?.success) {
-        setError(payload.error || payload.details || "Agent intake request failed.");
+        setError(
+          payload.error || payload.details || "Agent intake request failed.",
+        );
         return;
       }
 
       const nextSelectedLaneId =
         payload.selected_lane_id ||
         payload.agent_2_output?.recommendation?.suggested_lane ||
+        payload.agent_2_output?.lanes?.[0]?.lane_id ||
         null;
 
       if (recordId) {
@@ -373,29 +450,13 @@ const ActiveResearch = ({
         onActiveResearchChange(item.id);
         recordId = item.id;
       }
-
-      if (payload.status === "auto_proceed" && recordId && nextSelectedLaneId) {
-        startedDeepResearch = true;
-        const latestRecord: ResearchRecord = {
-          id: recordId,
-          query,
-          createdAt: new Date().toISOString(),
-          intakePayload: payload,
-          finalPayload: null,
-          selectedLaneId: nextSelectedLaneId,
-          clarificationAnswer: clarificationAnswer || null,
-        };
-        await runDeepResearch(latestRecord, payload, nextSelectedLaneId);
-      }
     } catch {
       setError("Failed to connect to discovery endpoint.");
     } finally {
-      if (!startedDeepResearch) {
-        setIsLoading(false);
-        setLoadingPhase(null);
-      }
+      setIsLoading(false);
+      setLoadingPhase(null);
     }
-  };
+  }
 
   const handleSubmitQuery = async (query: string) => {
     await runIntake(query);
@@ -415,7 +476,8 @@ const ActiveResearch = ({
   };
 
   const handleContinueResearch = async () => {
-    if (!activeResearch?.intakePayload || !activeResearch.selectedLaneId) return;
+    if (!activeResearch?.intakePayload || !activeResearch.selectedLaneId)
+      return;
     await runDeepResearch(
       activeResearch,
       activeResearch.intakePayload,
@@ -430,7 +492,7 @@ const ActiveResearch = ({
     setIsSavingResearch(true);
     try {
       const orgName = window.localStorage.getItem("orgName") || null;
-      const response = await fetch(`${apiBaseUrl}/api/researches/save`, {
+      const response = await fetch(buildApiUrl("/api/researches/save"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -449,7 +511,9 @@ const ActiveResearch = ({
         details?: string;
       };
       if (!response.ok || !payload.success) {
-        setSaveError(payload.error || payload.details || "Failed to save research.");
+        setSaveError(
+          payload.error || payload.details || "Failed to save research.",
+        );
         return;
       }
       setSaveSuccess("Research saved.");
@@ -471,8 +535,10 @@ const ActiveResearch = ({
     (item) => !isIndianKanoonUrl(item.url),
   );
   const selectedLane =
-    (agent2?.lanes || []).find((lane) => lane.lane_id === activeResearch?.selectedLaneId) ||
-    null;
+    (agent2?.lanes || []).find(
+      (lane) => lane.lane_id === activeResearch?.selectedLaneId,
+    ) || null;
+  const canShowContinueResearchButton = Boolean(activeResearch && !isLoading);
 
   return (
     <>
@@ -491,8 +557,12 @@ const ActiveResearch = ({
             >
               {isSavingResearch ? "Saving..." : "Save research"}
             </Button>
-            {saveSuccess ? <small className="researchSaveSuccess">{saveSuccess}</small> : null}
-            {saveError ? <small className="researchSaveError">{saveError}</small> : null}
+            {saveSuccess ? (
+              <small className="researchSaveSuccess">{saveSuccess}</small>
+            ) : null}
+            {saveError ? (
+              <small className="researchSaveError">{saveError}</small>
+            ) : null}
           </div>
         </div>
 
@@ -510,7 +580,10 @@ const ActiveResearch = ({
 
           {!isLoading && !error && !activeResearch && (
             <div className="emptyWorkspaceCard chatOnlyEmpty">
-              <p>Ask a legal question to run discovery, choose a lane, and continue into full research.</p>
+              <p>
+                Ask a legal question to run discovery, choose a lane, and
+                continue into full research.
+              </p>
             </div>
           )}
 
@@ -540,15 +613,17 @@ const ActiveResearch = ({
                         ))}
                       </div>
                       <ul className="authorityList">
-                        {agent1.search_results.regulatory.slice(0, 2).map((item) => (
-                          <li key={item.source_url}>
-                            <strong>{item.title}</strong>
-                            <span>
-                              {item.source_domain} · {item.reliability}
-                            </span>
-                            <p>{item.summary}</p>
-                          </li>
-                        ))}
+                        {agent1.search_results.regulatory
+                          .slice(0, 2)
+                          .map((item) => (
+                            <li key={item.source_url}>
+                              <strong>{item.title}</strong>
+                              <span>
+                                {item.source_domain} · {item.reliability}
+                              </span>
+                              <p>{item.summary}</p>
+                            </li>
+                          ))}
                         {visibleDiscoveryCases.slice(0, 2).map((item) => (
                           <li key={item.source_url}>
                             <strong>{item.title}</strong>
@@ -564,34 +639,43 @@ const ActiveResearch = ({
 
                   {agent2 && (
                     <>
-                      {agent2.clarification_required.needed_before_lane_selection ? (
+                      {agent2.clarification_required
+                        .needed_before_lane_selection ? (
                         <div className="clarificationBlock">
                           <p>
-                            {agent2.clarification_required.question || "Clarification required."}
+                            {agent2.clarification_required.question ||
+                              "Clarification required."}
                           </p>
                           {agent2.clarification_required.reason && (
-                            <small>{agent2.clarification_required.reason}</small>
+                            <small>
+                              {agent2.clarification_required.reason}
+                            </small>
                           )}
                           {agent2.clarification_required.options.length > 0 && (
                             <div className="clarificationOptionsGrid">
-                              {agent2.clarification_required.options.map((option) => (
-                                <Button
-                                  key={option}
-                                  type="button"
-                                  className="clarificationOptionCard"
-                                  onClick={() => {
-                                    void handleClarificationOption(option);
-                                  }}
-                                >
-                                  {option}
-                                </Button>
-                              ))}
+                              {agent2.clarification_required.options.map(
+                                (option) => (
+                                  <Button
+                                    key={option}
+                                    type="button"
+                                    className="clarificationOptionCard"
+                                    onClick={() => {
+                                      void handleClarificationOption(option);
+                                    }}
+                                  >
+                                    {option}
+                                  </Button>
+                                ),
+                              )}
                             </div>
                           )}
                         </div>
                       ) : (
                         <div className="clarificationBlock">
-                          <p>No blocking clarification required before lane selection.</p>
+                          <p>
+                            No blocking clarification required before lane
+                            selection.
+                          </p>
                         </div>
                       )}
 
@@ -602,7 +686,9 @@ const ActiveResearch = ({
                             key={lane.lane_id}
                             type="button"
                             className={`laneCard ${
-                              lane.lane_id === activeResearch.selectedLaneId ? "selected" : ""
+                              lane.lane_id === activeResearch.selectedLaneId
+                                ? "selected"
+                                : ""
                             }`}
                             onClick={() => handleSelectLane(lane.lane_id)}
                           >
@@ -617,23 +703,24 @@ const ActiveResearch = ({
                       </div>
                       <p>{agent2.recommendation.reason}</p>
                       <p>{agent2.what_happens_next}</p>
-                      {intake?.status === "lane_selection_required" && !finalResponse && (
-                        <div className="continueResearchRow">
-                          <Button
-                            type="button"
-                            className="continueResearchButton"
-                            onClick={() => {
-                              void handleContinueResearch();
-                            }}
-                            disabled={!activeResearch.selectedLaneId}
-                          >
-                            Continue research
-                          </Button>
-                        </div>
-                      )}
                     </>
                   )}
                 </section>
+              )}
+
+              {canShowContinueResearchButton && (
+                <div className="continueResearchRow">
+                  <Button
+                    type="button"
+                    className="continueResearchButton"
+                    onClick={() => {
+                      void handleContinueResearch();
+                    }}
+                    disabled={!activeResearch?.selectedLaneId || isLoading}
+                  >
+                    Continue research
+                  </Button>
+                </div>
               )}
 
               {selectedLane && (
@@ -644,7 +731,8 @@ const ActiveResearch = ({
                   </p>
                   <p>{selectedLane.what_this_route_argues}</p>
                   <p>
-                    {formatStrength(selectedLane.strength)} · {selectedLane.forum}
+                    {formatStrength(selectedLane.strength)} ·{" "}
+                    {selectedLane.forum}
                   </p>
                 </section>
               )}
@@ -668,15 +756,23 @@ const ActiveResearch = ({
                     <h4>Statutes and Precedents</h4>
                     <ul className="authorityList finalAuthorityList">
                       {finalResponse.key_authorities.map((authority) => (
-                        <li key={`${authority.name}-${authority.citation || authority.court || ""}`}>
+                        <li
+                          key={`${authority.name}-${authority.citation || authority.court || ""}`}
+                        >
                           <strong>{authority.name}</strong>
                           <span>
-                            {[authority.citation, authority.court, authority.relevance]
+                            {[
+                              authority.citation,
+                              authority.court,
+                              authority.relevance,
+                            ]
                               .filter(Boolean)
                               .join(" · ")}
                           </span>
                           <p>{authority.principle}</p>
-                          <p className="citationReasonText">{authority.why_cited}</p>
+                          <p className="citationReasonText">
+                            {authority.why_cited}
+                          </p>
                         </li>
                       ))}
                     </ul>
@@ -690,9 +786,13 @@ const ActiveResearch = ({
                           <a href={source.url} target="_blank" rel="noreferrer">
                             <ArrowUpRight size={16} />
                             <span>{source.name}</span>
-                            <small>{formatSourceClass(source.sourceClass)}</small>
+                            <small>
+                              {formatSourceClass(source.sourceClass)}
+                            </small>
                             {source.why_cited ? (
-                              <small className="sourceReasonText">{source.why_cited}</small>
+                              <small className="sourceReasonText">
+                                {source.why_cited}
+                              </small>
                             ) : null}
                           </a>
                         </li>

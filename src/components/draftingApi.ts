@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import type { MatterRecord } from "../context/MatterStoreContext";
+import { buildApiUrl } from "../lib/apiBase";
 
 export type AccessRole = "viewer" | "editor";
 export type ParagraphStyle =
@@ -72,9 +73,6 @@ export type PendingAnnotation = {
   type: AnnotationType;
 };
 
-const apiBaseUrl =
-  (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:4000";
-
 const buildDraftHeaders = (includeJson = true) => {
   const headers: Record<string, string> = {
     "X-User-Id": getDraftUserId(),
@@ -115,7 +113,7 @@ export const hashDraftContent = (content: JSONContent) => {
 };
 
 export const listDrafts = async () => {
-  const response = await fetch(`${apiBaseUrl}/api/drafts`, {
+  const response = await fetch(buildApiUrl("/api/drafts"), {
     headers: buildDraftHeaders(false),
   });
   const payload = await readJson<{ drafts: DraftSummary[]; success: true }>(response);
@@ -129,7 +127,7 @@ export const createDraft = async (input: {
   contentJson: JSONContent;
   context: DraftContext;
 }) => {
-  const response = await fetch(`${apiBaseUrl}/api/drafts`, {
+  const response = await fetch(buildApiUrl("/api/drafts"), {
     method: "POST",
     headers: buildDraftHeaders(),
     body: JSON.stringify(input),
@@ -139,9 +137,12 @@ export const createDraft = async (input: {
 };
 
 export const getDraft = async (draftId: string) => {
-  const response = await fetch(`${apiBaseUrl}/api/drafts/${encodeURIComponent(draftId)}`, {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}`),
+    {
     headers: buildDraftHeaders(false),
-  });
+    },
+  );
   const payload = await readJson<{ draft: DraftDetail; success: true }>(response);
   return payload.draft;
 };
@@ -150,11 +151,14 @@ export const patchDraft = async (
   draftId: string,
   input: { title?: string; context?: DraftContext },
 ) => {
-  const response = await fetch(`${apiBaseUrl}/api/drafts/${encodeURIComponent(draftId)}`, {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}`),
+    {
     method: "PATCH",
     headers: buildDraftHeaders(),
     body: JSON.stringify(input),
-  });
+    },
+  );
   const payload = await readJson<{ draft: DraftDetail; success: true }>(response);
   return payload.draft;
 };
@@ -168,7 +172,7 @@ export const saveDraft = async (input: {
 }) => {
   const { draftId, ...body } = input;
   const response = await fetch(
-    `${apiBaseUrl}/api/drafts/${encodeURIComponent(draftId)}/save`,
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/save`),
     {
       method: "POST",
       headers: buildDraftHeaders(),

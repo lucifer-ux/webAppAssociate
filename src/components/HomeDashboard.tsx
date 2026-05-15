@@ -6,6 +6,8 @@ import { ArrowUp, Cable, Paperclip } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import { useNavigate } from "react-router-dom";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
+import type { SavedResearchApiItem } from "./ActiveResearch";
+import { buildApiUrl } from "../lib/apiBase";
 
 type GmailTopEmailsResponse = {
   success: boolean;
@@ -26,8 +28,6 @@ type GmailErrorResponse = {
 
 const HomeDashboard = () => {
   const navigate = useNavigate();
-  const apiBaseUrl =
-    (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:4000";
   const [isFetchingEmails, setIsFetchingEmails] = useState(false);
   const [emails, setEmails] = useState<GmailTopEmailsResponse["emails"]>([]);
   const [emailError, setEmailError] = useState<string>("");
@@ -35,6 +35,7 @@ const HomeDashboard = () => {
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
   const [draftInput, setDraftInput] = useState("");
+  const [savedResearches, setSavedResearches] = useState<SavedResearchApiItem[]>([]);
   const [currentTime, setCurrentTime] = useState(() =>
     new Date().toLocaleTimeString("en-IN", {
       hour: "2-digit",
@@ -60,6 +61,29 @@ const HomeDashboard = () => {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(buildApiUrl("/api/researches?limit=12"));
+        const payload = (await response.json()) as {
+          success?: boolean;
+          researches?: SavedResearchApiItem[];
+        };
+        if (!response.ok || !payload?.success || !Array.isArray(payload.researches)) {
+          return;
+        }
+        if (cancelled) return;
+        setSavedResearches(payload.researches);
+      } catch {
+        // no-op
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const latestEmails = useMemo(() => emails.slice(0, 2), [emails]);
 
   const handleQuickResearchSubmit = () => {
@@ -68,6 +92,7 @@ const HomeDashboard = () => {
     navigate("/dashboard/active-research", {
       state: {
         autoResearchQuery: trimmedQuery,
+        preloadedResearches: savedResearches,
       },
     });
     setDraftInput("");
@@ -86,7 +111,7 @@ const HomeDashboard = () => {
     setEmailError("");
 
     try {
-      const res = await fetch(`${apiBaseUrl}/api/gmail/emails`, {
+      const res = await fetch(buildApiUrl("/api/gmail/emails"), {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -232,10 +257,37 @@ const HomeDashboard = () => {
               <h2>Active Researches</h2>
             </div>
             <div className="activeResearchesGrid">
+              {savedResearches.slice(0, 3).map((research) => (
+                <Button
+                  key={research.id}
+                  type="button"
+                  className="researchDemoCard savedResearchCard"
+                  onClick={() =>
+                    navigate("/dashboard/active-research", {
+                      state: {
+                        preloadedResearches: savedResearches,
+                        initialActiveResearchId: research.id,
+                      },
+                    })
+                  }
+                >
+                  <h3>{research.query}</h3>
+                  <p>
+                    Open this saved research in Active Research and continue from
+                    where you left.
+                  </p>
+                </Button>
+              ))}
               <Button
                 type="button"
                 className="researchDemoCard startNew"
-                onClick={() => navigate("/dashboard/active-research")}
+                onClick={() =>
+                  navigate("/dashboard/active-research", {
+                    state: {
+                      preloadedResearches: savedResearches,
+                    },
+                  })
+                }
               >
                 <span className="startNewPlus">+</span>
                 <span className="startNewHint">Start a new research</span>

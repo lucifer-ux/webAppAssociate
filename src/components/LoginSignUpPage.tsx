@@ -2,6 +2,7 @@ import "../componentStyling/LoginSignUpPage.css";
 import Button from "./Button";
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { buildApiUrl } from "../lib/apiBase";
 
 const LoginSignUpPage = () => {
   const navigate = useNavigate();
@@ -25,8 +26,7 @@ const LoginSignUpPage = () => {
   };
 
   const handleGoogleLogin = () => {
-    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:4000";
-    window.location.href = `${apiBaseUrl}/auth/google`;
+    window.location.href = buildApiUrl("/auth/google");
   };
 
   const handleSsoLogin = () => {

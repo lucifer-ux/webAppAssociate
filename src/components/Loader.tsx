@@ -6,19 +6,37 @@ type LoaderProps = {
   progress?: number;
   stage?: string;
   steps?: string[];
+  eyebrow?: string;
+  title?: string;
+  mode?: "overlay" | "inline";
 };
 
-const Loader = ({ fileName, message, progress = 0, stage, steps = [] }: LoaderProps) => {
+const Loader = ({
+  fileName,
+  message,
+  progress = 0,
+  stage,
+  steps = [],
+  eyebrow = "Matter Upload",
+  title = "Processing Matter",
+  mode = "overlay",
+}: LoaderProps) => {
   const visibleSteps = steps.length
     ? steps.slice(-4)
     : [stage || "Queued matter ingestion"];
 
   return (
-    <div className="matterUploadLoader" role="status" aria-live="polite">
+    <div
+      className={`matterUploadLoader ${
+        mode === "inline" ? "matterUploadLoaderInline" : ""
+      }`}
+      role="status"
+      aria-live="polite"
+    >
       <div className="matterUploadLoaderFrame">
         <section className="matterUploadLoaderContent">
-          <p className="matterUploadLoaderEyebrow">Matter Upload</p>
-          <h2>Processing Matter</h2>
+          <p className="matterUploadLoaderEyebrow">{eyebrow}</p>
+          <h2>{title}</h2>
           <p className="matterUploadLoaderLead">
             {message ||
               "Preparing your matter workspace. This usually takes a moment."}

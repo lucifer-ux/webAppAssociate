@@ -32,6 +32,8 @@ import {
   type ObligationMapResult,
   type SectionRiskMapResult,
 } from "../context/MatterStoreContext";
+import Loader from "./Loader";
+import { buildApiUrl } from "../lib/apiBase";
 
 const formatUploadedAt = (value: string) => {
   const parsed = new Date(value);
@@ -207,7 +209,9 @@ const MatterSection = ({
     setSectionRiskMap,
     clearSectionRiskMaps,
     getAcceptedRedlines,
+    setAcceptedRedlines,
     addAcceptedRedline,
+    removeAcceptedRedline,
     updateAcceptedRedline,
     deleteMatter,
   } = useMatterStore();
@@ -231,9 +235,6 @@ const MatterSection = ({
   >({});
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
-  const apiBaseUrl =
-    (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:4000";
-
   const people = activeMatter?.people || [];
   const pages = activeMatter?.pageAwareStructure.pages || [];
   const clauseSections = activeMatter?.pageAwareStructure.sections || [];
@@ -480,6 +481,35 @@ const MatterSection = ({
     [activeMatter?.id, getAcceptedRedlines],
   );
 
+  useEffect(() => {
+    if (!activeMatter) return;
+    let cancelled = false;
+    const loadAcceptedRedlines = async () => {
+      try {
+        const response = await fetch(
+          buildApiUrl(
+            `/api/matters/${encodeURIComponent(activeMatter.id)}/redlines/accepted`,
+          ),
+        );
+        const payload = (await response.json()) as {
+          success?: boolean;
+          redlines?: AcceptedRedline[];
+        };
+        if (cancelled || !response.ok || !payload?.success) return;
+        setAcceptedRedlines(
+          activeMatter.id,
+          Array.isArray(payload.redlines) ? payload.redlines : [],
+        );
+      } catch {
+        // ignore loading failures
+      }
+    };
+    void loadAcceptedRedlines();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMatter?.id, setAcceptedRedlines]);
+
   const toWordTokens = (value: string) =>
     value.match(/(\s+|[^\s]+)/g) || [];
 
@@ -575,7 +605,9 @@ const MatterSection = ({
     const pollForFields = async () => {
       try {
         const response = await fetch(
-          `${apiBaseUrl}/api/matters/jobs/${encodeURIComponent(activeMatter.job_id)}`,
+          buildApiUrl(
+            `/api/matters/jobs/${encodeURIComponent(activeMatter.job_id)}`,
+          ),
         );
         const payload = (await response.json()) as {
           success?: boolean;
@@ -612,7 +644,6 @@ const MatterSection = ({
   }, [
     activeMatter?.extractedFieldsStatus,
     activeMatter?.job_id,
-    apiBaseUrl,
     updateMatter,
   ]);
 
@@ -675,7 +706,7 @@ const MatterSection = ({
     setObligationMapError("");
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/matters/obligations/map`, {
+      const response = await fetch(buildApiUrl("/api/matters/obligations/map"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -760,7 +791,7 @@ const MatterSection = ({
     }));
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/matters/sections/risk-map`, {
+      const response = await fetch(buildApiUrl("/api/matters/sections/risk-map"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -865,7 +896,7 @@ const MatterSection = ({
     setIsDeletingMatter(true);
     try {
       const response = await fetch(
-        `${apiBaseUrl}/api/matters/${encodeURIComponent(activeMatter.id)}`,
+        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}`),
         { method: "DELETE" },
       );
       const payload = (await response.json()) as {
@@ -934,7 +965,7 @@ const MatterSection = ({
     setRedlineErrorByKey((prev) => ({ ...prev, [requestKey]: "" }));
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/matters/clauses/redline`, {
+      const response = await fetch(buildApiUrl("/api/matters/clauses/redline"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1007,7 +1038,7 @@ const MatterSection = ({
     const resolvedText =
       (activeClauseKey && redlineTextDraftByKey[activeClauseKey]?.trim()) ||
       activeSuggestion.rewrittenText;
-    addAcceptedRedline({
+    const payload: AcceptedRedline = {
       id: `redline_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
       matterId: activeMatter.id,
       clauseId: activeClause.clause_id,
@@ -1020,7 +1051,76 @@ const MatterSection = ({
       originalText: activeClause.display_text,
       rewrittenText: resolvedText,
       acceptedAt: new Date().toISOString(),
-    });
+    };
+
+    void (async () => {
+      try {
+        const response = await fetch(
+          buildApiUrl(
+            `/api/matters/${encodeURIComponent(activeMatter.id)}/redlines/accepted`,
+          ),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        const result = (await response.json()) as {
+          success?: boolean;
+          redline?: AcceptedRedline;
+          duplicate?: boolean;
+        };
+        if (!response.ok || !result?.success || !result.redline) {
+          addAcceptedRedline(payload);
+          return;
+        }
+        addAcceptedRedline(result.redline);
+        if (result.duplicate) {
+          window.alert("This redline is already added to the playbook.");
+        }
+      } catch {
+        addAcceptedRedline(payload);
+      }
+    })();
+  };
+
+  const patchAcceptedRedlineRemote = async (
+    redlineId: string,
+    patch: Partial<Pick<AcceptedRedline, "title" | "rewrittenText">>,
+  ) => {
+    if (!activeMatter) return;
+    try {
+      await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/redlines/accepted/${encodeURIComponent(redlineId)}`,
+        ),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      );
+    } catch {
+      // no-op: local state already updated
+    }
+  };
+
+  const deleteAcceptedRedlineRemote = async (redlineId: string) => {
+    if (!activeMatter) return;
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/redlines/accepted/${encodeURIComponent(redlineId)}`,
+        ),
+        {
+          method: "DELETE",
+        },
+      );
+      if (!response.ok) return;
+      removeAcceptedRedline(activeMatter.id, redlineId);
+    } catch {
+      // no-op
+    }
   };
 
   const handleJumpToClauseSection = () => {
@@ -1084,6 +1184,15 @@ const MatterSection = ({
 
     return { ippb, serviceProvider };
   }, [obligationMapResult]);
+  const obligationLoaderSteps = useMemo(() => {
+    if (!obligationClauseSources.length) return ["Preparing obligations mapper"];
+    return [
+      `Reading ${obligationClauseSources.length} clause summaries`,
+      "Classifying obligation ownership",
+      "Balancing IPPB and Service Provider obligations",
+      "Publishing mapper results",
+    ];
+  }, [obligationClauseSources.length]);
   const activeDraftTitle =
     (activeClauseKey && redlineTitleDraftByKey[activeClauseKey]) ||
     (activeClause
@@ -1850,9 +1959,16 @@ const MatterSection = ({
           </div>
 
           {obligationMapStatus === "loading" ? (
-            <p className="matterObligationState">
-              Mapping obligations from clause summaries...
-            </p>
+            <Loader
+              mode="inline"
+              eyebrow="Obligation Mapper"
+              title="Mapping Obligations"
+              fileName={activeMatter?.fileName || "Current matter"}
+              message="Classifying clause summaries and building obligation balance."
+              stage="Analyzing obligation allocation"
+              progress={62}
+              steps={obligationLoaderSteps}
+            />
           ) : obligationMapStatus === "error" ? (
             <div className="matterObligationState">
               <p>{obligationMapError || "Obligation mapping failed."}</p>
@@ -1991,6 +2107,7 @@ const MatterSection = ({
               {acceptedRedlines.map((item: AcceptedRedline) => (
                 <article className="matterPlaybookItem" key={item.id}>
                   <header>
+                    <div className="matterPlaybookHeaderRow">
                     <input
                       className="matterPlaybookTitleInput"
                       value={item.title || item.clauseHeading}
@@ -2000,7 +2117,28 @@ const MatterSection = ({
                           title: event.target.value,
                         })
                       }
+                      onBlur={() => {
+                        void patchAcceptedRedlineRemote(item.id, {
+                          title: item.title || item.clauseHeading,
+                        });
+                      }}
                     />
+                    <Button
+                      type="button"
+                      className="matterPlaybookDeleteButton"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "Delete this accepted redline from playbook?",
+                          )
+                        ) {
+                          void deleteAcceptedRedlineRemote(item.id);
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                    </div>
                     <span>
                       {item.position} ·{" "}
                       {item.representedParty === "ippb"
@@ -2034,6 +2172,11 @@ const MatterSection = ({
                           rewrittenText: event.target.value,
                         })
                       }
+                      onBlur={() => {
+                        void patchAcceptedRedlineRemote(item.id, {
+                          rewrittenText: item.rewrittenText,
+                        });
+                      }}
                     />
                   </div>
                 </article>

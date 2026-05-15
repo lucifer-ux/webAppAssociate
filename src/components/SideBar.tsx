@@ -11,6 +11,7 @@ import {
   type MatterProcessedResult,
 } from "../context/MatterStoreContext";
 import { listDrafts, type DraftSummary } from "./draftingApi";
+import { buildApiUrl } from "../lib/apiBase";
 
 export type RecentMatterItem = {
   id: string;
@@ -88,8 +89,6 @@ const SideBar = ({
   const navigate = useNavigate();
   const location = useLocation();
   const uploaderRef = useRef<HTMLInputElement | null>(null);
-  const apiBaseUrl =
-    (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:4000";
   const isDraftingRoute =
     location.pathname === "/dashboard/drafting" || location.pathname === "/drafting";
   const isActiveResearchRoute =
@@ -173,7 +172,7 @@ const SideBar = ({
 
     const loadStoredMatters = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/api/matters`);
+        const response = await fetch(buildApiUrl("/api/matters"));
         const payload = (await response.json()) as {
           success?: boolean;
           matters?: MatterProcessedResult[];
@@ -191,7 +190,7 @@ const SideBar = ({
     return () => {
       cancelled = true;
     };
-  }, [apiBaseUrl]);
+  }, [setMattersFromServer]);
 
   useEffect(() => {
     if (!showDraftSection) return;
@@ -216,7 +215,7 @@ const SideBar = ({
     for (let attempt = 0; attempt < 180; attempt += 1) {
       await sleep(1500);
       const response = await fetch(
-        `${apiBaseUrl}/api/matters/jobs/${encodeURIComponent(jobId)}`,
+        buildApiUrl(`/api/matters/jobs/${encodeURIComponent(jobId)}`),
       );
       const payload = (await response.json()) as MatterJobStatusResponse;
       updateLoaderStage(payload.stage, payload.progress);
@@ -284,7 +283,7 @@ const SideBar = ({
       const formData = new FormData();
       formData.append("matter", file);
 
-      const response = await fetch(`${apiBaseUrl}/api/matters/upload`, {
+      const response = await fetch(buildApiUrl("/api/matters/upload"), {
         method: "POST",
         body: formData,
       });

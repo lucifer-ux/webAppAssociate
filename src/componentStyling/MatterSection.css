@@ -1264,7 +1264,7 @@
   box-shadow: none;
   padding: 16px;
   overflow: auto;
-  z-index: 55;
+  z-index: 120;
   transform: translateX(112%);
   opacity: 0;
   pointer-events: none;
@@ -1286,7 +1286,7 @@
 }
 
 .matterPlaybookPanel {
-  z-index: 56;
+  z-index: 121;
 }
 
 .matterObligationPanelHead {
@@ -1492,6 +1492,12 @@
   gap: 4px;
 }
 
+.matterPlaybookHeaderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .matterPlaybookItem header strong {
   font-family: "Fraunces", serif;
   font-size: 18px;
@@ -1499,6 +1505,7 @@
 }
 
 .matterPlaybookTitleInput {
+  flex: 1;
   border: 1px solid #dfcebf;
   border-radius: 8px;
   background: #fff;
@@ -1506,6 +1513,21 @@
   font-family: "Fraunces", serif;
   font-size: 18px;
   color: #2a1c1a;
+}
+
+.matterPlaybookDeleteButton {
+  border: 1px solid #e0c1b1;
+  background: #fff3ee;
+  color: #8f3a2d;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.matterPlaybookDeleteButton:hover {
+  border-color: #cc8a75;
+  background: #ffe8df;
 }
 
 .matterPlaybookItem header span,

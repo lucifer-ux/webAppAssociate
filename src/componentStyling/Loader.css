@@ -13,6 +13,39 @@
   backdrop-filter: blur(8px);
 }
 
+.matterUploadLoaderInline {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderFrame {
+  width: 100%;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderContent {
+  max-width: none;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderContent h2 {
+  font-size: clamp(28px, 2vw, 34px);
+}
+
+.matterUploadLoaderInline .matterUploadLoaderLead {
+  font-size: 18px;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderPreview {
+  display: none;
+}
+
 .matterUploadLoaderFrame {
   width: min(1160px, 100%);
   display: grid;

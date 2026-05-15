@@ -1,11 +1,13 @@
 import "../componentStyling/HomeDashboardStyling.css";
 import Button from "./Button";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BookOpen, FilePlus2, ShieldCheck } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import SideBar from "./SideBar";
 import ActiveResearch from "./ActiveResearch";
+import type { SavedResearchApiItem } from "./ActiveResearch";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
+import { useLocation } from "react-router-dom";
 
 export type RecentResearchItem = {
   id: string;
@@ -14,10 +16,38 @@ export type RecentResearchItem = {
 };
 
 const ActiveResearchPage = () => {
+  const location = useLocation();
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
-  const [recentResearches, setRecentResearches] = useState<RecentResearchItem[]>([]);
-  const [activeResearchId, setActiveResearchId] = useState<string | null>(null);
+  const navState = useMemo(
+    () =>
+      (location.state as
+        | {
+            preloadedResearches?: Array<{
+              id: SavedResearchApiItem["id"];
+              query: SavedResearchApiItem["query"];
+              createdAt: SavedResearchApiItem["createdAt"];
+              intakePayload: SavedResearchApiItem["intakePayload"];
+              finalPayload: SavedResearchApiItem["finalPayload"];
+              selectedLaneId: SavedResearchApiItem["selectedLaneId"];
+              clarificationAnswer: SavedResearchApiItem["clarificationAnswer"];
+            }>;
+            initialActiveResearchId?: string | null;
+          }
+        | null) || null,
+    [location.state],
+  );
+  const [recentResearches, setRecentResearches] = useState<RecentResearchItem[]>(
+    () =>
+      (navState?.preloadedResearches || []).map((item) => ({
+        id: item.id,
+        query: item.query,
+        createdAt: item.createdAt,
+      })),
+  );
+  const [activeResearchId, setActiveResearchId] = useState<string | null>(
+    () => navState?.initialActiveResearchId || navState?.preloadedResearches?.[0]?.id || null,
+  );
 
   return (
     <div className="homeDashPage">
@@ -58,6 +88,7 @@ const ActiveResearchPage = () => {
           activeResearchId={activeResearchId}
           onRecentResearchesChange={setRecentResearches}
           onActiveResearchChange={setActiveResearchId}
+          initialResearches={(navState?.preloadedResearches || []) as SavedResearchApiItem[]}
         />
       </main>
     </div>
