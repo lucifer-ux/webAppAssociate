@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 import type { SavedResearchApiItem } from "./ActiveResearch";
 import { buildApiUrl } from "../lib/apiBase";
+import Loader from "./Loader";
 
 type GmailTopEmailsResponse = {
   success: boolean;
@@ -28,6 +29,9 @@ type GmailErrorResponse = {
 
 const HomeDashboard = () => {
   const navigate = useNavigate();
+  const [isWarmingBackend, setIsWarmingBackend] = useState(true);
+  const [warmupProgress, setWarmupProgress] = useState(0);
+  const [warmupStage, setWarmupStage] = useState("Waking backend service");
   const [isFetchingEmails, setIsFetchingEmails] = useState(false);
   const [emails, setEmails] = useState<GmailTopEmailsResponse["emails"]>([]);
   const [emailError, setEmailError] = useState<string>("");
@@ -44,6 +48,57 @@ const HomeDashboard = () => {
       timeZoneName: "short",
     }),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const start = Date.now();
+    const maxWarmupMs = 60_000;
+    const pollEveryMs = 4_000;
+
+    const progressTimer = window.setInterval(() => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(100, (elapsed / maxWarmupMs) * 100);
+      if (!cancelled) {
+        setWarmupProgress(progress);
+      }
+      if (elapsed >= maxWarmupMs) {
+        if (!cancelled) {
+          setWarmupStage("Warm-up timeout reached, continuing");
+          setIsWarmingBackend(false);
+        }
+        window.clearInterval(progressTimer);
+      }
+    }, 500);
+
+    const pollHealth = async () => {
+      while (!cancelled) {
+        try {
+          const response = await fetch(buildApiUrl("/health"));
+          if (response.ok) {
+            if (!cancelled) {
+              setWarmupProgress(100);
+              setWarmupStage("Backend ready");
+              setIsWarmingBackend(false);
+            }
+            break;
+          }
+        } catch {
+          // Keep polling while backend wakes up.
+        }
+        const elapsed = Date.now() - start;
+        if (elapsed >= maxWarmupMs) break;
+        await new Promise((resolve) => window.setTimeout(resolve, pollEveryMs));
+      }
+      window.clearInterval(progressTimer);
+    };
+
+    void pollHealth();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(progressTimer);
+    };
+  }, []);
 
   useEffect(() => {
     const tick = () =>
@@ -149,6 +204,23 @@ const HomeDashboard = () => {
       setIsFetchingEmails(false);
     }
   };
+
+  if (isWarmingBackend) {
+    return (
+      <Loader
+        eyebrow="Backend Warm-up"
+        title="Preparing Dashboard"
+        message="Render free-tier instance is waking up. This can take up to 60 seconds."
+        stage={warmupStage}
+        progress={warmupProgress}
+        steps={[
+          "Calling /health on backend",
+          "Waiting for Render instance to scale up",
+          "Initializing dashboard services",
+        ]}
+      />
+    );
+  }
 
   return (
     <div className="homeDashPage">
