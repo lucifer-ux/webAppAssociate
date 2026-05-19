@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -15,12 +16,9 @@ import {
   ChevronDown,
   ChevronRight,
   FilePenLine,
-  FileText,
   FolderOpen,
   Plus,
-  Scale,
   ShieldCheck,
-  SplitSquareHorizontal,
   X,
 } from "lucide-react";
 import {
@@ -48,6 +46,24 @@ const formatUploadedAt = (value: string) => {
     timeZone: "Asia/Kolkata",
   });
 };
+
+type MatterLoaderState = {
+  stage: string;
+  progress: number;
+  history: string[];
+};
+
+const sleep = (ms: number) =>
+  new Promise((resolve) => window.setTimeout(resolve, ms));
+
+class MatterPollingTimeoutError extends Error {
+  jobId: string;
+
+  constructor(jobId: string) {
+    super("Matter ingestion is still running. Refresh shortly to see the new files.");
+    this.jobId = jobId;
+  }
+}
 
 const renderHighlightedText = (
   text: string,
@@ -214,11 +230,21 @@ const MatterSection = ({
     removeAcceptedRedline,
     updateAcceptedRedline,
     deleteMatter,
+    markMatterJobExpired,
+    setMattersFromServer,
   } = useMatterStore();
   const [isPeopleDialogOpen, setIsPeopleDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingMatter, setIsDeletingMatter] = useState(false);
+  const [isAppendingMatterFiles, setIsAppendingMatterFiles] = useState(false);
+  const [appendingFileName, setAppendingFileName] = useState("");
+  const [matterAppendLoaderState, setMatterAppendLoaderState] =
+    useState<MatterLoaderState>({
+      stage: "Queued additional matter files",
+      progress: 5,
+      history: ["Queued additional matter files"],
+    });
   const [personName, setPersonName] = useState("");
   const [personRole, setPersonRole] = useState("");
   const [personDescription, setPersonDescription] = useState("");
@@ -228,16 +254,18 @@ const MatterSection = ({
   } | null>(null);
   const [isClauseJumpPanelCollapsed, setIsClauseJumpPanelCollapsed] =
     useState(false);
-  const [isClauseJumpPanelVisible, setIsClauseJumpPanelVisible] = useState(false);
+  const [isClauseJumpPanelVisible, setIsClauseJumpPanelVisible] =
+    useState(false);
   const [isPageAwareOpen, setIsPageAwareOpen] = useState(true);
+  const appendFilesInputRef = useRef<HTMLInputElement | null>(null);
   const [openClauseSections, setOpenClauseSections] = useState<
     Record<string, boolean>
   >({});
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const people = activeMatter?.people || [];
-  const pages = activeMatter?.pageAwareStructure.pages || [];
-  const clauseSections = activeMatter?.pageAwareStructure.sections || [];
+  const pages = activeMatter?.pageAwareStructure?.pages || [];
+  const clauseSections = activeMatter?.pageAwareStructure?.sections || [];
 
   const totalBlockCount = useMemo(
     () => pages.reduce((count, page) => count + page.blocks.length, 0),
@@ -401,6 +429,14 @@ const MatterSection = ({
     });
     return sources;
   }, [clauseSections]);
+  const visibleClauseSections = useMemo(
+    () =>
+      clauseSections.filter(
+        (section) =>
+          section.extraction_status === "ready" && section.clauses.length > 0,
+      ),
+    [clauseSections],
+  );
 
   const obligationClauseById = useMemo(() => {
     const map = new Map<string, ObligationClauseSource>();
@@ -413,7 +449,10 @@ const MatterSection = ({
     const map = new Map<string, SectionRiskMapResult>();
     if (!activeMatter) return map;
     clauseSections.forEach((section) => {
-      const sectionRisk = getSectionRiskMap(activeMatter.id, section.section_id);
+      const sectionRisk = getSectionRiskMap(
+        activeMatter.id,
+        section.section_id,
+      );
       if (sectionRisk) map.set(section.section_id, sectionRisk);
     });
     return map;
@@ -508,10 +547,9 @@ const MatterSection = ({
     return () => {
       cancelled = true;
     };
-  }, [activeMatter?.id, setAcceptedRedlines]);
+  }, [activeMatter?.id]);
 
-  const toWordTokens = (value: string) =>
-    value.match(/(\s+|[^\s]+)/g) || [];
+  const toWordTokens = (value: string) => value.match(/(\s+|[^\s]+)/g) || [];
 
   const buildClauseDiff = (originalText: string, rewrittenText: string) => {
     const a = toWordTokens(originalText);
@@ -581,21 +619,52 @@ const MatterSection = ({
     activeClauseKey && redlineErrorByKey[activeClauseKey]
       ? redlineErrorByKey[activeClauseKey]
       : "";
-  const activeRedlineLoading =
-    !!(activeClauseKey && redlineLoadingByKey[activeClauseKey]);
+  const activeRedlineLoading = !!(
+    activeClauseKey && redlineLoadingByKey[activeClauseKey]
+  );
   const activeAcceptedCount =
     activeMatter && activeClauseId
-      ? acceptedRedlines.filter((item) => item.clauseId === activeClauseId).length
+      ? acceptedRedlines.filter((item) => item.clauseId === activeClauseId)
+          .length
       : 0;
   const activeDiff = useMemo(() => {
     if (!activeClause || !activeSuggestion?.rewrittenText) return [];
-    return buildClauseDiff(activeClause.display_text, activeSuggestion.rewrittenText);
+    return buildClauseDiff(
+      activeClause.display_text,
+      activeSuggestion.rewrittenText,
+    );
   }, [activeClause?.clause_id, activeSuggestion?.rewrittenText]);
 
   useEffect(() => {
+    if (!activeMatter || !visibleClauseSections.length) return;
+
+    const firstSection = visibleClauseSections[0];
+    const firstClause = firstSection.clauses[0];
+    if (!firstClause) return;
+
+    setIsPageAwareOpen(true);
+    setOpenClauseSections(() => {
+      const next: Record<string, boolean> = {};
+      visibleClauseSections.forEach((section, index) => {
+        next[`${activeMatter.id}:${section.section_id}`] = index === 0;
+      });
+      return next;
+    });
+    setActiveClauseSelection({
+      matterId: activeMatter.id,
+      clauseId: firstClause.clause_id,
+    });
+  }, [activeMatter?.id, visibleClauseSections]);
+
+  useEffect(() => {
+    const shouldPollIntelligence =
+      activeMatter?.intelligence_statuses?.brief_generation === "processing" ||
+      activeMatter?.intelligence_statuses?.brief_verification === "processing" ||
+      activeMatter?.intelligence_statuses?.next_step_planner === "processing";
     if (
       !activeMatter?.job_id ||
-      activeMatter.extractedFieldsStatus !== "processing"
+      (activeMatter.extractedFieldsStatus !== "processing" &&
+        !shouldPollIntelligence)
     ) {
       return;
     }
@@ -612,27 +681,34 @@ const MatterSection = ({
         const payload = (await response.json()) as {
           success?: boolean;
           result?: MatterProcessedResult | null;
+          error?: string;
         };
 
-        if (!cancelled && payload.success && payload.result) {
+        if (!response.ok || !payload.success) {
+          if (!cancelled) {
+            markMatterJobExpired(activeMatter.id);
+          }
+          return;
+        }
+
+        if (!cancelled && payload.result) {
           updateMatter(payload.result);
         }
 
-        if (
-          !cancelled &&
-          payload.success &&
-          payload.result?.extracted_fields_status === "processing"
-        ) {
+        const nextResult = payload.result;
+        const shouldContinue =
+          nextResult?.extracted_fields_status === "processing" ||
+          nextResult?.matter?.intelligence_statuses?.brief_generation === "processing" ||
+          nextResult?.matter?.intelligence_statuses?.brief_verification === "processing" ||
+          nextResult?.matter?.intelligence_statuses?.next_step_planner === "processing";
+
+        if (!cancelled && shouldContinue) {
           window.setTimeout(() => {
             void pollForFields();
           }, 2000);
         }
       } catch {
-        if (!cancelled) {
-          window.setTimeout(() => {
-            void pollForFields();
-          }, 3000);
-        }
+        if (!cancelled) markMatterJobExpired(activeMatter.id);
       }
     };
 
@@ -644,6 +720,11 @@ const MatterSection = ({
   }, [
     activeMatter?.extractedFieldsStatus,
     activeMatter?.job_id,
+    activeMatter?.intelligence_statuses?.brief_generation,
+    activeMatter?.intelligence_statuses?.brief_verification,
+    activeMatter?.intelligence_statuses?.next_step_planner,
+    activeMatter?.id,
+    markMatterJobExpired,
     updateMatter,
   ]);
 
@@ -706,25 +787,28 @@ const MatterSection = ({
     setObligationMapError("");
 
     try {
-      const response = await fetch(buildApiUrl("/api/matters/obligations/map"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          matter_id: activeMatter.id,
-          version_fingerprint: activeMatter.versionFingerprint,
-          clauses: obligationClauseSources.map((source) => ({
-            clause_id: source.clause_id,
-            heading: source.heading,
-            display_text: source.display_text,
-            section_id: source.section_id,
-            section_label: source.section_label,
-            page_start: source.page_start,
-            page_end: source.page_end,
-            source_page: source.source_page,
-            source_block_id: source.source_block_id,
-          })),
-        }),
-      });
+      const response = await fetch(
+        buildApiUrl("/api/matters/obligations/map"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matter_id: activeMatter.id,
+            version_fingerprint: activeMatter.versionFingerprint,
+            clauses: obligationClauseSources.map((source) => ({
+              clause_id: source.clause_id,
+              heading: source.heading,
+              display_text: source.display_text,
+              section_id: source.section_id,
+              section_label: source.section_label,
+              page_start: source.page_start,
+              page_end: source.page_end,
+              source_page: source.source_page,
+              source_block_id: source.source_block_id,
+            })),
+          }),
+        },
+      );
 
       const payload = (await response.json()) as
         | ({ success: true } & ObligationMapResult)
@@ -770,10 +854,14 @@ const MatterSection = ({
 
   const fetchSectionRiskMap = async (section: ClauseSection) => {
     if (!activeMatter) return;
-    if (section.extraction_status !== "ready" || !section.clauses.length) return;
+    if (section.extraction_status !== "ready" || !section.clauses.length)
+      return;
 
     const cached = getSectionRiskMap(activeMatter.id, section.section_id);
-    if (cached && cached.version_fingerprint === activeMatter.versionFingerprint) {
+    if (
+      cached &&
+      cached.version_fingerprint === activeMatter.versionFingerprint
+    ) {
       setSectionRiskStatusById((prev) => ({
         ...prev,
         [section.section_id]: "ready",
@@ -791,21 +879,24 @@ const MatterSection = ({
     }));
 
     try {
-      const response = await fetch(buildApiUrl("/api/matters/sections/risk-map"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          matter_id: activeMatter.id,
-          version_fingerprint: activeMatter.versionFingerprint,
-          section_id: section.section_id,
-          section_label: section.section_label,
-          clauses: section.clauses.map((clause) => ({
-            clause_id: clause.clause_id,
-            heading: clause.heading,
-            display_text: clause.display_text,
-          })),
-        }),
-      });
+      const response = await fetch(
+        buildApiUrl("/api/matters/sections/risk-map"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matter_id: activeMatter.id,
+            version_fingerprint: activeMatter.versionFingerprint,
+            section_id: section.section_id,
+            section_label: section.section_label,
+            clauses: section.clauses.map((clause) => ({
+              clause_id: clause.clause_id,
+              heading: clause.heading,
+              display_text: clause.display_text,
+            })),
+          }),
+        },
+      );
 
       const payload = (await response.json()) as
         | ({ success: true } & SectionRiskMapResult)
@@ -855,7 +946,8 @@ const MatterSection = ({
   const runQuickRiskAnalysis = async () => {
     if (!activeMatter) return;
     const sections = clauseSections.filter(
-      (section) => section.extraction_status === "ready" && section.clauses.length,
+      (section) =>
+        section.extraction_status === "ready" && section.clauses.length,
     );
     if (!sections.length) return;
 
@@ -878,6 +970,68 @@ const MatterSection = ({
     setPersonDescription("");
   };
 
+  const updateAppendLoaderStage = (stage?: string, progress?: number) => {
+    if (!stage && typeof progress !== "number") return;
+
+    setMatterAppendLoaderState((current) => {
+      const nextStage = stage || current.stage;
+      const nextHistory =
+        nextStage && current.history[current.history.length - 1] !== nextStage
+          ? [...current.history, nextStage]
+          : current.history;
+
+      return {
+        stage: nextStage,
+        progress: typeof progress === "number" ? progress : current.progress,
+        history: nextHistory,
+      };
+    });
+  };
+
+  const refreshStoredMatters = async () => {
+    const response = await fetch(buildApiUrl("/api/matters"));
+    const payload = (await response.json()) as {
+      success?: boolean;
+      matters?: MatterProcessedResult[];
+    };
+    if (response.ok && payload?.success && Array.isArray(payload.matters)) {
+      setMattersFromServer(payload.matters);
+    }
+  };
+
+  const pollMatterJob = async (jobId: string) => {
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      await sleep(1500);
+      const response = await fetch(
+        buildApiUrl(`/api/matters/jobs/${encodeURIComponent(jobId)}`),
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        status?: "processing" | "processed" | "failed";
+        stage?: string;
+        progress?: number;
+        result?: MatterProcessedResult | null;
+        error?: string | null;
+      };
+
+      updateAppendLoaderStage(payload.stage, payload.progress);
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || "Matter ingestion status check failed.");
+      }
+
+      if (payload.status === "failed") {
+        throw new Error(payload.error || "Matter ingestion failed.");
+      }
+
+      if (payload.status === "processed" && payload.result) {
+        return payload.result;
+      }
+    }
+
+    throw new MatterPollingTimeoutError(jobId);
+  };
+
   const handleAddPerson = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!activeMatter || !personName.trim()) return;
@@ -892,7 +1046,8 @@ const MatterSection = ({
   };
 
   const handleDeleteMatter = async () => {
-    if (!activeMatter || deleteConfirmText !== "DELETE" || isDeletingMatter) return;
+    if (!activeMatter || deleteConfirmText !== "DELETE" || isDeletingMatter)
+      return;
     setIsDeletingMatter(true);
     try {
       const response = await fetch(
@@ -916,6 +1071,72 @@ const MatterSection = ({
       );
     } finally {
       setIsDeletingMatter(false);
+    }
+  };
+
+  const handleAppendMatterFiles = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const input = event.currentTarget;
+    const selectedFiles = Array.from(event.target.files || []);
+    if (!activeMatter || !selectedFiles.length || isAppendingMatterFiles) return;
+
+    setIsAppendingMatterFiles(true);
+    setAppendingFileName(
+      selectedFiles.length === 1
+        ? selectedFiles[0].name
+        : `${selectedFiles.length} files selected`,
+    );
+    setMatterAppendLoaderState({
+      stage: "Uploading additional files",
+      progress: 8,
+      history: ["Uploading additional files"],
+    });
+
+    try {
+      const formData = new FormData();
+      selectedFiles.forEach((file) => {
+        formData.append("matter", file);
+      });
+
+      const response = await fetch(
+        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/files`),
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        job_id?: string;
+        stage?: string;
+        progress?: number;
+        error?: string;
+      };
+
+      if (!response.ok || !payload?.success || !payload.job_id) {
+        throw new Error(payload?.error || "Additional file upload did not start.");
+      }
+
+      updateAppendLoaderStage(payload.stage, payload.progress);
+      await refreshStoredMatters();
+      const result = await pollMatterJob(payload.job_id);
+      updateMatter(result);
+      if (input) input.value = "";
+    } catch (error) {
+      if (error instanceof MatterPollingTimeoutError) {
+        await refreshStoredMatters().catch(() => {});
+        window.alert(error.message);
+      } else {
+        window.alert(
+          error instanceof Error
+            ? error.message
+            : "Failed to add files to this matter.",
+        );
+      }
+    } finally {
+      setIsAppendingMatterFiles(false);
+      setAppendingFileName("");
     }
   };
 
@@ -965,17 +1186,20 @@ const MatterSection = ({
     setRedlineErrorByKey((prev) => ({ ...prev, [requestKey]: "" }));
 
     try {
-      const response = await fetch(buildApiUrl("/api/matters/clauses/redline"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          original_clause_text: clause.display_text,
-          clause_type: section.section_type,
-          represented_party: representedParty,
-          position,
-          playbook_examples: playbookExamples,
-        }),
-      });
+      const response = await fetch(
+        buildApiUrl("/api/matters/clauses/redline"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            original_clause_text: clause.display_text,
+            clause_type: section.section_type,
+            represented_party: representedParty,
+            position,
+            playbook_examples: playbookExamples,
+          }),
+        },
+      );
 
       const payload = (await response.json()) as
         | { success: true; rewritten_text: string }
@@ -1029,7 +1253,12 @@ const MatterSection = ({
   };
 
   const handleAcceptRedline = () => {
-    if (!activeMatter || !activeClause || !activeClauseSection || !activeSuggestion) {
+    if (
+      !activeMatter ||
+      !activeClause ||
+      !activeClauseSection ||
+      !activeSuggestion
+    ) {
       return;
     }
     const resolvedTitle =
@@ -1163,7 +1392,9 @@ const MatterSection = ({
       return;
     }
     if (!source.source_page) return;
-    const fallbackPage = pages.find((page) => page.page_number === source.source_page);
+    const fallbackPage = pages.find(
+      (page) => page.page_number === source.source_page,
+    );
     const fallbackBlockId = fallbackPage?.blocks[0]?.block_id;
     if (!fallbackBlockId) return;
     const blockTarget = blockRefs.current[fallbackBlockId];
@@ -1172,7 +1403,10 @@ const MatterSection = ({
 
   const obligationColumns = useMemo(() => {
     if (!obligationMapResult) {
-      return { ippb: [] as ObligationMapResult["obligations"], serviceProvider: [] as ObligationMapResult["obligations"] };
+      return {
+        ippb: [] as ObligationMapResult["obligations"],
+        serviceProvider: [] as ObligationMapResult["obligations"],
+      };
     }
 
     const ippb = obligationMapResult.obligations.filter(
@@ -1185,7 +1419,8 @@ const MatterSection = ({
     return { ippb, serviceProvider };
   }, [obligationMapResult]);
   const obligationLoaderSteps = useMemo(() => {
-    if (!obligationClauseSources.length) return ["Preparing obligations mapper"];
+    if (!obligationClauseSources.length)
+      return ["Preparing obligations mapper"];
     return [
       `Reading ${obligationClauseSources.length} clause summaries`,
       "Classifying obligation ownership",
@@ -1205,11 +1440,55 @@ const MatterSection = ({
 
   return (
     <section className="matterOverviewWrap">
+      {isDeletingMatter && (
+        <Loader
+          variant="spinner"
+          eyebrow="Deleting Matter"
+          title="Removing Matter"
+          message="Deleting matter records, linked drafts, and stored files."
+          mode="overlay"
+        />
+      )}
+
+      {isAppendingMatterFiles && (
+        <Loader
+          fileName={appendingFileName}
+          eyebrow="Matter Update"
+          title="Adding Files To Matter"
+          message="Ingesting the additional files and regenerating matter intelligence."
+          stage={matterAppendLoaderState.stage}
+          progress={matterAppendLoaderState.progress}
+          steps={matterAppendLoaderState.history}
+          mode="overlay"
+        />
+      )}
+
+      <input
+        ref={appendFilesInputRef}
+        type="file"
+        aria-label="Add files to this matter"
+        accept=".pdf,.md,.txt,application/pdf,text/markdown,text/plain"
+        style={{ display: "none" }}
+        multiple
+        onChange={(event) => {
+          void handleAppendMatterFiles(event);
+        }}
+      />
+
       <header className="matterOverviewHead">
         <p className="matterEyebrow">Matter Overview</p>
         <div className="matterOverviewTitleRow">
           <h1>{activeMatter?.title || "No matter uploaded yet"}</h1>
           <div className="matterOverviewActionRow">
+            <Button
+              type="button"
+              className="matterAddFilesBtn"
+              disabled={!activeMatter || isAppendingMatterFiles}
+              onClick={() => appendFilesInputRef.current?.click()}
+              text="Add files"
+              showImage
+              image={<Plus size={17} />}
+            />
             <Button
               type="button"
               className="matterDeleteBtn"
@@ -1227,7 +1506,9 @@ const MatterSection = ({
               disabled={!activeMatter}
               onClick={() =>
                 activeMatter &&
-                navigate(`/drafting?matter=${encodeURIComponent(activeMatter.id)}`)
+                navigate(
+                  `/drafting?matter=${encodeURIComponent(activeMatter.id)}`,
+                )
               }
               text="Start drafting"
               showImage
@@ -1315,56 +1596,6 @@ const MatterSection = ({
             </p>
           </div>
         </article>
-        <article className="matterMetaCard">
-          <span className="matterMetaIcon">
-            <FileText size={16} />
-          </span>
-          <div>
-            <h3>Document type</h3>
-            <p>{activeMatter?.mimeType || "Unknown"}</p>
-          </div>
-        </article>
-        <article className="matterMetaCard">
-          <span className="matterMetaIcon">
-            <Scale size={16} />
-          </span>
-          <div>
-            <h3>Status</h3>
-            <p>
-              {activeMatter
-                ? activeMatter.status === "processed"
-                  ? "Document ingested (server processed)"
-                  : activeMatter.status
-                : "Waiting for upload"}
-            </p>
-          </div>
-        </article>
-        <article className="matterMetaCard">
-          <span className="matterMetaIcon">
-            <FileText size={16} />
-          </span>
-          <div>
-            <h3>Version hash</h3>
-            <p>
-              {activeMatter?.sha256
-                ? `${activeMatter.sha256.slice(0, 12)}...`
-                : "Not available"}
-            </p>
-          </div>
-        </article>
-        <article className="matterMetaCard">
-          <span className="matterMetaIcon">
-            <SplitSquareHorizontal size={16} />
-          </span>
-          <div>
-            <h3>Pages / Words</h3>
-            <p>
-              {activeMatter
-                ? `${activeMatter.page_count} pages / ${activeMatter.word_count.toLocaleString()} words`
-                : "Not available"}
-            </p>
-          </div>
-        </article>
       </div>
 
       {blankFieldHits.length > 0 ? (
@@ -1389,7 +1620,10 @@ const MatterSection = ({
           </Button>
 
           {isBlankFieldBannerOpen ? (
-            <div className="matterBlankBannerBody" id="matter-blank-fields-list">
+            <div
+              className="matterBlankBannerBody"
+              id="matter-blank-fields-list"
+            >
               {blankFieldsBySection.map(([sectionLabel, hits]) => (
                 <section key={sectionLabel} className="matterBlankGroup">
                   <h3>{sectionLabel}</h3>
@@ -1414,57 +1648,42 @@ const MatterSection = ({
 
       <article className="matterQualityPanel">
         <div className="matterTextPanelHead">
-          <h2>Page index</h2>
-          <span>{activeMatter?.pageIndex.length || 0} sections</span>
-        </div>
-        <div className="matterPageIndexList">
-          {activeMatter?.pageIndex.length ? (
-            activeMatter.pageIndex.map((item) => (
-              <div
-                className={`matterPageIndexItem matterPageIndexItem-${item.status}`}
-                key={`${item.type}-${item.start}-${item.end}`}
-              >
-                <span>{item.label}</span>
-                <strong>
-                  Page {item.start}
-                  {item.end !== item.start ? `-${item.end}` : ""}
-                </strong>
-              </div>
-            ))
-          ) : (
-            <p>No page index available yet.</p>
-          )}
-        </div>
-      </article>
-
-      <article className="matterQualityPanel">
-        <div className="matterTextPanelHead">
           <h2>Page-aware structure</h2>
           <div className="matterPanelHeadActions">
             <div className="matterRiskRibbon">
-              <span className="isHigh">{pageAwareRiskSummary.high} HIGH RISK</span>
+              <span className="isHigh">
+                {pageAwareRiskSummary.high} HIGH RISK
+              </span>
               <span className="isReview">
                 {pageAwareRiskSummary.review} REVIEW
               </span>
-              <span className="isClean">{pageAwareRiskSummary.clean} CLEAN</span>
+              <span className="isClean">
+                {pageAwareRiskSummary.clean} CLEAN
+              </span>
             </div>
             <Button
               type="button"
               className="matterQuickAnalysisBtn"
               disabled={quickAnalysisStatus === "running"}
               onClick={() => void runQuickRiskAnalysis()}
+              title="Run risk classification across all extracted sections."
             >
               {quickAnalysisStatus === "running"
                 ? `Analyzing ${quickAnalysisProgress.done}/${quickAnalysisProgress.total}`
                 : "Quick analysis"}
             </Button>
-            <span>{clauseSections.length} sections</span>
+            <span>{visibleClauseSections.length} sections</span>
             <Button
               type="button"
               className="matterCollapseButton"
               onClick={() => setIsPageAwareOpen((prev) => !prev)}
               aria-expanded={isPageAwareOpen}
               aria-controls="matter-page-aware-body"
+              title={
+                isPageAwareOpen
+                  ? "Collapse page-aware structure."
+                  : "Expand page-aware structure."
+              }
             >
               {isPageAwareOpen ? (
                 <ChevronDown size={16} />
@@ -1476,17 +1695,22 @@ const MatterSection = ({
         </div>
         {isPageAwareOpen && (
           <div className="matterClauseSections" id="matter-page-aware-body">
-            {clauseSections.length ? (
-              clauseSections.map((section) => {
+            {visibleClauseSections.length ? (
+              visibleClauseSections.map((section) => {
                 const sectionStateKey = `${activeMatter?.id || "matter"}:${section.section_id}`;
                 const isSectionOpen =
                   openClauseSections[sectionStateKey] ?? true;
                 const sectionRisk = sectionRiskMaps.get(section.section_id);
-                const sectionFlag = sectionRisk?.section_flag || defaultSectionRiskFlag(section);
+                const sectionFlag =
+                  sectionRisk?.section_flag || defaultSectionRiskFlag(section);
                 const sectionRiskItems = new Map(
-                  (sectionRisk?.items || []).map((item) => [item.clause_id, item]),
+                  (sectionRisk?.items || []).map((item) => [
+                    item.clause_id,
+                    item,
+                  ]),
                 );
-                const sectionRiskStatus = sectionRiskStatusById[section.section_id] || "idle";
+                const sectionRiskStatus =
+                  sectionRiskStatusById[section.section_id] || "idle";
 
                 return (
                   <section
@@ -1500,13 +1724,20 @@ const MatterSection = ({
                       type="button"
                       className="matterClauseSectionToggle"
                       onClick={() => {
-                        const nextIsOpen = !(openClauseSections[sectionStateKey] ?? true);
+                        const nextIsOpen = !(
+                          openClauseSections[sectionStateKey] ?? true
+                        );
                         setOpenClauseSections((prev) => ({
                           ...prev,
                           [sectionStateKey]: nextIsOpen,
                         }));
                       }}
                       aria-expanded={isSectionOpen}
+                      title={
+                        isSectionOpen
+                          ? `Collapse ${section.section_label}.`
+                          : `Expand ${section.section_label}.`
+                      }
                       showImage
                       image={
                         isSectionOpen ? (
@@ -1528,19 +1759,9 @@ const MatterSection = ({
                           </span>
                         </div>
                         <div className="matterClauseSectionHeadMeta">
-                          {section.extraction_status === "failed" ? (
-                            <span className="matterClauseStatusBadge isFailed">
-                              Clause extraction failed
-                            </span>
-                          ) : section.extraction_status === "skipped" ? (
-                            <span className="matterClauseStatusBadge isSkipped">
-                              Skipped
-                            </span>
-                          ) : section.extraction_status === "ready" ? (
-                            <span className="matterClauseStatusBadge isReady">
-                              {section.clauses.length} clauses
-                            </span>
-                          ) : null}
+                          <span className="matterClauseStatusBadge isReady">
+                            {section.clauses.length} clauses
+                          </span>
                           <span
                             className={`matterClauseFlagPill ${sectionRiskClassName(sectionFlag)}`}
                           >
@@ -1553,9 +1774,7 @@ const MatterSection = ({
                       </div>
                     </Button>
 
-                    {isSectionOpen &&
-                      (section.extraction_status === "ready" &&
-                      section.clauses.length ? (
+                    {isSectionOpen ? (
                         <div className="matterClauseList">
                           {sectionRiskStatus === "loading" ? (
                             <p className="matterClauseEmpty">
@@ -1569,7 +1788,9 @@ const MatterSection = ({
                             </p>
                           ) : null}
                           {section.clauses.map((clause) => {
-                            const riskItem = sectionRiskItems.get(clause.clause_id);
+                            const riskItem = sectionRiskItems.get(
+                              clause.clause_id,
+                            );
                             const riskClass =
                               riskItem?.risk === "high"
                                 ? "isHighRisk"
@@ -1589,6 +1810,7 @@ const MatterSection = ({
                                   type="button"
                                   className="matterClauseItemMain"
                                   onClick={() => handleClauseSelect(clause)}
+                                  title="Open this clause for review, redlining, and source navigation."
                                 >
                                   <strong>{clause.heading}</strong>
                                   <p>{clause.display_text}</p>
@@ -1606,13 +1828,17 @@ const MatterSection = ({
                                         <Button
                                           type="button"
                                           className={
-                                            representedParty === "service_provider"
+                                            representedParty ===
+                                            "service_provider"
                                               ? "isActive"
                                               : ""
                                           }
                                           onClick={() =>
-                                            setRepresentedParty("service_provider")
+                                            setRepresentedParty(
+                                              "service_provider",
+                                            )
                                           }
+                                          title="Review this clause from the Service Provider position."
                                         >
                                           Service Provider
                                         </Button>
@@ -1623,46 +1849,42 @@ const MatterSection = ({
                                               ? "isActive"
                                               : ""
                                           }
-                                          onClick={() => setRepresentedParty("ippb")}
+                                          onClick={() =>
+                                            setRepresentedParty("ippb")
+                                          }
+                                          title="Review this clause from the IPPB position."
                                         >
                                           IPPB
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          className="matterClauseJumpBtn"
-                                          onClick={() =>
-                                            handleJumpToClausePage(
-                                              clause.clause_id,
-                                              true,
-                                            )
-                                          }
-                                        >
-                                          Jump to extracted text
                                         </Button>
                                       </div>
                                     </div>
                                     <div className="matterClausePositionToggle">
-                                      {(["aggressive", "market", "fallback"] as const).map(
-                                        (position) => (
-                                          <Button
-                                            type="button"
-                                            key={position}
-                                            className={
-                                              activeRedlinePosition === position
-                                                ? "isActive"
-                                                : ""
-                                            }
-                                            onClick={() =>
-                                              handleRedlinePositionSelect(
-                                                clause.clause_id,
-                                                position,
-                                              )
-                                            }
-                                          >
-                                            {position}
-                                          </Button>
-                                        ),
-                                      )}
+                                      {(
+                                        [
+                                          "aggressive",
+                                          "market",
+                                          "fallback",
+                                        ] as const
+                                      ).map((position) => (
+                                        <Button
+                                          type="button"
+                                          key={position}
+                                          className={
+                                            activeRedlinePosition === position
+                                              ? "isActive"
+                                              : ""
+                                          }
+                                          onClick={() =>
+                                            handleRedlinePositionSelect(
+                                              clause.clause_id,
+                                              position,
+                                            )
+                                          }
+                                          title={`Generate a ${position} redline position for this clause.`}
+                                        >
+                                          {position}
+                                        </Button>
+                                      ))}
                                     </div>
                                     {activeRedlineLoading ? (
                                       <div className="matterClauseRedlineState">
@@ -1680,7 +1902,10 @@ const MatterSection = ({
                                         <p>{activeRedlineError}</p>
                                         <Button
                                           type="button"
-                                          onClick={() => void handleUseAiRedlining()}
+                                          onClick={() =>
+                                            void handleUseAiRedlining()
+                                          }
+                                          title="Retry AI redline generation for this clause."
                                         >
                                           Retry
                                         </Button>
@@ -1710,10 +1935,13 @@ const MatterSection = ({
                                             value={activeDraftTitle}
                                             onChange={(event) =>
                                               activeClauseKey &&
-                                              setRedlineTitleDraftByKey((prev) => ({
-                                                ...prev,
-                                                [activeClauseKey]: event.target.value,
-                                              }))
+                                              setRedlineTitleDraftByKey(
+                                                (prev) => ({
+                                                  ...prev,
+                                                  [activeClauseKey]:
+                                                    event.target.value,
+                                                }),
+                                              )
                                             }
                                           />
                                         </label>
@@ -1724,10 +1952,13 @@ const MatterSection = ({
                                             rows={4}
                                             onChange={(event) =>
                                               activeClauseKey &&
-                                              setRedlineTextDraftByKey((prev) => ({
-                                                ...prev,
-                                                [activeClauseKey]: event.target.value,
-                                              }))
+                                              setRedlineTextDraftByKey(
+                                                (prev) => ({
+                                                  ...prev,
+                                                  [activeClauseKey]:
+                                                    event.target.value,
+                                                }),
+                                              )
                                             }
                                           />
                                         </label>
@@ -1735,7 +1966,10 @@ const MatterSection = ({
                                           <Button
                                             type="button"
                                             className="matterUseAiRedlineBtn"
-                                            onClick={() => void handleUseAiRedlining()}
+                                            onClick={() =>
+                                              void handleUseAiRedlining()
+                                            }
+                                            title="Generate an AI rewrite for the selected clause and position."
                                           >
                                             Use AI redlining
                                           </Button>
@@ -1743,13 +1977,14 @@ const MatterSection = ({
                                             type="button"
                                             className="matterAcceptRedlineBtn"
                                             onClick={handleAcceptRedline}
+                                            title="Save this redline into the playbook for later reuse."
                                           >
                                             Accept redline
                                           </Button>
                                           {activeAcceptedCount ? (
                                             <span>
-                                              {activeAcceptedCount} accepted for this
-                                              clause
+                                              {activeAcceptedCount} accepted for
+                                              this clause
                                             </span>
                                           ) : null}
                                         </div>
@@ -1757,13 +1992,17 @@ const MatterSection = ({
                                     ) : (
                                       <div className="matterClauseRedlineState">
                                         <p>
-                                          Pick a position and click Use AI redlining
-                                          to generate a suggested rewrite.
+                                          Pick a position and click Use AI
+                                          redlining to generate a suggested
+                                          rewrite.
                                         </p>
                                         <Button
                                           type="button"
                                           className="matterUseAiRedlineBtn"
-                                          onClick={() => void handleUseAiRedlining()}
+                                          onClick={() =>
+                                            void handleUseAiRedlining()
+                                          }
+                                          title="Generate an AI rewrite for the selected clause and position."
                                         >
                                           Use AI redlining
                                         </Button>
@@ -1776,26 +2015,29 @@ const MatterSection = ({
                                         </Button>
                                       </div>
                                     )}
+                                    <div className="matterClauseJumpRow">
+                                      <Button
+                                        type="button"
+                                        className="matterClauseJumpBtn"
+                                        aria-label="Jump to the extracted source text for this clause"
+                                        title="Scroll to the extracted source text for this clause in the document viewer."
+                                        onClick={() =>
+                                          handleJumpToClausePage(
+                                            clause.clause_id,
+                                            true,
+                                          )
+                                        }
+                                      >
+                                        Go to text
+                                      </Button>
+                                    </div>
                                   </div>
                                 ) : null}
                               </div>
                             );
                           })}
                         </div>
-                      ) : section.extraction_status === "failed" ? (
-                        <p className="matterClauseEmpty">
-                          Clause extraction failed for {section.section_label}.{" "}
-                          {section.error}
-                        </p>
-                      ) : section.extraction_status === "skipped" ? (
-                        <p className="matterClauseEmpty">
-                          Clause extraction is skipped for this section type.
-                        </p>
-                      ) : (
-                        <p className="matterClauseEmpty">
-                          No clauses extracted yet.
-                        </p>
-                      ))}
+                      ) : null}
                   </section>
                 );
               })
@@ -1943,142 +2185,150 @@ const MatterSection = ({
         role="complementary"
         aria-hidden={!isObligationPanelOpen}
       >
-          <div className="matterObligationPanelHead">
-            <div>
-              <p className="matterEyebrow">Obligation Mapper</p>
-              <h3>Obligation balance</h3>
-            </div>
-            <Button
-              type="button"
-              className="matterObligationClose"
-              onClick={() => onCloseObligationPanel?.()}
-              aria-label="Close obligation mapper panel"
-              showImage
-              image={<X size={16} />}
-            />
+        <div className="matterObligationPanelHead">
+          <div>
+            <p className="matterEyebrow">Obligation Mapper</p>
+            <h3>Obligation balance</h3>
           </div>
+          <Button
+            type="button"
+            className="matterObligationClose"
+            onClick={() => onCloseObligationPanel?.()}
+            aria-label="Close obligation mapper panel"
+            showImage
+            image={<X size={16} />}
+          />
+        </div>
 
-          {obligationMapStatus === "loading" ? (
-            <Loader
-              mode="inline"
-              eyebrow="Obligation Mapper"
-              title="Mapping Obligations"
-              fileName={activeMatter?.fileName || "Current matter"}
-              message="Classifying clause summaries and building obligation balance."
-              stage="Analyzing obligation allocation"
-              progress={62}
-              steps={obligationLoaderSteps}
-            />
-          ) : obligationMapStatus === "error" ? (
-            <div className="matterObligationState">
-              <p>{obligationMapError || "Obligation mapping failed."}</p>
-              <Button type="button" onClick={() => void fetchObligationMap()}>
-                Retry
-              </Button>
+        {obligationMapStatus === "loading" ? (
+          <Loader
+            mode="inline"
+            eyebrow="Obligation Mapper"
+            title="Mapping Obligations"
+            fileName={activeMatter?.fileName || "Current matter"}
+            message="Classifying clause summaries and building obligation balance."
+            stage="Analyzing obligation allocation"
+            progress={62}
+            steps={obligationLoaderSteps}
+          />
+        ) : obligationMapStatus === "error" ? (
+          <div className="matterObligationState">
+            <p>{obligationMapError || "Obligation mapping failed."}</p>
+            <Button type="button" onClick={() => void fetchObligationMap()}>
+              Retry
+            </Button>
+          </div>
+        ) : obligationMapStatus === "ready" && obligationMapResult ? (
+          <>
+            <div
+              className={`matterObligationScore matterObligationScore-${obligationMapResult.imbalance.level}`}
+            >
+              <strong>
+                IPPB: {obligationMapResult.counts.ippb} obligations
+              </strong>
+              <span>
+                Service Provider: {obligationMapResult.counts.service_provider}{" "}
+                obligations
+              </span>
             </div>
-          ) : obligationMapStatus === "ready" && obligationMapResult ? (
-            <>
-              <div
-                className={`matterObligationScore matterObligationScore-${obligationMapResult.imbalance.level}`}
-              >
-                <strong>
-                  IPPB: {obligationMapResult.counts.ippb} obligations
-                </strong>
-                <span>
-                  Service Provider:{" "}
-                  {obligationMapResult.counts.service_provider} obligations
-                </span>
-              </div>
 
-              <div className="matterObligationColumns">
-                <section>
-                  <h4>IPPB obligations</h4>
-                  {obligationColumns.ippb.length ? (
-                    <ul>
-                      {obligationColumns.ippb.map((item) => {
-                        const source = obligationClauseById.get(item.clause_id);
-                        if (!source) return null;
-                        return (
-                          <li key={`ippb-${item.clause_id}`}>
+            <div className="matterObligationColumns">
+              <section>
+                <h4>IPPB obligations</h4>
+                {obligationColumns.ippb.length ? (
+                  <ul>
+                    {obligationColumns.ippb.map((item) => {
+                      const source = obligationClauseById.get(item.clause_id);
+                      if (!source) return null;
+                      return (
+                        <li key={`ippb-${item.clause_id}`}>
+                          <Button
+                            type="button"
+                            className="matterObligationLink"
+                            onClick={() =>
+                              handleJumpToClauseById(item.clause_id)
+                            }
+                          >
+                            {source.display_text}
+                          </Button>
+                          <div className="matterObligationMeta">
+                            <span>{source.heading}</span>
+                            {item.party === "mutual" ? (
+                              <span className="matterObligationMutual">
+                                Mutual
+                              </span>
+                            ) : null}
                             <Button
                               type="button"
-                              className="matterObligationLink"
-                              onClick={() => handleJumpToClauseById(item.clause_id)}
+                              onClick={() =>
+                                handleJumpToClausePage(item.clause_id, true)
+                              }
                             >
-                              {source.display_text}
+                              Page {source.source_page || source.page_start}
                             </Button>
-                            <div className="matterObligationMeta">
-                              <span>{source.heading}</span>
-                              {item.party === "mutual" ? (
-                                <span className="matterObligationMutual">
-                                  Mutual
-                                </span>
-                              ) : null}
-                              <Button
-                                type="button"
-                                onClick={() => handleJumpToClausePage(item.clause_id, true)}
-                              >
-                                Page {source.source_page || source.page_start}
-                              </Button>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="matterObligationEmpty">
-                      No obligations detected.
-                    </p>
-                  )}
-                </section>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="matterObligationEmpty">
+                    No obligations detected.
+                  </p>
+                )}
+              </section>
 
-                <section>
-                  <h4>Service Provider obligations</h4>
-                  {obligationColumns.serviceProvider.length ? (
-                    <ul>
-                      {obligationColumns.serviceProvider.map((item) => {
-                        const source = obligationClauseById.get(item.clause_id);
-                        if (!source) return null;
-                        return (
-                          <li key={`sp-${item.clause_id}`}>
+              <section>
+                <h4>Service Provider obligations</h4>
+                {obligationColumns.serviceProvider.length ? (
+                  <ul>
+                    {obligationColumns.serviceProvider.map((item) => {
+                      const source = obligationClauseById.get(item.clause_id);
+                      if (!source) return null;
+                      return (
+                        <li key={`sp-${item.clause_id}`}>
+                          <Button
+                            type="button"
+                            className="matterObligationLink"
+                            onClick={() =>
+                              handleJumpToClauseById(item.clause_id)
+                            }
+                          >
+                            {source.display_text}
+                          </Button>
+                          <div className="matterObligationMeta">
+                            <span>{source.heading}</span>
+                            {item.party === "mutual" ? (
+                              <span className="matterObligationMutual">
+                                Mutual
+                              </span>
+                            ) : null}
                             <Button
                               type="button"
-                              className="matterObligationLink"
-                              onClick={() => handleJumpToClauseById(item.clause_id)}
+                              onClick={() =>
+                                handleJumpToClausePage(item.clause_id, true)
+                              }
                             >
-                              {source.display_text}
+                              Page {source.source_page || source.page_start}
                             </Button>
-                            <div className="matterObligationMeta">
-                              <span>{source.heading}</span>
-                              {item.party === "mutual" ? (
-                                <span className="matterObligationMutual">
-                                  Mutual
-                                </span>
-                              ) : null}
-                              <Button
-                                type="button"
-                                onClick={() => handleJumpToClausePage(item.clause_id, true)}
-                              >
-                                Page {source.source_page || source.page_start}
-                              </Button>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="matterObligationEmpty">
-                      No obligations detected.
-                    </p>
-                  )}
-                </section>
-              </div>
-            </>
-          ) : (
-            <p className="matterObligationState">
-              Open the mapper to classify obligations from clause summaries.
-            </p>
-          )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="matterObligationEmpty">
+                    No obligations detected.
+                  </p>
+                )}
+              </section>
+            </div>
+          </>
+        ) : (
+          <p className="matterObligationState">
+            Open the mapper to classify obligations from clause summaries.
+          </p>
+        )}
       </aside>
 
       <aside
@@ -2088,26 +2338,26 @@ const MatterSection = ({
         role="complementary"
         aria-hidden={!isPlaybookPanelOpen}
       >
-          <div className="matterObligationPanelHead">
-            <div>
-              <p className="matterEyebrow">Playbook</p>
-              <h3>Accepted redlines</h3>
-            </div>
-            <Button
-              type="button"
-              className="matterObligationClose"
-              onClick={() => onClosePlaybookPanel?.()}
-              aria-label="Close playbook panel"
-              showImage
-              image={<X size={16} />}
-            />
+        <div className="matterObligationPanelHead">
+          <div>
+            <p className="matterEyebrow">Playbook</p>
+            <h3>Accepted redlines</h3>
           </div>
-          {acceptedRedlines.length ? (
-            <div className="matterPlaybookList">
-              {acceptedRedlines.map((item: AcceptedRedline) => (
-                <article className="matterPlaybookItem" key={item.id}>
-                  <header>
-                    <div className="matterPlaybookHeaderRow">
+          <Button
+            type="button"
+            className="matterObligationClose"
+            onClick={() => onClosePlaybookPanel?.()}
+            aria-label="Close playbook panel"
+            showImage
+            image={<X size={16} />}
+          />
+        </div>
+        {acceptedRedlines.length ? (
+          <div className="matterPlaybookList">
+            {acceptedRedlines.map((item: AcceptedRedline) => (
+              <article className="matterPlaybookItem" key={item.id}>
+                <header>
+                  <div className="matterPlaybookHeaderRow">
                     <input
                       className="matterPlaybookTitleInput"
                       value={item.title || item.clauseHeading}
@@ -2138,56 +2388,56 @@ const MatterSection = ({
                     >
                       Delete
                     </Button>
-                    </div>
-                    <span>
-                      {item.position} ·{" "}
-                      {item.representedParty === "ippb"
-                        ? "Representing IPPB"
-                        : "Representing Service Provider"}
-                    </span>
-                  </header>
-                  <p className="matterPlaybookMeta">
-                    {item.sectionLabel} · Accepted{" "}
-                    {new Date(item.acceptedAt).toLocaleString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: true,
-                      timeZone: "Asia/Kolkata",
-                    })}
-                  </p>
-                  <div className="matterPlaybookText">
-                    <label>Original</label>
-                    <p>{item.originalText}</p>
-                    <label>Suggested</label>
-                    <textarea
-                      className="matterPlaybookTextArea"
-                      value={item.rewrittenText}
-                      rows={5}
-                      onChange={(event) =>
-                        activeMatter &&
-                        updateAcceptedRedline(activeMatter.id, item.id, {
-                          rewrittenText: event.target.value,
-                        })
-                      }
-                      onBlur={() => {
-                        void patchAcceptedRedlineRemote(item.id, {
-                          rewrittenText: item.rewrittenText,
-                        });
-                      }}
-                    />
                   </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="matterObligationState">
-              No accepted redlines yet. Open a clause and click Accept redline
-              to add it here.
-            </p>
-          )}
+                  <span>
+                    {item.position} ·{" "}
+                    {item.representedParty === "ippb"
+                      ? "Representing IPPB"
+                      : "Representing Service Provider"}
+                  </span>
+                </header>
+                <p className="matterPlaybookMeta">
+                  {item.sectionLabel} · Accepted{" "}
+                  {new Date(item.acceptedAt).toLocaleString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: true,
+                    timeZone: "Asia/Kolkata",
+                  })}
+                </p>
+                <div className="matterPlaybookText">
+                  <label>Original</label>
+                  <p>{item.originalText}</p>
+                  <label>Suggested</label>
+                  <textarea
+                    className="matterPlaybookTextArea"
+                    value={item.rewrittenText}
+                    rows={5}
+                    onChange={(event) =>
+                      activeMatter &&
+                      updateAcceptedRedline(activeMatter.id, item.id, {
+                        rewrittenText: event.target.value,
+                      })
+                    }
+                    onBlur={() => {
+                      void patchAcceptedRedlineRemote(item.id, {
+                        rewrittenText: item.rewrittenText,
+                      });
+                    }}
+                  />
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="matterObligationState">
+            No accepted redlines yet. Open a clause and click Accept redline to
+            add it here.
+          </p>
+        )}
       </aside>
 
       {activeClause && activeClauseSection && isClauseJumpPanelVisible ? (

@@ -6,10 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { RecentResearchItem } from "./ActiveResearchPage";
 import Loader from "./Loader";
-import {
-  useMatterStore,
-  type MatterProcessedResult,
-} from "../context/MatterStoreContext";
+import { useMatterStore, type MatterProcessedResult } from "../context/MatterStoreContext";
 import { listDrafts, type DraftSummary } from "./draftingApi";
 import { buildApiUrl } from "../lib/apiBase";
 
@@ -100,8 +97,8 @@ const SideBar = ({
   const {
     matters,
     activeMatterId: storeActiveMatterId,
+    isSavedMattersLoading,
     addMatter,
-    setMattersFromServer,
     setActiveMatterId,
   } = useMatterStore();
 
@@ -166,31 +163,6 @@ const SideBar = ({
     sessionStorage.removeItem("open_matter_uploader");
     uploaderRef.current?.click();
   }, [location.pathname]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadStoredMatters = async () => {
-      try {
-        const response = await fetch(buildApiUrl("/api/matters"));
-        const payload = (await response.json()) as {
-          success?: boolean;
-          matters?: MatterProcessedResult[];
-        };
-        if (cancelled || !response.ok || !payload?.success || !Array.isArray(payload.matters)) {
-          return;
-        }
-        setMattersFromServer(payload.matters);
-      } catch {
-        // Ignore hydration failures; uploads still work.
-      }
-    };
-
-    void loadStoredMatters();
-    return () => {
-      cancelled = true;
-    };
-  }, [setMattersFromServer]);
 
   useEffect(() => {
     if (!showDraftSection) return;
@@ -267,11 +239,15 @@ const SideBar = ({
 
   const handleMatterUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const selectedFiles = Array.from(event.target.files || []);
+    if (!selectedFiles.length) return;
 
     setIsIngestingMatter(true);
-    setIngestingFileName(file.name);
+    setIngestingFileName(
+      selectedFiles.length === 1
+        ? selectedFiles[0].name
+        : `${selectedFiles.length} files selected`,
+    );
     setTimedOutJobId(null);
     setMatterUploadNotice("");
     setMatterLoaderState({
@@ -281,7 +257,9 @@ const SideBar = ({
     });
     try {
       const formData = new FormData();
-      formData.append("matter", file);
+      selectedFiles.forEach((file) => {
+        formData.append("matter", file);
+      });
 
       const response = await fetch(buildApiUrl("/api/matters/upload"), {
         method: "POST",
@@ -357,7 +335,8 @@ const SideBar = ({
         type="file"
         className="matterUploaderInput"
         aria-label="Upload matter file"
-        accept=".pdf,application/pdf"
+        accept=".pdf,.md,.txt,application/pdf,text/markdown,text/plain"
+        multiple
         onChange={(event) => {
           void handleMatterUpload(event);
         }}
@@ -465,6 +444,16 @@ const SideBar = ({
                 </Button>
               ))}
             </div>
+          )}
+
+          {!hasRecentMatters && !isSavedMattersLoading && (
+            <Button
+              type="button"
+              className="recentMatterItem isEmpty"
+              onClick={() => uploaderRef.current?.click()}
+            >
+              No matters yet.
+            </Button>
           )}
 
           <Button

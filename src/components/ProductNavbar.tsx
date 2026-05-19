@@ -27,6 +27,7 @@ import {
   Save,
   Search,
   Share2,
+  Scale,
   Strikethrough,
   Table2,
   Underline,
@@ -82,6 +83,7 @@ type DraftingChromeProps = {
   onInsertTable: () => void;
   onOpenCommentComposer: () => void;
   onOpenFindReplace: () => void;
+  onRunReview: () => void;
   onAlignLeft: () => void;
   onAlignCenter: () => void;
   onAlignRight: () => void;
@@ -216,6 +218,14 @@ const ProductNavbar = ({
               onClick={draftingChrome.onManualSave}
               showImage
               image={<Save size={18} />}
+            />
+            <Button
+              className="iconBtn"
+              type="button"
+              aria-label="Run draft review"
+              onClick={draftingChrome.onRunReview}
+              showImage
+              image={<Scale size={18} />}
             />
             <Button
               className="iconBtn"

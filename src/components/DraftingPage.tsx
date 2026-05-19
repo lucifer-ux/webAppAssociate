@@ -23,10 +23,12 @@ import { DRAFT_TEMPLATES, type DraftTemplate } from "./draftingTemplates";
 import {
   createDraft,
   deriveDraftContextFromMatter,
+  getDraftReview,
   getDraft,
   hashDraftContent,
   patchDraft,
   saveDraft,
+  triggerDraftReview,
   type AccessRole,
   type DraftComment,
   type DraftDetail,
@@ -118,6 +120,7 @@ const DraftingPage = () => {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [currentContentJson, setCurrentContentJson] = useState(activeDraft?.contentJson || {});
   const [loadError, setLoadError] = useState("");
+  const [reviewStatus, setReviewStatus] = useState<"idle" | "running" | "ready" | "error">("idle");
 
   useEffect(() => {
     if (!matterIdFromQuery) return;
@@ -289,8 +292,59 @@ const DraftingPage = () => {
     };
   }, [activeDraft, documentTitle, saveCurrentDraft]);
 
+  useEffect(() => {
+    if (!activeDraft?.id || reviewStatus !== "running") return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const reviewJob = await getDraftReview(activeDraft.id);
+        if (cancelled) return;
+        if (reviewJob.status === "completed") {
+          setComments(
+            Array.isArray(reviewJob.result?.annotations)
+              ? reviewJob.result.annotations
+              : [],
+          );
+          setReviewStatus("ready");
+          return;
+        }
+        if (reviewJob.status === "failed") {
+          setReviewStatus("error");
+          setLoadError(reviewJob.error || "Draft review failed.");
+          return;
+        }
+        window.setTimeout(() => {
+          void poll();
+        }, 2000);
+      } catch (error) {
+        if (cancelled) return;
+        setReviewStatus("error");
+        setLoadError(error instanceof Error ? error.message : "Draft review failed.");
+      }
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDraft?.id, reviewStatus]);
+
   const applyCommand = (command: string, value?: string) => {
     editorRef.current?.applyCommand(command, value);
+  };
+
+  const runDraftReview = async () => {
+    if (!activeDraft) return;
+    setReviewStatus("running");
+    setLoadError("");
+    try {
+      await saveCurrentDraft("manual");
+      await triggerDraftReview(activeDraft.id);
+    } catch (error) {
+      setReviewStatus("error");
+      setLoadError(error instanceof Error ? error.message : "Failed to run draft review.");
+    }
   };
 
   const changeFontSize = (delta: number) => {
@@ -457,6 +511,7 @@ const DraftingPage = () => {
                 onInsertTable: () => editorRef.current?.insertTable(),
                 onOpenCommentComposer: () => editorRef.current?.startCommentSelection(),
                 onOpenFindReplace: () => editorRef.current?.openFindReplace(),
+                onRunReview: () => void runDraftReview(),
                 onAlignLeft: () => applyCommand("justifyLeft"),
                 onAlignCenter: () => applyCommand("justifyCenter"),
                 onAlignRight: () => applyCommand("justifyRight"),

@@ -46,6 +46,52 @@
   display: none;
 }
 
+.matterUploadLoaderSpinnerOnly {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.7), transparent 34%),
+    rgba(247, 243, 236, 0.82);
+}
+
+.matterUploadLoaderSpinnerCard {
+  width: min(420px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 28px 26px;
+  border: 1px solid rgba(172, 152, 144, 0.18);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 18px 42px rgba(70, 48, 39, 0.08);
+  backdrop-filter: blur(6px);
+}
+
+.matterUploadLoaderSpinner {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 999px;
+  border: 3px solid rgba(127, 24, 18, 0.14);
+  border-top-color: #7f1812;
+  animation: matterUploadSpin 0.9s linear infinite;
+}
+
+.matterUploadLoaderSpinnerText {
+  min-width: 0;
+}
+
+.matterUploadLoaderSpinnerText .matterUploadLoaderEyebrow {
+  margin-bottom: 8px;
+}
+
+.matterUploadLoaderSpinnerText h2 {
+  font-size: clamp(28px, 3vw, 34px);
+}
+
+.matterUploadLoaderSpinnerText .matterUploadLoaderLead {
+  margin-top: 10px;
+  font-size: 18px;
+  max-width: none;
+}
+
 .matterUploadLoaderFrame {
   width: min(1160px, 100%);
   display: grid;

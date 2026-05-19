@@ -64,6 +64,27 @@ export type DraftComment = {
     note: string;
     createdAt: string;
   }>;
+  classification?: string;
+  severity?: string;
+  sourcePointers?: Array<Record<string, unknown>>;
+};
+
+export type DraftReviewJob = {
+  id: string;
+  draftId: string;
+  ownerUserId: string;
+  matterId: string | null;
+  contentHash: string;
+  status: string;
+  result: {
+    comments?: Array<Record<string, unknown>>;
+    annotations?: DraftComment[];
+    reviewedAt?: string;
+    meta?: Record<string, unknown>;
+  };
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PendingAnnotation = {
@@ -183,6 +204,36 @@ export const saveDraft = async (input: {
   return payload.draft;
 };
 
+export const triggerDraftReview = async (draftId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/review`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({}),
+    },
+  );
+  const payload = await readJson<{
+    review_job_id: string;
+    status: string;
+    success: true;
+  }>(response);
+  return payload;
+};
+
+export const getDraftReview = async (draftId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/review`),
+    {
+      headers: buildDraftHeaders(false),
+    },
+  );
+  const payload = await readJson<{ review_job: DraftReviewJob; success: true }>(
+    response,
+  );
+  return payload.review_job;
+};
+
 const extractDefinedTerm = (value: string): DefinedTerm | null => {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
   if (!normalized) return null;
@@ -219,8 +270,24 @@ const deriveJurisdiction = (matter: MatterRecord | null) => {
 
 export const deriveDraftContextFromMatter = (matter: MatterRecord | null): DraftContext => {
   const parties = matter?.extractedFields.parties || [];
+  const verifiedBrief = (matter?.verifiedBrief || {}) as {
+    governing_law?: { value?: string | null };
+    parties?: Array<{ name?: string }>;
+    defined_terms?: Array<{ term?: string; summary?: string }>;
+  };
   const definitions =
-    matter?.pageAwareStructure?.sections
+    verifiedBrief?.defined_terms?.length
+      ? verifiedBrief.defined_terms
+          .map((item) =>
+            item?.term
+              ? {
+                  term: String(item.term),
+                  definitionText: String(item.summary || item.term),
+                }
+              : null,
+          )
+          .filter((item): item is DefinedTerm => Boolean(item))
+      : matter?.pageAwareStructure?.sections
       ?.filter((section) => section.section_type === "definitions")
       .flatMap((section) => section.clauses || [])
       .map((clause) => extractDefinedTerm(clause.display_text || clause.heading || ""))
@@ -228,9 +295,12 @@ export const deriveDraftContextFromMatter = (matter: MatterRecord | null): Draft
 
   return {
     matterId: matter?.id || null,
-    partyA: parties[0]?.name || matter?.people?.[0]?.name || null,
-    partyB: parties[1]?.name || matter?.people?.[1]?.name || null,
-    governingLaw: matter?.extractedFields.governing_law.value || null,
+    partyA:
+      verifiedBrief?.parties?.[0]?.name || parties[0]?.name || matter?.people?.[0]?.name || null,
+    partyB:
+      verifiedBrief?.parties?.[1]?.name || parties[1]?.name || matter?.people?.[1]?.name || null,
+    governingLaw:
+      verifiedBrief?.governing_law?.value || matter?.extractedFields.governing_law.value || null,
     jurisdiction: deriveJurisdiction(matter),
     definedTerms: definitions,
   };

@@ -1,20 +1,24 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
   type PropsWithChildren,
 } from "react";
+import { buildApiUrl } from "../lib/apiBase";
+
+const MATTER_JOB_TTL_MS = 60 * 60 * 1000;
 
 export type MatterValidationSummary = {
   accepted: boolean;
   size_bytes: number;
   declared_extension: string;
-  declared_kind: "pdf";
+  declared_kind: "pdf" | "md" | "txt" | "mixed" | string;
   detected_extension: string | null;
   detected_mime: string;
   sha256: string;
   parse: {
-    kind: "pdf";
+    kind: "pdf" | "md" | "txt" | "mixed" | string;
     page_count: number | null;
     estimated_pages: number | null;
     is_encrypted: boolean;
@@ -35,8 +39,22 @@ export type MatterUploadPayload = {
   page_count: number;
   word_count: number;
   sha256: string;
-  kind: "pdf";
+  kind: "pdf" | "md" | "txt" | "mixed" | "document" | string;
   versionFingerprint: string;
+  document_count?: number;
+  intelligence_statuses?: {
+    extraction?: string;
+    field_extraction?: string;
+    brief_generation?: string;
+    brief_verification?: string;
+    next_step_planner?: string;
+    draft_review?: string;
+  };
+  documents?: Array<{
+    index: number;
+    file_name: string;
+    size_bytes: number;
+  }>;
   storage?: {
     provider: string;
     bucketId: string;
@@ -255,10 +273,42 @@ export type MatterRecord = MatterUploadPayload & {
   extractedFieldsError: string | null;
   health: MatterHealth;
   people: MatterPerson[];
+  documentResults?: MatterProcessedResult["documents"];
+  documentStatuses?: MatterProcessedResult["document_statuses"];
+  matterBrief?: MatterProcessedResult["matter_brief"];
+  verifiedBrief?: MatterProcessedResult["verified_brief"];
+  briefVerification?: MatterProcessedResult["brief_verification"];
+  nextStepPlan?: MatterProcessedResult["next_step_plan"];
+  draftingContext?: MatterProcessedResult["drafting_context"];
+  latestDraftReview?: MatterProcessedResult["latest_draft_review"];
 };
 
 export type MatterProcessedResult = {
   matter: MatterUploadPayload;
+  documents?: Array<{
+    document: MatterUploadPayload;
+    validation: MatterValidationSummary;
+    preview_text: string;
+    preview_text_source: MatterPreviewSource;
+    text_quality: TextQualityReport;
+    next_step: MatterNextStep;
+    page_aware_structure: PageAwareStructure;
+    page_index: MatterPageIndexItem[];
+    extracted_fields: MatterExtractedFields;
+    extracted_fields_status: MatterExtractedFieldsStatus;
+    extracted_fields_error: string | null;
+    health: MatterHealth;
+    pipeline_statuses?: Record<string, string>;
+  }>;
+  document_statuses?: Record<
+    string,
+    {
+      file_name: string;
+      extraction_status: string;
+      field_extraction_status: string;
+      error: string | null;
+    }
+  >;
   validation: MatterValidationSummary;
   preview_text: string;
   preview_text_source: MatterPreviewSource;
@@ -270,15 +320,24 @@ export type MatterProcessedResult = {
   extracted_fields_status: MatterExtractedFieldsStatus;
   extracted_fields_error: string | null;
   health: MatterHealth;
+  matter_brief?: Record<string, unknown> | null;
+  verified_brief?: Record<string, unknown> | null;
+  brief_verification?: Record<string, unknown> | null;
+  next_step_plan?: Record<string, unknown> | null;
+  drafting_context?: Record<string, unknown> | null;
+  latest_draft_review?: Record<string, unknown> | null;
 };
 
 type MatterStoreContextValue = {
   matters: MatterRecord[];
   activeMatterId: string | null;
   activeMatter: MatterRecord | null;
+  isSavedMattersLoading: boolean;
   addMatter: (result: MatterProcessedResult) => MatterRecord;
   updateMatter: (result: MatterProcessedResult) => void;
+  markMatterJobExpired: (matterId: string) => void;
   setMattersFromServer: (results: MatterProcessedResult[]) => void;
+  setIsSavedMattersLoading: (value: boolean) => void;
   deleteMatter: (matterId: string) => void;
   addPersonToMatter: (
     matterId: string,
@@ -344,30 +403,93 @@ const mergePeople = (
   return [...peopleFromExtractedParties(extractedParties), ...manualPeople];
 };
 
+const normalizeSavedJobState = (
+  matter: MatterUploadPayload,
+  extractedFieldsStatus: MatterExtractedFieldsStatus,
+  extractedFieldsError: string | null,
+) => {
+  const uploadedAtMs = new Date(matter.uploadedAt || matter.uploaded_at || "").getTime();
+  const isExpiredJob =
+    Boolean(matter.job_id) &&
+    Number.isFinite(uploadedAtMs) &&
+    Date.now() - uploadedAtMs > MATTER_JOB_TTL_MS;
+
+  if (!isExpiredJob) {
+    return {
+      ...matter,
+      extractedFieldsStatus,
+      extractedFieldsError,
+    };
+  }
+
+  return {
+    ...matter,
+    job_id: "",
+    extractedFieldsStatus:
+      extractedFieldsStatus === "processing" ? "failed" : extractedFieldsStatus,
+    extractedFieldsError:
+      extractedFieldsStatus === "processing"
+        ? "Saved job state expired. Refresh or re-upload if more processing is needed."
+        : extractedFieldsError,
+    intelligence_statuses: {
+      ...matter.intelligence_statuses,
+      brief_generation:
+        matter.intelligence_statuses?.brief_generation === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.brief_generation,
+      brief_verification:
+        matter.intelligence_statuses?.brief_verification === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.brief_verification,
+      next_step_planner:
+        matter.intelligence_statuses?.next_step_planner === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.next_step_planner,
+    },
+  };
+};
+
 const buildMatterRecord = (
   result: MatterProcessedResult,
   version: number,
   existingPeople: MatterPerson[] = [],
-): MatterRecord => ({
-  ...result.matter,
-  version,
-  validation: result.validation,
-  previewText: result.preview_text,
-  previewTextSource: result.preview_text_source || "server",
-  textQuality: result.text_quality,
-  nextStep: result.next_step,
-  pageAwareStructure: result.page_aware_structure,
-  pageIndex: result.page_index,
-  extractedFields: result.extracted_fields,
-  extractedFieldsStatus: result.extracted_fields_status,
-  extractedFieldsError: result.extracted_fields_error,
-  health: result.health,
-  people: mergePeople(existingPeople, result.extracted_fields.parties || []),
-});
+): MatterRecord => {
+  const normalizedMatter = normalizeSavedJobState(
+    result.matter,
+    result.extracted_fields_status,
+    result.extracted_fields_error,
+  );
+
+  return {
+    ...normalizedMatter,
+    version,
+    validation: result.validation,
+    previewText: result.preview_text,
+    previewTextSource: result.preview_text_source || "server",
+    textQuality: result.text_quality,
+    nextStep: result.next_step,
+    pageAwareStructure: result.page_aware_structure,
+    pageIndex: result.page_index,
+    extractedFields: result.extracted_fields,
+    extractedFieldsStatus: normalizedMatter.extractedFieldsStatus,
+    extractedFieldsError: normalizedMatter.extractedFieldsError,
+    health: result.health,
+    people: mergePeople(existingPeople, result.extracted_fields.parties || []),
+    documentResults: result.documents,
+    documentStatuses: result.document_statuses,
+    matterBrief: result.matter_brief || undefined,
+    verifiedBrief: result.verified_brief || undefined,
+    briefVerification: result.brief_verification || undefined,
+    nextStepPlan: result.next_step_plan || undefined,
+    draftingContext: result.drafting_context || undefined,
+    latestDraftReview: result.latest_draft_review || undefined,
+  };
+};
 
 export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
   const [matters, setMatters] = useState<MatterRecord[]>([]);
   const [activeMatterId, setActiveMatterId] = useState<string | null>(null);
+  const [isSavedMattersLoading, setIsSavedMattersLoading] = useState(true);
   const [obligationMapByMatter, setObligationMapByMatter] = useState<
     Record<string, ObligationMapResult>
   >({});
@@ -377,6 +499,38 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
   const [acceptedRedlinesByMatter, setAcceptedRedlinesByMatter] = useState<
     Record<string, AcceptedRedline[]>
   >({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStoredMatters = async () => {
+      setIsSavedMattersLoading(true);
+      try {
+        const response = await fetch(buildApiUrl("/api/matters"));
+        const payload = (await response.json()) as {
+          success?: boolean;
+          matters?: MatterProcessedResult[];
+        };
+        if (cancelled || !response.ok || !payload?.success) {
+          return;
+        }
+        setMattersFromServer(
+          Array.isArray(payload.matters) ? payload.matters : [],
+        );
+      } catch {
+        // Ignore hydration failures; uploads still work.
+      } finally {
+        if (!cancelled) {
+          setIsSavedMattersLoading(false);
+        }
+      }
+    };
+
+    void loadStoredMatters();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const addMatter = (result: MatterProcessedResult) => {
     let createdRecord: MatterRecord | null = null;
@@ -428,8 +582,45 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     );
   };
 
+  const markMatterJobExpired = (matterId: string) => {
+    setMatters((prev) =>
+      prev.map((matter) => {
+        if (matter.id !== matterId) return matter;
+        return {
+          ...matter,
+          job_id: "",
+          extractedFieldsStatus:
+            matter.extractedFieldsStatus === "processing"
+              ? "failed"
+              : matter.extractedFieldsStatus,
+          extractedFieldsError:
+            matter.extractedFieldsStatus === "processing"
+              ? "Saved job state expired. Refresh or re-upload if more processing is needed."
+              : matter.extractedFieldsError,
+          intelligence_statuses: {
+            ...matter.intelligence_statuses,
+            brief_generation:
+              matter.intelligence_statuses?.brief_generation === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.brief_generation,
+            brief_verification:
+              matter.intelligence_statuses?.brief_verification === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.brief_verification,
+            next_step_planner:
+              matter.intelligence_statuses?.next_step_planner === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.next_step_planner,
+          },
+        };
+      }),
+    );
+  };
+
   const setMattersFromServer = (results: MatterProcessedResult[]) => {
-    if (!Array.isArray(results) || !results.length) return;
+    if (!Array.isArray(results)) return;
+
+    let defaultActiveMatterId: string | null = null;
 
     setMatters((prev) => {
       const next = [...prev];
@@ -450,8 +641,13 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
         (a, b) =>
           new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
       );
+      defaultActiveMatterId = next[0]?.id || null;
       return next;
     });
+
+    if (defaultActiveMatterId) {
+      setActiveMatterId((current) => current || defaultActiveMatterId);
+    }
   };
 
   const deleteMatter = (matterId: string) => {
@@ -624,9 +820,12 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
         matters,
         activeMatterId,
         activeMatter,
+        isSavedMattersLoading,
         addMatter,
         updateMatter,
+        markMatterJobExpired,
         setMattersFromServer,
+        setIsSavedMattersLoading,
         deleteMatter,
         addPersonToMatter,
         removePersonFromMatter,

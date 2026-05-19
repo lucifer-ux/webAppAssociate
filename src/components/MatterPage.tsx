@@ -4,6 +4,7 @@ import ProductNavbar from "./ProductNavbar";
 import SideBar from "./SideBar";
 import MatterSection from "./MatterSection";
 import RightSidebar from "./RightSidebar";
+import Loader from "./Loader";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 import { useMatterStore } from "../context/MatterStoreContext";
 
@@ -12,7 +13,8 @@ type RightPanel = "obligations" | "playbook" | null;
 const MatterPage = () => {
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
-  const { activeMatter, getPendingRedlineCount } = useMatterStore();
+  const { activeMatter, isSavedMattersLoading, getPendingRedlineCount } =
+    useMatterStore();
   const [activeRightPanel, setActiveRightPanel] = useState<RightPanel>(null);
   const pendingRedlineCount = activeMatter
     ? getPendingRedlineCount(activeMatter.id)
@@ -20,6 +22,23 @@ const MatterPage = () => {
   const handleTogglePanel = (panel: Exclude<RightPanel, null>) => {
     setActiveRightPanel((prev: RightPanel) => (prev === panel ? null : panel));
   };
+
+  if (isSavedMattersLoading && !activeMatter) {
+    return (
+      <Loader
+        eyebrow="Matter Library"
+        title="Loading Saved Matters"
+        message="Preparing your saved matter workspace."
+        stage="Hydrating saved matters from storage"
+        progress={42}
+        steps={[
+          "Connecting to saved matter store",
+          "Loading saved matters",
+          "Preparing matter workspace",
+        ]}
+      />
+    );
+  }
 
   return (
     <div className="homeDashPage">

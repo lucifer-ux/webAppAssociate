@@ -9,6 +9,7 @@ type LoaderProps = {
   eyebrow?: string;
   title?: string;
   mode?: "overlay" | "inline";
+  variant?: "timeline" | "spinner";
 };
 
 const Loader = ({
@@ -20,10 +21,34 @@ const Loader = ({
   eyebrow = "Matter Upload",
   title = "Processing Matter",
   mode = "overlay",
+  variant = "timeline",
 }: LoaderProps) => {
   const visibleSteps = steps.length
     ? steps.slice(-4)
     : [stage || "Queued matter ingestion"];
+
+  if (variant === "spinner") {
+    return (
+      <div
+        className={`matterUploadLoader ${
+          mode === "inline" ? "matterUploadLoaderInline" : ""
+        } matterUploadLoaderSpinnerOnly`}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="matterUploadLoaderSpinnerCard">
+          <span className="matterUploadLoaderSpinner" aria-hidden="true" />
+          <div className="matterUploadLoaderSpinnerText">
+            <p className="matterUploadLoaderEyebrow">{eyebrow}</p>
+            <h2>{title}</h2>
+            <p className="matterUploadLoaderLead">
+              {message || "Please wait while the request completes."}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
