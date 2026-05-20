@@ -56,6 +56,8 @@ type MatterLoaderState = {
 const sleep = (ms: number) =>
   new Promise((resolve) => window.setTimeout(resolve, ms));
 
+const MATTER_AI_ENABLED = false;
+
 class MatterPollingTimeoutError extends Error {
   jobId: string;
 
@@ -521,7 +523,7 @@ const MatterSection = ({
   );
 
   useEffect(() => {
-    if (!activeMatter) return;
+    if (!MATTER_AI_ENABLED || !activeMatter) return;
     let cancelled = false;
     const loadAcceptedRedlines = async () => {
       try {
@@ -1455,7 +1457,7 @@ const MatterSection = ({
           fileName={appendingFileName}
           eyebrow="Matter Update"
           title="Adding Files To Matter"
-          message="Ingesting the additional files and regenerating matter intelligence."
+          message="Ingesting the additional files and updating matter transcription."
           stage={matterAppendLoaderState.stage}
           progress={matterAppendLoaderState.progress}
           steps={matterAppendLoaderState.history}
@@ -1650,28 +1652,32 @@ const MatterSection = ({
         <div className="matterTextPanelHead">
           <h2>Page-aware structure</h2>
           <div className="matterPanelHeadActions">
-            <div className="matterRiskRibbon">
-              <span className="isHigh">
-                {pageAwareRiskSummary.high} HIGH RISK
-              </span>
-              <span className="isReview">
-                {pageAwareRiskSummary.review} REVIEW
-              </span>
-              <span className="isClean">
-                {pageAwareRiskSummary.clean} CLEAN
-              </span>
-            </div>
-            <Button
-              type="button"
-              className="matterQuickAnalysisBtn"
-              disabled={quickAnalysisStatus === "running"}
-              onClick={() => void runQuickRiskAnalysis()}
-              title="Run risk classification across all extracted sections."
-            >
-              {quickAnalysisStatus === "running"
-                ? `Analyzing ${quickAnalysisProgress.done}/${quickAnalysisProgress.total}`
-                : "Quick analysis"}
-            </Button>
+            {MATTER_AI_ENABLED ? (
+              <>
+                <div className="matterRiskRibbon">
+                  <span className="isHigh">
+                    {pageAwareRiskSummary.high} HIGH RISK
+                  </span>
+                  <span className="isReview">
+                    {pageAwareRiskSummary.review} REVIEW
+                  </span>
+                  <span className="isClean">
+                    {pageAwareRiskSummary.clean} CLEAN
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  className="matterQuickAnalysisBtn"
+                  disabled={quickAnalysisStatus === "running"}
+                  onClick={() => void runQuickRiskAnalysis()}
+                  title="Run risk classification across all extracted sections."
+                >
+                  {quickAnalysisStatus === "running"
+                    ? `Analyzing ${quickAnalysisProgress.done}/${quickAnalysisProgress.total}`
+                    : "Quick analysis"}
+                </Button>
+              </>
+            ) : null}
             <span>{visibleClauseSections.length} sections</span>
             <Button
               type="button"
@@ -2178,6 +2184,8 @@ const MatterSection = ({
         </div>
       </article>
 
+      {MATTER_AI_ENABLED ? (
+        <>
       <aside
         className={`matterObligationPanel ${
           isObligationPanelOpen ? "isOpen" : "isClosed"
@@ -2439,6 +2447,8 @@ const MatterSection = ({
           </p>
         )}
       </aside>
+        </>
+      ) : null}
 
       {activeClause && activeClauseSection && isClauseJumpPanelVisible ? (
         <aside
