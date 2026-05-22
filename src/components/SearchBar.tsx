@@ -2,13 +2,16 @@ import "../componentStyling/SearchBar.css";
 import Button from "./Button";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { ArrowUp, Paperclip } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 
 type SearchBarProps = {
   activeSection: "matterLibrary" | "activeResearch";
   onSubmitQuery?: (query: string) => Promise<void> | void;
   isSubmitting?: boolean;
   placeholderOverride?: string;
+  allowTextOnly?: boolean;
+  enableSubmit?: boolean;
+  onActivate?: () => void;
 };
 
 const SearchBar = ({
@@ -16,11 +19,17 @@ const SearchBar = ({
   onSubmitQuery,
   isSubmitting = false,
   placeholderOverride,
+  allowTextOnly = false,
+  enableSubmit,
+  onActivate,
 }: SearchBarProps) => {
   const [query, setQuery] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isActiveResearchMode = activeSection === "activeResearch";
+  const isInputEnabled = isActiveResearchMode || allowTextOnly;
+  const canSubmit =
+    (enableSubmit ?? isActiveResearchMode) && Boolean(onSubmitQuery);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -35,7 +44,7 @@ const SearchBar = ({
   }, [query]);
 
   const submitQuery = async () => {
-    if (!isActiveResearchMode || isSubmitting) {
+    if (!canSubmit || isSubmitting) {
       return;
     }
 
@@ -68,31 +77,25 @@ const SearchBar = ({
           ref={textareaRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onFocus={onActivate}
+          onClick={onActivate}
           onKeyDown={handleKeyDown}
-          disabled={!isActiveResearchMode || isSubmitting}
+          disabled={!isInputEnabled || isSubmitting}
           placeholder={
             placeholderOverride
               ? placeholderOverride
               : isActiveResearchMode
-              ? "Search case law, statutes, filings, or legal questions..."
-              : "AI Search is only available in Active Research"
+                ? "Search case law, statutes, filings, or legal questions..."
+                : "AI Search is only available in Active Research"
           }
           aria-label="AI search"
           rows={1}
         />
         <Button
-          className="chatIconBtn"
-          type="button"
-          aria-label="Attach file"
-          disabled={!isActiveResearchMode || isSubmitting}
-        >
-          <Paperclip size={16} />
-        </Button>
-        <Button
           className="chatSendBtn"
           type="submit"
           aria-label="Send search"
-          disabled={!isActiveResearchMode || !query.trim() || isSubmitting}
+          disabled={!canSubmit || !query.trim() || isSubmitting}
         >
           <ArrowUp size={18} />
         </Button>

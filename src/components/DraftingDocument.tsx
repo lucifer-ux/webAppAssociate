@@ -742,6 +742,7 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                       key={heading.id}
                       type="button"
                       className={`draftNavigatorItem level-${heading.level}`}
+                      title={heading.text}
                       onClick={() => {
                         if (!editor) return;
                         editor

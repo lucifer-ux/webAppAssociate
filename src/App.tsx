@@ -26,6 +26,7 @@ function App() {
               element={<DraftingPage />}
             />
             <Route path="/drafting" element={<DraftingPage />} />
+            <Route path="/draft" element={<DraftingPage />} />
             <Route path="/matter" element={<MatterPage />} />
           </Routes>
         </BrowserRouter>

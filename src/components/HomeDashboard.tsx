@@ -2,13 +2,14 @@ import "../componentStyling/HomeDashboardStyling.css";
 import Button from "./Button";
 import { useEffect, useMemo, useState } from "react";
 import SideBar from "./SideBar";
-import { ArrowUp, Cable, Paperclip } from "lucide-react";
+import { Cable } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import { useNavigate } from "react-router-dom";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 import type { SavedResearchApiItem } from "./ActiveResearch";
 import { buildApiUrl } from "../lib/apiBase";
 import Loader from "./Loader";
+import SearchBar from "./SearchBar";
 
 type GmailTopEmailsResponse = {
   success: boolean;
@@ -38,7 +39,6 @@ const HomeDashboard = () => {
   const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
-  const [draftInput, setDraftInput] = useState("");
   const [savedResearches, setSavedResearches] = useState<SavedResearchApiItem[]>([]);
   const [currentTime, setCurrentTime] = useState(() =>
     new Date().toLocaleTimeString("en-IN", {
@@ -141,8 +141,8 @@ const HomeDashboard = () => {
 
   const latestEmails = useMemo(() => emails.slice(0, 2), [emails]);
 
-  const handleQuickResearchSubmit = () => {
-    const trimmedQuery = draftInput.trim();
+  const handleQuickResearchSubmit = (query: string) => {
+    const trimmedQuery = query.trim();
     if (!trimmedQuery) return;
     navigate("/dashboard/active-research", {
       state: {
@@ -150,7 +150,6 @@ const HomeDashboard = () => {
         preloadedResearches: savedResearches,
       },
     });
-    setDraftInput("");
   };
 
   const handleAnalyzeEmails = async () => {
@@ -369,45 +368,11 @@ const HomeDashboard = () => {
         </>
       </main>
 
-      <div className="chatDockWrap">
-        <form
-          className="chatDock"
-          onSubmit={(event) => {
-            event.preventDefault();
-            handleQuickResearchSubmit();
-          }}
-        >
-          <div className="chatSparkle">a.</div>
-          <textarea
-            value={draftInput}
-            onChange={(event) => setDraftInput(event.target.value)}
-            placeholder="Quick Research"
-            aria-label="Draft input"
-            rows={1}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                handleQuickResearchSubmit();
-              }
-            }}
-          />
-          <Button
-            className="chatIconBtn"
-            type="button"
-            aria-label="Attach file"
-          >
-            <Paperclip size={16} />
-          </Button>
-          <Button
-            className="chatSendBtn"
-            type="submit"
-            aria-label="Send"
-            disabled={!draftInput.trim()}
-          >
-            <ArrowUp size={18} />
-          </Button>
-        </form>
-      </div>
+      <SearchBar
+        activeSection="activeResearch"
+        onSubmitQuery={handleQuickResearchSubmit}
+        placeholderOverride="Quick Research"
+      />
     </div>
   );
 };

@@ -23,10 +23,6 @@ const MatterPage = () => {
     setActiveRightPanel((prev: RightPanel) => (prev === panel ? null : panel));
   };
 
-  const handlingLogsAnalytics = () => {
-    console.log("tobeimplementted");
-  };
-
   if (isSavedMattersLoading && !activeMatter) {
     return (
       <Loader

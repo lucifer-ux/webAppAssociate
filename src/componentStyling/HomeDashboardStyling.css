@@ -98,6 +98,10 @@
   padding-left: 84px;
 }
 
+.homeDashMain.draftingNoAppSidebar {
+  padding-left: 0;
+}
+
 .homeDashMain.withRightPanel {
   padding-right: 80px;
 }
@@ -871,6 +875,31 @@
 .authorizeBtn:disabled {
   opacity: 0.8;
   cursor: not-allowed;
+}
+
+.draftBlankLoading {
+  min-height: calc(100vh - 96px);
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  padding: 40px;
+  color: #241c18;
+}
+
+.draftBlankLoading h1 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: 34px;
+  font-weight: 500;
+}
+
+.draftBlankLoading p {
+  margin: 0;
+  max-width: 460px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #695b51;
 }
 
 @media (max-width: 640px) {

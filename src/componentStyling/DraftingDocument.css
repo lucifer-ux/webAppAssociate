@@ -189,6 +189,8 @@
 
 .draftNavigatorRail {
   width: 220px;
+  flex: 0 0 220px;
+  min-width: 0;
   position: sticky;
   top: 210px;
   align-self: flex-start;
@@ -199,6 +201,8 @@
   background: rgba(251, 249, 244, 0.92);
   padding: 16px;
   box-shadow: 0 14px 32px rgba(40, 27, 23, 0.05);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .draftNavigatorList {
@@ -208,6 +212,7 @@
 
 .draftNavigatorItem {
   width: 100%;
+  min-width: 0;
   justify-content: flex-start;
   padding: 8px 10px;
   border: 0;
@@ -216,6 +221,13 @@
   font-family: "Work Sans", sans-serif;
   font-size: 13px;
   text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.draftNavigatorItem.buttonStyle {
+  display: block;
 }
 
 .draftNavigatorItem.level-2 {
@@ -791,12 +803,10 @@
   }
 
   .draftingCanvasArea.soloCanvas {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .draftNavigatorRail {
-    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    flex-direction: row;
+    overflow-x: visible;
   }
 
   .draftCommentRail {

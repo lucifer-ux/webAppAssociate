@@ -109,7 +109,6 @@ const ProductNavbar = ({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const showTopSearch = pathname === "/dashboard";
   const sectionLinks = [
     { label: "Dashboard", path: "/dashboard" },
     { label: "Matters", path: "/matter" },
@@ -118,7 +117,7 @@ const ProductNavbar = ({
   ];
 
   const isDraftingRoute =
-    (pathname === "/dashboard/drafting" || pathname === "/drafting") &&
+    (pathname === "/dashboard/drafting" || pathname === "/drafting" || pathname === "/draft") &&
     draftingChrome;
   const preserveSelectionOnToolbarMouseDown = (
     event: MouseEvent<HTMLElement>,
@@ -170,7 +169,9 @@ const ProductNavbar = ({
                 }
                 aria-label="Document title"
               />
-              <span className="draftChromeSaved">{draftingChrome.saveStatusLabel}</span>
+              <span className="draftChromeSaved">
+                {draftingChrome.saveStatusLabel}
+              </span>
             </div>
           </div>
 
@@ -387,7 +388,9 @@ const ProductNavbar = ({
                 value={draftingChrome.fontSize}
                 title="Set font size"
                 onChange={(event) =>
-                  draftingChrome.onFontSizeChange(Number(event.target.value || 0))
+                  draftingChrome.onFontSizeChange(
+                    Number(event.target.value || 0),
+                  )
                 }
                 aria-label="Font size"
               />
@@ -630,20 +633,6 @@ const ProductNavbar = ({
             )
           }
         />
-        <Button
-          type="button"
-          className="iconBtn topBarHomeBtn"
-          aria-label="Go to dashboard home"
-          onClick={() => navigate("/dashboard")}
-          showImage
-          image={<Home size={18} />}
-        />
-        {showTopSearch && (
-          <div className="searchWrap">
-            <Search size={16} />
-            <input type="text" placeholder="Search..." aria-label="Search" />
-          </div>
-        )}
       </div>
 
       <div className="topBarRight">

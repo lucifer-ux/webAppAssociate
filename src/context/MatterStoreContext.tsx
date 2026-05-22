@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
@@ -41,6 +42,20 @@ export type MatterUploadPayload = {
   sha256: string;
   kind: "pdf" | "md" | "txt" | "mixed" | "document" | string;
   versionFingerprint: string;
+  classification?: {
+    classification_id: string | null;
+    classification_name: string;
+    track: string | null;
+    forums: string[];
+    reason: string;
+    confidence: string;
+  };
+  classification_meta?: {
+    degraded?: boolean;
+    model?: string | null;
+    error?: string | null;
+    raw_response_excerpt?: string;
+  };
   document_count?: number;
   intelligence_statuses?: {
     extraction?: string;
@@ -49,6 +64,10 @@ export type MatterUploadPayload = {
     brief_verification?: string;
     next_step_planner?: string;
     draft_review?: string;
+    debrief_generation?: string;
+    debrief_verification?: string;
+    law_generation?: string;
+    law_verification?: string;
   };
   documents?: Array<{
     index: number;
@@ -276,11 +295,32 @@ export type MatterRecord = MatterUploadPayload & {
   documentResults?: MatterProcessedResult["documents"];
   documentStatuses?: MatterProcessedResult["document_statuses"];
   matterBrief?: MatterProcessedResult["matter_brief"];
+  accumulatedBrief?: MatterProcessedResult["accumulated_brief"];
+  accumulatedBriefReadiness?: MatterProcessedResult["accumulated_brief_readiness"];
+  accumulatedBriefMeta?: MatterProcessedResult["accumulated_brief_meta"];
+  acceptedBrief?: MatterProcessedResult["accepted_brief"];
+  briefUserAnswers?: MatterProcessedResult["brief_user_answers"];
   verifiedBrief?: MatterProcessedResult["verified_brief"];
   briefVerification?: MatterProcessedResult["brief_verification"];
   nextStepPlan?: MatterProcessedResult["next_step_plan"];
   draftingContext?: MatterProcessedResult["drafting_context"];
   latestDraftReview?: MatterProcessedResult["latest_draft_review"];
+  groundAnalysis?: MatterProcessedResult["ground_analysis"];
+  documentSignalPayloads?: MatterProcessedResult["document_signal_payloads"];
+  documentSignalMeta?: MatterProcessedResult["document_signal_meta"];
+  lawResearchPayloads?: MatterProcessedResult["law_research_payloads"];
+  lawResearchMeta?: MatterProcessedResult["law_research_meta"];
+  acceptedBriefVersionFingerprint?: string | null;
+};
+
+export type MatterSignalSourceRef = {
+  document_id: string;
+  file_name?: string;
+  page: number;
+  section_id?: string | null;
+  clause_id?: string | null;
+  quote?: string | null;
+  fact?: string | null;
 };
 
 export type MatterProcessedResult = {
@@ -321,11 +361,148 @@ export type MatterProcessedResult = {
   extracted_fields_error: string | null;
   health: MatterHealth;
   matter_brief?: Record<string, unknown> | null;
+  accumulated_brief?: {
+    decision?: "generate_brief" | "query_for_user";
+    accumulated_brief?: string;
+    brief_points?: Array<{
+      id: string;
+      heading: string;
+      detail: string;
+      tone?: "neutral" | "warning" | "positive" | string;
+      source_document?: string;
+      reason?: string;
+    }>;
+    questions?: string[];
+    covered_information?: Record<string, boolean>;
+    missing_information?: unknown[];
+  } | null;
+  accumulated_brief_readiness?: Record<string, unknown> | null;
+  accumulated_brief_meta?: Record<string, unknown> | null;
+  accepted_brief?: {
+    accepted_at?: string;
+    accepted_by?: string;
+    brief?: MatterProcessedResult["accumulated_brief"];
+  } | null;
+  accepted_brief_version_fingerprint?: string | null;
+  brief_user_answers?: Array<{ question: string; answer: string }>;
   verified_brief?: Record<string, unknown> | null;
   brief_verification?: Record<string, unknown> | null;
   next_step_plan?: Record<string, unknown> | null;
   drafting_context?: Record<string, unknown> | null;
   latest_draft_review?: Record<string, unknown> | null;
+  document_signal_payloads?: Array<{
+    document_id: string;
+    file_name: string;
+    signal_version: number;
+    possible_grounds: Array<{
+      local_ground_id: string;
+      title: string;
+      ground_type: string;
+      category: string;
+      why_relevant: string;
+      supporting_fact_refs: MatterSignalSourceRef[];
+      missing_fact_questions: string[];
+      needs_legal_research: boolean;
+      suggested_research_queries: string[];
+      confidence: string;
+    }>;
+    open_issues: Array<{
+      issue_id: string;
+      title: string;
+      issue_type: string;
+      why_open: string;
+      source_refs: MatterSignalSourceRef[];
+      priority: string;
+      required_user_action: string;
+    }>;
+    drafting_implications: Array<{
+      implication_id: string;
+      title: string;
+      action_type: string;
+      priority: string;
+      represented_side: string;
+      reason: string;
+      source_refs: MatterSignalSourceRef[];
+      suggested_action_label: string;
+    }>;
+    meta?: {
+      degraded?: boolean;
+      model?: string | null;
+      provider?: string | null;
+      error?: string | null;
+    };
+  }> | null;
+  document_signal_meta?: Array<{
+    degraded?: boolean;
+    model?: string | null;
+    provider?: string | null;
+    error?: string | null;
+    raw_response_excerpt?: string;
+  }> | null;
+  law_research_payloads?: Array<Record<string, unknown>> | null;
+  law_research_meta?: Array<Record<string, unknown>> | null;
+  ground_analysis?: {
+    version?: number;
+    no_signals_found?: boolean;
+    cards?: Array<{
+      card_id: string;
+      title: string;
+      status: "ready" | "open" | string;
+      confidence_percent: number;
+      fact_text: string;
+      law_text?: string | null;
+      inference_text?: string | null;
+      support_score?: number | null;
+      legal_rules?: Array<{
+        rule: string;
+        source_id: string;
+        authority_type: string;
+        court: string;
+        relevance: string;
+      }>;
+      contrary_or_limiting_points?: Array<{
+        rule: string;
+        source_id: string;
+        relevance: string;
+      }>;
+      research_gaps?: string[];
+      law_sources?: Array<{
+        source_id: string;
+        title: string;
+        url: string;
+        court: string;
+        source_type: string;
+        date: string;
+      }>;
+      law_verification_status?: string;
+      law_verification_issues?: Array<{
+        type: string;
+        severity: string;
+        message: string;
+      }>;
+      law_meta?: {
+        query_model?: string | null;
+        extractor_model?: string | null;
+        verifier_model?: string | null;
+        degraded?: boolean;
+        error?: string | null;
+        retrieval_errors?: string[];
+      } | null;
+      source_files: string[];
+      why_this_point: string;
+      backing_signal_ids: string[];
+      source_refs: MatterSignalSourceRef[];
+    }>;
+    meta?: {
+      degraded?: boolean;
+      provider?: string | null;
+      orchestrator_model?: string | null;
+      verifier_model?: string | null;
+      law_generation_model?: string | null;
+      law_verifier_model?: string | null;
+      error?: string | null;
+    };
+  } | null;
 };
 
 type MatterStoreContextValue = {
@@ -445,6 +622,22 @@ const normalizeSavedJobState = (
         matter.intelligence_statuses?.next_step_planner === "processing"
           ? "failed"
           : matter.intelligence_statuses?.next_step_planner,
+      debrief_generation:
+        matter.intelligence_statuses?.debrief_generation === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.debrief_generation,
+      debrief_verification:
+        matter.intelligence_statuses?.debrief_verification === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.debrief_verification,
+      law_generation:
+        matter.intelligence_statuses?.law_generation === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.law_generation,
+      law_verification:
+        matter.intelligence_statuses?.law_verification === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.law_verification,
     },
   };
 };
@@ -478,11 +671,23 @@ const buildMatterRecord = (
     documentResults: result.documents,
     documentStatuses: result.document_statuses,
     matterBrief: result.matter_brief || undefined,
+    accumulatedBrief: result.accumulated_brief || undefined,
+    accumulatedBriefReadiness: result.accumulated_brief_readiness || undefined,
+    accumulatedBriefMeta: result.accumulated_brief_meta || undefined,
+    acceptedBrief: result.accepted_brief || undefined,
+    acceptedBriefVersionFingerprint:
+      result.accepted_brief_version_fingerprint ?? undefined,
+    briefUserAnswers: result.brief_user_answers || undefined,
     verifiedBrief: result.verified_brief || undefined,
     briefVerification: result.brief_verification || undefined,
     nextStepPlan: result.next_step_plan || undefined,
     draftingContext: result.drafting_context || undefined,
     latestDraftReview: result.latest_draft_review || undefined,
+    groundAnalysis: result.ground_analysis || undefined,
+    documentSignalPayloads: result.document_signal_payloads || undefined,
+    documentSignalMeta: result.document_signal_meta || undefined,
+    lawResearchPayloads: result.law_research_payloads || undefined,
+    lawResearchMeta: result.law_research_meta || undefined,
   };
 };
 
@@ -532,7 +737,7 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     };
   }, []);
 
-  const addMatter = (result: MatterProcessedResult) => {
+  const addMatter = useCallback((result: MatterProcessedResult) => {
     let createdRecord: MatterRecord | null = null;
 
     setMatters((prev) => {
@@ -568,9 +773,9 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
 
     setActiveMatterId(finalRecord.id);
     return finalRecord;
-  };
+  }, []);
 
-  const updateMatter = (result: MatterProcessedResult) => {
+  const updateMatter = useCallback((result: MatterProcessedResult) => {
     setMatters((prev) =>
       prev.map((matter) => {
         if (matter.id !== result.matter.id && matter.sha256 !== result.matter.sha256) {
@@ -580,9 +785,9 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
         return buildMatterRecord(result, matter.version, matter.people);
       }),
     );
-  };
+  }, []);
 
-  const markMatterJobExpired = (matterId: string) => {
+  const markMatterJobExpired = useCallback((matterId: string) => {
     setMatters((prev) =>
       prev.map((matter) => {
         if (matter.id !== matterId) return matter;
@@ -611,13 +816,29 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
               matter.intelligence_statuses?.next_step_planner === "processing"
                 ? "failed"
                 : matter.intelligence_statuses?.next_step_planner,
+            debrief_generation:
+              matter.intelligence_statuses?.debrief_generation === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.debrief_generation,
+            debrief_verification:
+              matter.intelligence_statuses?.debrief_verification === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.debrief_verification,
+            law_generation:
+              matter.intelligence_statuses?.law_generation === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.law_generation,
+            law_verification:
+              matter.intelligence_statuses?.law_verification === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.law_verification,
           },
         };
       }),
     );
-  };
+  }, []);
 
-  const setMattersFromServer = (results: MatterProcessedResult[]) => {
+  const setMattersFromServer = useCallback((results: MatterProcessedResult[]) => {
     if (!Array.isArray(results)) return;
 
     let defaultActiveMatterId: string | null = null;
@@ -648,7 +869,7 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     if (defaultActiveMatterId) {
       setActiveMatterId((current) => current || defaultActiveMatterId);
     }
-  };
+  }, []);
 
   const deleteMatter = (matterId: string) => {
     setMatters((prev) => prev.filter((matter) => matter.id !== matterId));

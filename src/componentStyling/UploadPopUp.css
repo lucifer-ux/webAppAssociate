@@ -1,0 +1,496 @@
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;500;600&family=Work+Sans:wght@400;500;600&display=swap");
+
+.uploadPopupBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  padding: 24px;
+}
+
+.uploadPopupShell {
+  width: 80%;
+  max-width: 1180px;
+  height: 80vh;
+  max-height: 80vh;
+  box-sizing: border-box;
+  background: #fbf9f4;
+  border: 1px solid #dbdad5;
+  border-radius: 4px;
+  box-shadow: 0 24px 56px rgba(27, 28, 25, 0.22);
+  padding: 28px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.uploadPopupHead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  position: relative;
+}
+
+.uploadPopupEyebrow {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5f5e5e;
+}
+
+.uploadPopupHead h2 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: 44px;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  color: #4c0003;
+}
+
+.uploadPopupDescription {
+  margin: 0;
+  max-width: 780px;
+  font-family: "Newsreader", serif;
+  font-size: 18px;
+  line-height: 1.45;
+  color: #5f5e5e;
+}
+
+.uploadPopupCloseBtn {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #5f5e5e;
+}
+
+.uploadPopupCloseBtn:hover {
+  color: #4c0003;
+}
+
+.uploadPopupDropZone {
+  position: relative;
+  min-height: 146px;
+  border: 1px dashed #dbdad5;
+  border-radius: 4px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  gap: 8px;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.uploadPopupDropZone:hover,
+.uploadPopupDropZone.isDragActive {
+  border-color: #700d0d;
+  background: rgba(112, 13, 13, 0.03);
+}
+
+.uploadPopupFileInput {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.uploadPopupIcon {
+  display: inline-flex;
+  color: #700d0d;
+  margin-bottom: 2px;
+}
+
+.uploadPopupDropZone strong {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: 21px;
+  font-weight: 400;
+  color: #1b1c19;
+}
+
+.uploadPopupDropZone p {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5f5e5e;
+}
+
+.uploadPopupContentGrid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: stretch;
+}
+
+.uploadPopupLeftColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.uploadPopupMetaInline {
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5f5e5e;
+}
+
+.uploadPopupPromptField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.uploadPopupPromptField span {
+  font-family: "Newsreader", serif;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #1b1c19;
+}
+
+.uploadPopupPromptBox {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid #dbdad5;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 8px 10px;
+}
+
+.uploadPopupPromptField textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 96px;
+  max-height: none;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 10px 0 8px;
+  box-sizing: border-box;
+  font-family: "Newsreader", serif;
+  font-size: 18px;
+  line-height: 1.6;
+  color: #1b1c19;
+  scrollbar-width: thin;
+  scrollbar-color: #8b716e transparent;
+}
+
+.uploadPopupPromptField textarea::placeholder {
+  color: rgba(95, 94, 94, 0.55);
+}
+
+.uploadPopupPromptField textarea:focus {
+  outline: none;
+}
+
+.uploadPopupPromptHint {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: #5f5e5e;
+}
+
+.uploadPopupFilesPanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  min-height: 0;
+}
+
+.uploadPopupFilesHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
+  border-bottom: 1px solid #dbdad5;
+  padding-bottom: 8px;
+}
+
+.uploadPopupFilesHead h3 {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5f5e5e;
+  font-weight: 500;
+}
+
+.uploadPopupFilesHead span {
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  color: #700d0d;
+  font-weight: 500;
+}
+
+.uploadPopupFilesList {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 113, 110, 0.65) transparent;
+}
+
+.uploadPopupFileCard {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #f0eee9;
+}
+
+.uploadPopupFileCardMain {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.uploadPopupFileGlyph {
+  color: #700d0d;
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.uploadPopupFileMeta {
+  min-width: 0;
+}
+
+.uploadPopupFileMeta strong {
+  display: block;
+  font-family: "Newsreader", serif;
+  font-size: 19px;
+  line-height: 1.35;
+  color: #1b1c19;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.uploadPopupFileMeta p {
+  margin: 3px 0 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5f5e5e;
+}
+
+.uploadPopupFileError {
+  color: #ba1a1a !important;
+  margin-top: 6px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 12px !important;
+}
+
+.uploadPopupFileWarn {
+  color: #8b5d50 !important;
+  margin-top: 6px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 12px !important;
+}
+
+.uploadPopupFileCardActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.uploadPopupStatusText {
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5f5e5e;
+}
+
+.uploadPopupRemoveBtn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #5f5e5e;
+}
+
+.uploadPopupRemoveBtn:hover {
+  color: #4c0003;
+}
+
+.uploadPopupEmptyState {
+  margin-top: 12px;
+  padding: 28px 0;
+  border-bottom: 1px solid #f0eee9;
+}
+
+.uploadPopupEmptyState p {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: 18px;
+  color: #5f5e5e;
+}
+
+.uploadPopupErrorBanner {
+  margin: -8px 0 0;
+  padding: 10px 12px;
+  background: #ffdad6;
+  border: 1px solid #dfbfbc;
+  color: #93000a;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+}
+
+.uploadPopupActions {
+  margin-top: 0;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.uploadPopupSubmitBtn {
+  width: 40%;
+  height: 80%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 4px;
+  background: #700d0d;
+  color: #ffffff;
+  font-family: "Newsreader", serif;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: 0;
+  transition: background-color 140ms ease;
+}
+
+.uploadPopupSubmitBtn:hover:not(:disabled) {
+  background: #871f1b;
+}
+
+.uploadPopupSubmitBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.uploadPopupSubmitInner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uploadPopupPromptField textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.uploadPopupPromptField textarea::-webkit-scrollbar-thumb {
+  background: rgba(139, 113, 110, 0.65);
+  border-radius: 999px;
+}
+
+.uploadPopupPromptField textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.uploadPopupFilesList::-webkit-scrollbar {
+  width: 8px;
+}
+
+.uploadPopupFilesList::-webkit-scrollbar-thumb {
+  background: rgba(139, 113, 110, 0.65);
+  border-radius: 999px;
+}
+
+.uploadPopupFilesList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (max-width: 1100px) {
+  .uploadPopupShell {
+    max-width: 940px;
+    padding: 34px 36px;
+    gap: 26px;
+  }
+
+  .uploadPopupHead h2 {
+    font-size: 48px;
+  }
+
+  .uploadPopupContentGrid {
+    gap: 36px;
+  }
+}
+
+@media (max-width: 820px) {
+  .uploadPopupBackdrop {
+    padding: 12px;
+    align-items: flex-start;
+  }
+
+  .uploadPopupShell {
+    padding: 24px 20px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+  }
+
+  .uploadPopupHead h2 {
+    font-size: 40px;
+  }
+
+  .uploadPopupDescription {
+    font-size: 18px;
+  }
+
+  .uploadPopupDropZone {
+    min-height: 172px;
+    padding: 16px;
+  }
+
+  .uploadPopupContentGrid {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .uploadPopupPromptField span {
+    font-size: 24px;
+  }
+
+  .uploadPopupSubmitBtn {
+    min-height: 52px;
+    font-size: 24px;
+  }
+}

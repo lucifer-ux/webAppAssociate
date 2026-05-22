@@ -1,25 +1,15 @@
 import "../componentStyling/HomeDashboardStyling.css";
-import Button from "./Button";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { generateJSON } from "@tiptap/html";
 import type { JSONContent } from "@tiptap/core";
-import {
-  BriefcaseBusiness,
-  ClipboardList,
-  FileSignature,
-  Scale,
-  ShieldCheck,
-} from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
-import SideBar from "./SideBar";
 import DraftingDocument, {
   type DraftingEditorHandle,
   type DraftingToolbarState,
 } from "./DraftingDocument";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 import { useMatterStore } from "../context/MatterStoreContext";
-import { DRAFT_TEMPLATES, type DraftTemplate } from "./draftingTemplates";
 import {
   createDraft,
   deriveDraftContextFromMatter,
@@ -41,14 +31,6 @@ import { buildDraftingExtensions } from "./draftingExtensions";
 const FONT_FAMILIES = ["Newsreader", "Georgia", "Times New Roman", "Work Sans"];
 const COLOR_CHOICES = ["#1b1c19", "#4c0003", "#6f5d55", "#0f5b78"];
 
-const templateIcons: Record<string, typeof ShieldCheck> = {
-  "mutual-nda": ShieldCheck,
-  "one-way-nda": ShieldCheck,
-  "statement-of-work": ClipboardList,
-  "service-agreement": BriefcaseBusiness,
-  "legal-notice-performance": Scale,
-};
-
 const styleMap: Record<ParagraphStyle, string> = {
   normal: "P",
   title: "TITLE",
@@ -60,6 +42,33 @@ const styleMap: Record<ParagraphStyle, string> = {
   "heading-6": "H6",
   quote: "BLOCKQUOTE",
 };
+
+const escapeHtml = (value: string) =>
+  String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const sourceTextToHtml = (title: string, text: string) => {
+  const paragraphs = String(text || "")
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 220);
+
+  return [
+    `<h1>${escapeHtml(title || "Source document")}</h1>`,
+    ...paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`),
+  ].join("");
+};
+
+const blankDraftHtml = () =>
+  [
+    "<h1>Untitled legal draft</h1>",
+    "<p></p>",
+  ].join("");
 
 const initialToolbarState: DraftingToolbarState = {
   paragraphStyle: "normal",
@@ -99,6 +108,9 @@ const DraftingPage = () => {
   const { matters, activeMatter, setActiveMatterId } = useMatterStore();
   const matterIdFromQuery = String(searchParams.get("matter") || "").trim();
   const draftIdFromQuery = String(searchParams.get("draft") || "").trim();
+  const sourceDocumentFromQuery = String(searchParams.get("sourceDocument") || "").trim();
+  const sourceDraftRequestRef = useRef("");
+  const blankDraftRequestRef = useRef("");
   const selectedMatter = useMemo(
     () =>
       matters.find((matter) => matter.id === matterIdFromQuery) ||
@@ -167,6 +179,120 @@ const DraftingPage = () => {
     };
   }, [draftIdFromQuery]);
 
+  const createEditableDraft = useCallback(
+    async ({
+      title,
+      html,
+      matterId,
+      templateId,
+      buildReplaceUrl,
+    }: {
+      title: string;
+      html: string;
+      matterId: string | null;
+      templateId: string | null;
+      buildReplaceUrl: (draft: DraftDetail) => string;
+    }) => {
+      const context = deriveDraftContextFromMatter(selectedMatter);
+      const contentJson = generateJSON(
+        html,
+        buildDraftingExtensions({
+          definedTerms: context.definedTerms,
+        }),
+      );
+
+      setSaveStatus("saving");
+      setLoadError("");
+      const createdDraft = await createDraft({
+        title,
+        matterId,
+        templateId,
+        contentJson,
+        context,
+      });
+      const hash = hashDraftContent(createdDraft.contentJson || {});
+      savedHashRef.current = hash;
+      currentHashRef.current = hash;
+      setActiveDraft(createdDraft);
+      setDocumentTitle(createdDraft.title);
+      setCurrentContentJson(createdDraft.contentJson || {});
+      setComments([]);
+      setPendingAnnotation(null);
+      setActiveAnnotationId(null);
+      setCommentDraft("");
+      setSaveStatus("saved");
+      navigate(buildReplaceUrl(createdDraft), { replace: true });
+    },
+    [navigate, selectedMatter],
+  );
+
+  useEffect(() => {
+    if (!sourceDocumentFromQuery || draftIdFromQuery || !selectedMatter) return;
+
+    const requestKey = `${selectedMatter.id}:${sourceDocumentFromQuery}`;
+    if (sourceDraftRequestRef.current === requestKey) return;
+    sourceDraftRequestRef.current = requestKey;
+
+    const sourceDocument = selectedMatter.documentResults?.find(
+      (entry) => entry.document.fileName === sourceDocumentFromQuery,
+    );
+    const sourceText =
+      sourceDocument?.page_aware_structure?.full_text ||
+      sourceDocument?.preview_text ||
+      "";
+
+    if (!sourceDocument || !sourceText.trim()) {
+      setLoadError("Source document text is not available for drafting.");
+      return;
+    }
+
+    const createSourceDraft = async () => {
+      try {
+        await createEditableDraft({
+          title: `Editable source - ${sourceDocument.document.fileName}`,
+          matterId: selectedMatter.id,
+          templateId: "source-document",
+          html: sourceTextToHtml(sourceDocument.document.fileName, sourceText),
+          buildReplaceUrl: (draft) =>
+            `/draft?draft=${encodeURIComponent(draft.id)}&matter=${encodeURIComponent(selectedMatter.id)}`,
+        });
+      } catch (error) {
+        setSaveStatus("error");
+        setLoadError(error instanceof Error ? error.message : "Failed to open source draft.");
+      }
+    };
+
+    void createSourceDraft();
+  }, [createEditableDraft, draftIdFromQuery, selectedMatter, sourceDocumentFromQuery]);
+
+  useEffect(() => {
+    if (draftIdFromQuery || sourceDocumentFromQuery) return;
+
+    const requestKey = selectedMatter?.id || "blank";
+    if (blankDraftRequestRef.current === requestKey) return;
+    blankDraftRequestRef.current = requestKey;
+
+    const createBlankDraft = async () => {
+      try {
+        await createEditableDraft({
+          title: selectedMatter ? `Draft - ${selectedMatter.title}` : "Untitled legal draft",
+          matterId: selectedMatter?.id || null,
+          templateId: "blank-document",
+          html: blankDraftHtml(),
+          buildReplaceUrl: (draft) =>
+            `/drafting?draft=${encodeURIComponent(draft.id)}${
+              selectedMatter?.id ? `&matter=${encodeURIComponent(selectedMatter.id)}` : ""
+            }`,
+        });
+      } catch (error) {
+        setSaveStatus("error");
+        setLoadError(error instanceof Error ? error.message : "Failed to open blank draft.");
+      }
+    };
+
+    void createBlankDraft();
+  }, [createEditableDraft, draftIdFromQuery, selectedMatter, sourceDocumentFromQuery]);
+
   useEffect(() => {
     if (!activeDraft) return;
     setDocumentTitle(activeDraft.title);
@@ -193,50 +319,6 @@ const DraftingPage = () => {
       window.clearTimeout(timeoutId);
     };
   }, [activeDraft, documentTitle]);
-
-  const createDraftFromTemplate = async (template: DraftTemplate) => {
-    const title = selectedMatter
-      ? `${template.shortTitle} - ${selectedMatter.title}`
-      : template.title;
-    const context = deriveDraftContextFromMatter(selectedMatter);
-    const html = template.buildHtml(selectedMatter);
-    const contentJson = generateJSON(
-      html,
-      buildDraftingExtensions({
-        definedTerms: context.definedTerms,
-      }),
-    );
-
-    setSaveStatus("saving");
-    try {
-      const createdDraft = await createDraft({
-        title,
-        matterId: selectedMatter?.id || null,
-        templateId: template.id,
-        contentJson,
-        context,
-      });
-      const hash = hashDraftContent(createdDraft.contentJson || {});
-      savedHashRef.current = hash;
-      currentHashRef.current = hash;
-      setActiveDraft(createdDraft);
-      setDocumentTitle(createdDraft.title);
-      setCurrentContentJson(createdDraft.contentJson || {});
-      setComments([]);
-      setPendingAnnotation(null);
-      setActiveAnnotationId(null);
-      setCommentDraft("");
-      setSaveStatus("saved");
-      navigate(
-        `/drafting?draft=${encodeURIComponent(createdDraft.id)}${
-          selectedMatter?.id ? `&matter=${encodeURIComponent(selectedMatter.id)}` : ""
-        }`,
-      );
-    } catch (error) {
-      setSaveStatus("error");
-      setLoadError(error instanceof Error ? error.message : "Failed to create draft.");
-    }
-  };
 
   const updateCurrentDocument = (contentJson: JSONContent) => {
     setCurrentContentJson(contentJson);
@@ -452,7 +534,7 @@ const DraftingPage = () => {
           ? "Save failed"
           : "Saved to Associate Drive";
 
-  const canRenderEditor = Boolean(activeDraft && draftIdFromQuery);
+  const canRenderEditor = Boolean(activeDraft);
 
   return (
     <div className="homeDashPage">
@@ -526,82 +608,12 @@ const DraftingPage = () => {
         }
       />
 
-      <SideBar
-        isCollapsed={isSideBarCollapsed}
-        activeSection="drafting"
-      />
-
       <main
         className={`homeDashMain ${
           canRenderEditor ? "draftingMain" : "draftingTemplateMain"
-        } ${isSideBarCollapsed ? "sidebarCollapsed" : ""}`}
+        } draftingNoAppSidebar`}
       >
-        {!canRenderEditor ? (
-          <section className="draftTemplateSelection">
-            <div className="draftTemplateHero">
-              <p className="draftTemplateEyebrow">Drafting Suite</p>
-              <h1>Choose a starting instrument</h1>
-              <p>
-                {selectedMatter
-                  ? `Matter context is loaded from ${selectedMatter.fileName}.`
-                  : "Select a template and fill matter-specific placeholders in the workspace."}
-              </p>
-              {loadError && <p className="draftTemplateError">{loadError}</p>}
-            </div>
-
-            <div className="draftTemplateGrid">
-              {DRAFT_TEMPLATES.map((template) => {
-                const Icon = templateIcons[template.id] || FileSignature;
-                return (
-                  <Button
-                    className="draftTemplateCard"
-                    type="button"
-                    key={template.id}
-                    onClick={() => void createDraftFromTemplate(template)}
-                  >
-                    <span className="draftTemplateIcon">
-                      <Icon size={18} />
-                    </span>
-                    <span className="draftTemplateCategory">{template.category}</span>
-                    <strong>{template.title}</strong>
-                    <p>{template.bestFor}</p>
-                    <span className="draftTemplateSections">
-                      {template.sections.join(" / ")}
-                    </span>
-                  </Button>
-                );
-              })}
-            </div>
-
-            <aside className="draftMatterContextPanel">
-              <p className="draftTemplateEyebrow">Matter Context</p>
-              <h2>{selectedMatter?.title || "No active matter selected"}</h2>
-              <dl>
-                <div>
-                  <dt>Source</dt>
-                  <dd>{selectedMatter?.fileName || "Template-only draft"}</dd>
-                </div>
-                <div>
-                  <dt>Parties</dt>
-                  <dd>
-                    {selectedMatter?.extractedFields.parties
-                      .map((party) => party.name)
-                      .slice(0, 3)
-                      .join(", ") || "Placeholders will be inserted"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Pages / words</dt>
-                  <dd>
-                    {selectedMatter
-                      ? `${selectedMatter.page_count} pages / ${selectedMatter.word_count.toLocaleString()} words`
-                      : "Not available"}
-                  </dd>
-                </div>
-              </dl>
-            </aside>
-          </section>
-        ) : activeDraft ? (
+        {activeDraft ? (
           <DraftingDocument
             ref={editorRef}
             draft={activeDraft}
@@ -634,7 +646,13 @@ const DraftingPage = () => {
             onMapComments={setComments}
             onRequestSave={() => void saveCurrentDraft("manual")}
           />
-        ) : null}
+        ) : (
+          <section className="draftBlankLoading">
+            <p className="draftTemplateEyebrow">Drafting Suite</p>
+            <h1>{saveStatus === "error" ? "Unable to open draft" : "Opening document"}</h1>
+            <p>{loadError || "Preparing an editable document workspace."}</p>
+          </section>
+        )}
       </main>
     </div>
   );

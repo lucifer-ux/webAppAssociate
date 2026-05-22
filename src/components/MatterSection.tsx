@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -18,7 +17,6 @@ import {
   FilePenLine,
   FolderOpen,
   Plus,
-  ShieldCheck,
   X,
 } from "lucide-react";
 import {
@@ -27,10 +25,15 @@ import {
   type ClauseSection,
   type ClauseItem,
   type MatterProcessedResult,
+  type MatterSignalSourceRef,
   type ObligationMapResult,
+  type PageAwareBlock,
   type SectionRiskMapResult,
 } from "../context/MatterStoreContext";
 import Loader from "./Loader";
+import UploadPopUp, { type UploadPopupValidationItem } from "./UploadPopUp";
+import SearchBar from "./SearchBar";
+import ChatBoxMatterSection from "./ChatBoxMatterSection";
 import { buildApiUrl } from "../lib/apiBase";
 
 const formatUploadedAt = (value: string) => {
@@ -53,10 +56,48 @@ type MatterLoaderState = {
   history: string[];
 };
 
+type UploadPopupMode = "create" | "append";
+
+type MatterValidationApiResponse = {
+  success?: boolean;
+  error?: string;
+  files?: Array<{
+    file_name: string;
+    accepted: boolean;
+    error?: string;
+    validation?: {
+      size_bytes?: number;
+      detected_mime?: string;
+      executable_detection?: {
+        has_executable_signals?: boolean;
+      };
+      parse?: {
+        page_count?: number | null;
+        estimated_pages?: number | null;
+      };
+    };
+  }>;
+};
+
 const sleep = (ms: number) =>
   new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const MATTER_AI_ENABLED = false;
+const MATTER_UPLOAD_SESSION_KEY = "open_matter_uploader";
+const MATTER_UPLOAD_MAX_FILES = 5;
+const MATTER_UPLOAD_MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MATTER_UPLOAD_MAX_PAGES = 20;
+
+type SourceViewerState = {
+  fileName: string;
+  documentId: string;
+  blocks: PageAwareBlock[];
+  highlightBlockId: string | null;
+  highlightText: string;
+  matterId: string;
+};
+
+type MatterDocumentEntry = NonNullable<MatterProcessedResult["documents"]>[number];
 
 class MatterPollingTimeoutError extends Error {
   jobId: string;
@@ -124,6 +165,55 @@ const renderHighlightedText = (
   return parts;
 };
 
+const normalizeSourceName = (value: string) =>
+  String(value || "").trim().toLowerCase();
+
+const splitSourceNames = (value: string) =>
+  String(value || "")
+    .split(/[,;]|\s+\+\s+|\s+and\s+/i)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const sourceNameKey = (value: string) =>
+  normalizeSourceName(value)
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const tokenizeForSourceMatch = (value: string) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 3);
+
+const scoreSourceBlock = (blockText: string, targetText: string) => {
+  const tokens = new Set(tokenizeForSourceMatch(targetText));
+  if (!tokens.size) return 0;
+  const blockTokens = new Set(tokenizeForSourceMatch(blockText));
+  let score = 0;
+  tokens.forEach((token) => {
+    if (blockTokens.has(token)) score += 1;
+  });
+  return score / tokens.size;
+};
+
+const textToSourceBlocks = (text: string): PageAwareBlock[] =>
+  String(text || "")
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 260)
+    .map((textValue, index) => ({
+      block_id: `fallback_block_${index + 1}`,
+      type: textValue.startsWith("#") ? "heading" : "paragraph",
+      text: textValue,
+      page: Math.floor(index / 8) + 1,
+      page_block_index: index,
+      doc_char_start: 0,
+      doc_char_end: textValue.length,
+    }));
+
 type BlankFieldHit = {
   id: string;
   label: string;
@@ -176,6 +266,10 @@ const sectionRiskClassName = (flag: string) => {
   return "isReview";
 };
 
+void renderHighlightedText;
+void defaultSectionRiskFlag;
+void sectionRiskClassName;
+
 type MatterSectionProps = {
   isObligationPanelOpen?: boolean;
   isPlaybookPanelOpen?: boolean;
@@ -217,6 +311,7 @@ const MatterSection = ({
   const navigate = useNavigate();
   const {
     activeMatter,
+    addMatter,
     addPersonToMatter,
     removePersonFromMatter,
     updateMatter,
@@ -239,6 +334,24 @@ const MatterSection = ({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingMatter, setIsDeletingMatter] = useState(false);
+  const [isUploadPopupOpen, setIsUploadPopupOpen] = useState(false);
+  const [uploadPopupMode, setUploadPopupMode] =
+    useState<UploadPopupMode>("create");
+  const [uploadQuery, setUploadQuery] = useState("");
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
+  const [uploadValidations, setUploadValidations] = useState<
+    UploadPopupValidationItem[]
+  >([]);
+  const [uploadPopupError, setUploadPopupError] = useState("");
+  const [isValidatingUploadFiles, setIsValidatingUploadFiles] = useState(false);
+  const [isUploadingMatter, setIsUploadingMatter] = useState(false);
+  const [ingestingFileName, setIngestingFileName] = useState("");
+  const [matterUploadLoaderState, setMatterUploadLoaderState] =
+    useState<MatterLoaderState>({
+      stage: "Queued matter ingestion",
+      progress: 5,
+      history: ["Queued matter ingestion"],
+    });
   const [isAppendingMatterFiles, setIsAppendingMatterFiles] = useState(false);
   const [appendingFileName, setAppendingFileName] = useState("");
   const [matterAppendLoaderState, setMatterAppendLoaderState] =
@@ -247,6 +360,15 @@ const MatterSection = ({
       progress: 5,
       history: ["Queued additional matter files"],
     });
+  const [briefAnswerText, setBriefAnswerText] = useState("");
+  const [isSubmittingBriefAnswers, setIsSubmittingBriefAnswers] =
+    useState(false);
+  const [briefAnswerError, setBriefAnswerError] = useState("");
+  const [isAcceptingBrief, setIsAcceptingBrief] = useState(false);
+  const [briefAcceptError, setBriefAcceptError] = useState("");
+  const [isMatterChatOpen, setIsMatterChatOpen] = useState(false);
+  const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null);
+  const sourceBlockRefs = useRef<Record<string, HTMLElement | null>>({});
   const [personName, setPersonName] = useState("");
   const [personRole, setPersonRole] = useState("");
   const [personDescription, setPersonDescription] = useState("");
@@ -259,7 +381,6 @@ const MatterSection = ({
   const [isClauseJumpPanelVisible, setIsClauseJumpPanelVisible] =
     useState(false);
   const [isPageAwareOpen, setIsPageAwareOpen] = useState(true);
-  const appendFilesInputRef = useRef<HTMLInputElement | null>(null);
   const [openClauseSections, setOpenClauseSections] = useState<
     Record<string, boolean>
   >({});
@@ -268,6 +389,243 @@ const MatterSection = ({
   const people = activeMatter?.people || [];
   const pages = activeMatter?.pageAwareStructure?.pages || [];
   const clauseSections = activeMatter?.pageAwareStructure?.sections || [];
+  const uploadedDocumentCount = Math.max(
+    Number(activeMatter?.document_count || 0),
+    Number(activeMatter?.documents?.length || 0),
+    Number(
+      activeMatter?.documentResults?.filter(
+        (entry) => entry?.document?.status !== "failed",
+      )?.length || 0,
+    ),
+    activeMatter?.fileName ? 1 : 0,
+  );
+  const appendRemainingSlots = Math.max(
+    0,
+    MATTER_UPLOAD_MAX_FILES - uploadedDocumentCount,
+  );
+  const popupFileLimit =
+    uploadPopupMode === "append" ? appendRemainingSlots : MATTER_UPLOAD_MAX_FILES;
+  const isAddFilesDisabled =
+    !activeMatter ||
+    isAppendingMatterFiles ||
+    isUploadingMatter ||
+    appendRemainingSlots <= 0;
+  const matterHeading = useMemo(() => {
+    const classificationName = String(
+      activeMatter?.classification?.classification_name || "",
+    ).trim();
+    if (
+      classificationName &&
+      classificationName.toUpperCase() !== "UNCLASSIFIED"
+    ) {
+      return classificationName;
+    }
+    return activeMatter?.title || "No matter uploaded yet";
+  }, [activeMatter?.classification?.classification_name, activeMatter?.title]);
+  const accumulatedBrief = activeMatter?.accumulatedBrief || null;
+  const briefQuestions = Array.isArray(accumulatedBrief?.questions)
+    ? accumulatedBrief.questions.filter(Boolean)
+    : [];
+  const isBriefQueryRequired =
+    activeMatter?.intelligence_statuses?.brief_generation === "query_required" ||
+    accumulatedBrief?.decision === "query_for_user";
+  const briefPoints = useMemo(
+    () =>
+      Array.isArray(accumulatedBrief?.brief_points)
+        ? accumulatedBrief.brief_points
+            .map((point) => ({
+              id: String(point?.id || ""),
+              heading: String(point?.heading || "").trim(),
+              detail: String(point?.detail || "").trim(),
+              tone: String(point?.tone || "neutral").trim().toLowerCase(),
+              sourceDocument: String(point?.source_document || "").trim(),
+              reason: String(point?.reason || "").trim(),
+            }))
+            .filter((point) => point.id && point.heading && point.detail)
+            .slice(0, 6)
+        : [],
+    [accumulatedBrief?.brief_points],
+  );
+  const groundAnalysis = activeMatter?.groundAnalysis || null;
+  const groundAnalysisStatus = useMemo(() => {
+    const statuses = [
+      activeMatter?.intelligence_statuses?.law_verification,
+      activeMatter?.intelligence_statuses?.law_generation,
+      activeMatter?.intelligence_statuses?.debrief_verification,
+      activeMatter?.intelligence_statuses?.debrief_generation,
+    ].filter(Boolean) as string[];
+
+    if (statuses.includes("processing")) return "processing";
+    if (statuses.includes("failed")) return "failed";
+    if (statuses.includes("ready")) return "ready";
+    return statuses[0] || "not_started";
+  }, [
+    activeMatter?.intelligence_statuses?.law_verification,
+    activeMatter?.intelligence_statuses?.law_generation,
+    activeMatter?.intelligence_statuses?.debrief_verification,
+    activeMatter?.intelligence_statuses?.debrief_generation,
+  ]);
+  const groundAnalysisCards = useMemo(
+    () =>
+      Array.isArray(groundAnalysis?.cards)
+        ? groundAnalysis.cards
+            .map((card) => ({
+              id: String(card?.card_id || ""),
+              title: String(card?.title || "").trim(),
+              status:
+                String(card?.status || "").trim().toLowerCase() === "open"
+                  ? "open"
+                  : "ready",
+              confidencePercent: Math.max(
+                0,
+                Math.min(100, Number(card?.confidence_percent || 0)),
+              ),
+              supportScore:
+                typeof card?.support_score === "number"
+                  ? Math.max(0, Math.min(1, Number(card.support_score)))
+                  : null,
+              factText: String(card?.fact_text || "").trim(),
+              lawText:
+                card?.law_text == null ? null : String(card.law_text || "").trim(),
+              inferenceText:
+                card?.inference_text == null
+                  ? null
+                  : String(card.inference_text || "").trim(),
+              lawSources: Array.isArray(card?.law_sources) ? card.law_sources : [],
+              legalRules: Array.isArray(card?.legal_rules) ? card.legal_rules : [],
+              contraryPoints: Array.isArray(card?.contrary_or_limiting_points)
+                ? card.contrary_or_limiting_points
+                : [],
+              researchGaps: Array.isArray(card?.research_gaps)
+                ? card.research_gaps
+                    .map((item) => String(item || "").trim())
+                    .filter(Boolean)
+                : [],
+              lawVerificationStatus: String(
+                card?.law_verification_status || "not_started",
+              ).trim(),
+              sourceFiles: Array.isArray(card?.source_files)
+                ? card.source_files
+                    .map((item) => String(item || "").trim())
+                    .filter(Boolean)
+                : [],
+              sourceRefs: Array.isArray(card?.source_refs) ? card.source_refs : [],
+            }))
+            .filter((card) => card.id && card.title && card.factText)
+        : [],
+    [groundAnalysis?.cards],
+  );
+  const shouldShowGroundAnalysis =
+    Boolean(activeMatter?.acceptedBrief?.accepted_at) ||
+    Boolean(groundAnalysis) ||
+    activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
+    activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.law_generation === "processing" ||
+    activeMatter?.intelligence_statuses?.law_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.debrief_generation === "ready" ||
+    activeMatter?.intelligence_statuses?.debrief_verification === "ready" ||
+    activeMatter?.intelligence_statuses?.law_generation === "ready" ||
+    activeMatter?.intelligence_statuses?.law_verification === "ready" ||
+    activeMatter?.intelligence_statuses?.debrief_generation === "failed" ||
+    activeMatter?.intelligence_statuses?.debrief_verification === "failed" ||
+    activeMatter?.intelligence_statuses?.law_generation === "failed" ||
+    activeMatter?.intelligence_statuses?.law_verification === "failed";
+
+  const findDocumentBySource = (
+    sourceName: string,
+    sourceRef?: MatterSignalSourceRef | null,
+  ) => {
+    const documents = Array.isArray(activeMatter?.documentResults)
+      ? activeMatter.documentResults
+      : [];
+    const normalizedName = normalizeSourceName(sourceName);
+    const sourceKey = sourceNameKey(sourceName);
+    const normalizedRefDocumentId = normalizeSourceName(sourceRef?.document_id || "");
+
+    return documents.find((entry) => {
+      const fileName = normalizeSourceName(entry?.document?.fileName || "");
+      const documentId = normalizeSourceName(entry?.document?.id || "");
+      const fileKey = sourceNameKey(entry?.document?.fileName || "");
+      return (
+        (normalizedRefDocumentId && documentId === normalizedRefDocumentId) ||
+        (normalizedName && fileName === normalizedName) ||
+        (normalizedName && fileName.includes(normalizedName)) ||
+        (normalizedName && normalizeSourceName(sourceName).includes(fileName)) ||
+        (sourceKey && fileKey === sourceKey) ||
+        (sourceKey && fileKey.includes(sourceKey)) ||
+        (sourceKey && sourceKey.includes(fileKey))
+      );
+    });
+  };
+
+  const buildSourceViewerBlocks = (
+    documentEntry: MatterDocumentEntry | undefined,
+  ) => {
+    const pageBlocks =
+      documentEntry?.page_aware_structure?.pages?.flatMap((page: { blocks?: PageAwareBlock[] }) =>
+        Array.isArray(page.blocks) ? page.blocks : [],
+      ) || [];
+    if (pageBlocks.length) return pageBlocks;
+
+    return textToSourceBlocks(
+      documentEntry?.page_aware_structure?.full_text ||
+        documentEntry?.preview_text ||
+        "",
+    );
+  };
+
+  const resolveHighlightBlock = (
+    blocks: PageAwareBlock[],
+    sourceRef: MatterSignalSourceRef | null,
+    fallbackText: string,
+  ) => {
+    if (sourceRef?.page) {
+      const pageBlocks = blocks.filter((block) => block.page === sourceRef.page);
+      const quote = String(sourceRef.quote || sourceRef.fact || "").trim();
+      if (quote) {
+        const quoteMatch = pageBlocks.find((block) =>
+          block.text.toLowerCase().includes(quote.toLowerCase()),
+        );
+        if (quoteMatch) return quoteMatch.block_id;
+      }
+      if (pageBlocks[0]) return pageBlocks[0].block_id;
+    }
+
+    const scored = blocks
+      .map((block) => ({
+        block,
+        score: scoreSourceBlock(block.text, fallbackText),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    return scored[0]?.score > 0 ? scored[0].block.block_id : blocks[0]?.block_id || null;
+  };
+
+  const openSourceViewer = ({
+    sourceName,
+    sourceRef = null,
+    fallbackText,
+  }: {
+    sourceName: string;
+    sourceRef?: MatterSignalSourceRef | null;
+    fallbackText: string;
+  }) => {
+    if (!activeMatter) return;
+    const documentEntry = findDocumentBySource(sourceName, sourceRef);
+    const blocks = buildSourceViewerBlocks(documentEntry);
+
+    if (!documentEntry || !blocks.length) return;
+
+    const highlightText = String(sourceRef?.quote || sourceRef?.fact || fallbackText || "").trim();
+    setSourceViewer({
+      matterId: activeMatter.id,
+      fileName: documentEntry.document.fileName,
+      documentId: documentEntry.document.id,
+      blocks,
+      highlightBlockId: resolveHighlightBlock(blocks, sourceRef, highlightText),
+      highlightText,
+    });
+  };
 
   const totalBlockCount = useMemo(
     () => pages.reduce((count, page) => count + page.blocks.length, 0),
@@ -659,6 +1017,28 @@ const MatterSection = ({
   }, [activeMatter?.id, visibleClauseSections]);
 
   useEffect(() => {
+    setBriefAnswerText("");
+    setBriefAnswerError("");
+    setBriefAcceptError("");
+  }, [activeMatter?.id, accumulatedBrief?.decision]);
+
+  useEffect(() => {
+    if (!sourceViewer?.highlightBlockId) return;
+    window.setTimeout(() => {
+      sourceBlockRefs.current[sourceViewer.highlightBlockId || ""]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+  }, [sourceViewer?.documentId, sourceViewer?.highlightBlockId]);
+
+  useEffect(() => {
+    if (activeMatter && isBriefQueryRequired) {
+      setIsMatterChatOpen(true);
+    }
+  }, [activeMatter?.id, isBriefQueryRequired]);
+
+  useEffect(() => {
     const shouldPollIntelligence =
       activeMatter?.intelligence_statuses?.brief_generation === "processing" ||
       activeMatter?.intelligence_statuses?.brief_verification === "processing" ||
@@ -707,7 +1087,7 @@ const MatterSection = ({
         if (!cancelled && shouldContinue) {
           window.setTimeout(() => {
             void pollForFields();
-          }, 2000);
+          }, 5000);
         }
       } catch {
         if (!cancelled) markMatterJobExpired(activeMatter.id);
@@ -727,6 +1107,85 @@ const MatterSection = ({
     activeMatter?.intelligence_statuses?.next_step_planner,
     activeMatter?.id,
     markMatterJobExpired,
+    updateMatter,
+  ]);
+
+  useEffect(() => {
+    const shouldPollGroundAnalysis =
+      Boolean(activeMatter?.id) &&
+      (activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
+        activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
+        activeMatter?.intelligence_statuses?.law_generation === "processing" ||
+        activeMatter?.intelligence_statuses?.law_verification === "processing");
+
+    if (!shouldPollGroundAnalysis || !activeMatter?.id) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    let isRequestInFlight = false;
+
+    const pollGroundAnalysis = async () => {
+      if (cancelled || isRequestInFlight) return;
+      isRequestInFlight = true;
+      try {
+        const response = await fetch(
+          buildApiUrl(
+            `/api/matters/${encodeURIComponent(activeMatter.id)}/ground-analysis`,
+          ),
+        );
+        const payload = (await response.json()) as {
+          success?: boolean;
+          result?: MatterProcessedResult | null;
+          statuses?: {
+            generation?: string;
+            verification?: string;
+            law_generation?: string;
+            law_verification?: string;
+          };
+        };
+
+        if (!response.ok || !payload.success) {
+          return;
+        }
+
+        if (!cancelled && payload.result) {
+          updateMatter(payload.result);
+        }
+
+        const shouldContinue =
+          payload.statuses?.generation === "processing" ||
+          payload.statuses?.verification === "processing" ||
+          payload.statuses?.law_generation === "processing" ||
+          payload.statuses?.law_verification === "processing";
+
+        if (!cancelled && shouldContinue) {
+          timeoutId = window.setTimeout(() => {
+            void pollGroundAnalysis();
+          }, 5000);
+        }
+      } catch {
+        // Ignore transient polling failures here; the main matter record remains usable.
+      } finally {
+        isRequestInFlight = false;
+      }
+    };
+
+    void pollGroundAnalysis();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [
+    activeMatter?.id,
+    activeMatter?.intelligence_statuses?.debrief_generation,
+    activeMatter?.intelligence_statuses?.debrief_verification,
+    activeMatter?.intelligence_statuses?.law_generation,
+    activeMatter?.intelligence_statuses?.law_verification,
     updateMatter,
   ]);
 
@@ -972,6 +1431,50 @@ const MatterSection = ({
     setPersonDescription("");
   };
 
+  const resetUploadPopupState = () => {
+    setUploadQuery("");
+    setPendingUploadFiles([]);
+    setUploadValidations([]);
+    setUploadPopupError("");
+  };
+
+  const openUploadPopup = (mode: UploadPopupMode) => {
+    if (mode === "append" && !activeMatter) return;
+    setUploadPopupMode(mode);
+    resetUploadPopupState();
+    setIsUploadPopupOpen(true);
+  };
+
+  const closeUploadPopup = (force = false) => {
+    if (
+      !force &&
+      (isUploadingMatter || isAppendingMatterFiles || isValidatingUploadFiles)
+    ) {
+      return;
+    }
+    setIsUploadPopupOpen(false);
+    setUploadPopupMode("create");
+    resetUploadPopupState();
+  };
+
+  const updateMatterUploadLoaderStage = (stage?: string, progress?: number) => {
+    if (!stage && typeof progress !== "number") return;
+
+    setMatterUploadLoaderState((current) => {
+      const nextStage = stage || current.stage;
+      const nextHistory =
+        nextStage && current.history[current.history.length - 1] !== nextStage
+          ? [...current.history, nextStage]
+          : current.history;
+
+      return {
+        stage: nextStage,
+        progress: typeof progress === "number" ? progress : current.progress,
+        history: nextHistory,
+      };
+    });
+  };
+
   const updateAppendLoaderStage = (stage?: string, progress?: number) => {
     if (!stage && typeof progress !== "number") return;
 
@@ -1001,7 +1504,154 @@ const MatterSection = ({
     }
   };
 
-  const pollMatterJob = async (jobId: string) => {
+  useEffect(() => {
+    const shouldOpenUploader = sessionStorage.getItem(MATTER_UPLOAD_SESSION_KEY);
+    if (shouldOpenUploader !== "1") return;
+    sessionStorage.removeItem(MATTER_UPLOAD_SESSION_KEY);
+    openUploadPopup("create");
+  }, []);
+
+  useEffect(() => {
+    const handleOpenUploader = () => {
+      sessionStorage.removeItem(MATTER_UPLOAD_SESSION_KEY);
+      openUploadPopup("create");
+    };
+
+    window.addEventListener("matter-uploader:open", handleOpenUploader);
+    return () => {
+      window.removeEventListener("matter-uploader:open", handleOpenUploader);
+    };
+  }, [activeMatter?.id, isUploadingMatter, isAppendingMatterFiles, isValidatingUploadFiles]);
+
+  const mergePendingFiles = (current: File[], next: File[]) => {
+    const merged = [...current];
+    next.forEach((file) => {
+      const alreadyExists = merged.some(
+        (existing) =>
+          existing.name === file.name &&
+          existing.size === file.size &&
+          existing.lastModified === file.lastModified,
+      );
+      if (!alreadyExists) merged.push(file);
+    });
+    return merged;
+  };
+
+  const validateSelectedFiles = async (files: File[], leadingError = "") => {
+    if (!files.length) {
+      setUploadValidations([]);
+      setUploadPopupError(leadingError);
+      return;
+    }
+
+    setIsValidatingUploadFiles(true);
+    setUploadPopupError(leadingError);
+    setIngestingFileName(
+      files.length === 1 ? files[0].name : `${files.length} files selected`,
+    );
+    updateMatterUploadLoaderStage("Running file detection checks", 12);
+
+    try {
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append("matter", file);
+      });
+
+      const response = await fetch(buildApiUrl("/api/matters/validate"), {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as MatterValidationApiResponse;
+      if (!response.ok || !payload?.success || !Array.isArray(payload.files)) {
+        throw new Error(payload?.error || "File validation failed.");
+      }
+
+      const validations: UploadPopupValidationItem[] = payload.files.map(
+        (item) => ({
+          fileName: item.file_name,
+          accepted: Boolean(item.accepted),
+          error: item.error,
+          sizeBytes: item.validation?.size_bytes,
+          estimatedPages: item.validation?.parse?.estimated_pages ?? null,
+          pageCount: item.validation?.parse?.page_count ?? null,
+          detectedMime: item.validation?.detected_mime,
+          hasExecutableSignals: Boolean(
+            item.validation?.executable_detection?.has_executable_signals,
+          ),
+        }),
+      );
+
+      setUploadValidations(validations);
+      const rejected = validations.filter((item) => !item.accepted);
+      if (rejected.length) {
+        setUploadPopupError(
+          [leadingError, rejected
+            .map((item) => `${item.fileName}: ${item.error || "Validation failed."}`)
+            .join(" ")]
+            .filter(Boolean)
+            .join(" "),
+        );
+      }
+    } catch (error) {
+      setUploadValidations([]);
+      setUploadPopupError(
+        [leadingError, error instanceof Error ? error.message : "File validation failed."]
+          .filter(Boolean)
+          .join(" "),
+      );
+    } finally {
+      setIsValidatingUploadFiles(false);
+      setIngestingFileName("");
+    }
+  };
+
+  const handlePopupFilesSelected = (files: File[]) => {
+    const localErrors: string[] = [];
+    const oversizedFiles = files.filter(
+      (file) => file.size > MATTER_UPLOAD_MAX_FILE_BYTES,
+    );
+    if (oversizedFiles.length) {
+      localErrors.push(
+        oversizedFiles
+          .map(
+            (file) =>
+              `${file.name} exceeds the 10MB per-file limit for this upload.`,
+          )
+          .join(" "),
+      );
+    }
+
+    const candidateFiles = files.filter(
+      (file) => file.size <= MATTER_UPLOAD_MAX_FILE_BYTES,
+    );
+    const merged = mergePendingFiles(pendingUploadFiles, candidateFiles);
+    const limited = merged.slice(0, popupFileLimit);
+
+    if (merged.length > popupFileLimit) {
+      localErrors.push(
+        uploadPopupMode === "append"
+          ? `You can add ${popupFileLimit} more file${popupFileLimit === 1 ? "" : "s"} to this matter.`
+          : `You can upload up to ${MATTER_UPLOAD_MAX_FILES} files at a time.`,
+      );
+    }
+
+    setPendingUploadFiles(limited);
+    const localErrorMessage = localErrors.join(" ").trim();
+    setUploadPopupError(localErrorMessage);
+    void validateSelectedFiles(limited, localErrorMessage);
+  };
+
+  const handleRemovePendingUploadFile = (fileName: string) => {
+    const nextFiles = pendingUploadFiles.filter((file) => file.name !== fileName);
+    setPendingUploadFiles(nextFiles);
+    setUploadPopupError("");
+    void validateSelectedFiles(nextFiles);
+  };
+
+  const pollMatterJob = async (
+    jobId: string,
+    onProgress: (stage?: string, progress?: number) => void,
+  ) => {
     for (let attempt = 0; attempt < 180; attempt += 1) {
       await sleep(1500);
       const response = await fetch(
@@ -1016,7 +1666,7 @@ const MatterSection = ({
         error?: string | null;
       };
 
-      updateAppendLoaderStage(payload.stage, payload.progress);
+      onProgress(payload.stage, payload.progress);
 
       if (!response.ok || !payload.success) {
         throw new Error(payload.error || "Matter ingestion status check failed.");
@@ -1076,18 +1726,117 @@ const MatterSection = ({
     }
   };
 
-  const handleAppendMatterFiles = async (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
-    const input = event.currentTarget;
-    const selectedFiles = Array.from(event.target.files || []);
-    if (!activeMatter || !selectedFiles.length || isAppendingMatterFiles) return;
+  const submitNewMatterUpload = async () => {
+    if (
+      !pendingUploadFiles.length ||
+      isUploadingMatter ||
+      isValidatingUploadFiles
+    ) {
+      return;
+    }
+    if (!uploadQuery.trim()) {
+      setUploadPopupError(
+        "Please add your question/comment/message before uploading the matter.",
+      );
+      return;
+    }
+    const filesToUpload = [...pendingUploadFiles];
+    const queryToUpload = uploadQuery.trim();
+    setIsUploadPopupOpen(false);
+
+    setIsUploadingMatter(true);
+    setIngestingFileName(
+      filesToUpload.length === 1
+        ? filesToUpload[0].name
+        : `${filesToUpload.length} files selected`,
+    );
+    updateMatterUploadLoaderStage("Uploading files to backend", 10);
+
+    try {
+      const formData = new FormData();
+      filesToUpload.forEach((file) => {
+        formData.append("matter", file);
+      });
+      formData.append("matter_query", queryToUpload);
+
+      const response = await fetch(buildApiUrl("/api/matters/upload"), {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as
+        | {
+            success?: boolean;
+            existing?: true;
+            result?: MatterProcessedResult;
+            error?: string;
+          }
+        | {
+            success?: boolean;
+            job_id?: string;
+            stage?: string;
+            progress?: number;
+            error?: string;
+          };
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Matter upload did not start.");
+      }
+
+      let result: MatterProcessedResult;
+      if ("existing" in payload && payload.existing && payload.result) {
+        updateMatterUploadLoaderStage("Loaded existing matter from storage", 100);
+        result = payload.result;
+      } else if ("job_id" in payload && payload.job_id) {
+        updateMatterUploadLoaderStage(payload.stage, payload.progress);
+        result = await pollMatterJob(payload.job_id, updateMatterUploadLoaderStage);
+      } else {
+        throw new Error("Matter upload response was invalid.");
+      }
+
+      addMatter(result);
+      closeUploadPopup(true);
+      navigate("/matter");
+    } catch (error) {
+      setIsUploadPopupOpen(true);
+      if (error instanceof MatterPollingTimeoutError) {
+        setUploadPopupError(error.message);
+      } else {
+        setUploadPopupError(
+          error instanceof Error
+            ? error.message
+            : "Matter upload failed. Please try again.",
+        );
+      }
+    } finally {
+      setIsUploadingMatter(false);
+      setIngestingFileName("");
+    }
+  };
+
+  const handleAppendMatterFiles = async () => {
+    if (
+      !activeMatter ||
+      !pendingUploadFiles.length ||
+      isAppendingMatterFiles ||
+      isValidatingUploadFiles
+    ) {
+      return;
+    }
+    if (!uploadQuery.trim()) {
+      setUploadPopupError(
+        "Please add your question/comment/message before uploading files.",
+      );
+      return;
+    }
+    const filesToUpload = [...pendingUploadFiles];
+    const queryToUpload = uploadQuery.trim();
+    setIsUploadPopupOpen(false);
 
     setIsAppendingMatterFiles(true);
     setAppendingFileName(
-      selectedFiles.length === 1
-        ? selectedFiles[0].name
-        : `${selectedFiles.length} files selected`,
+      filesToUpload.length === 1
+        ? filesToUpload[0].name
+        : `${filesToUpload.length} files selected`,
     );
     setMatterAppendLoaderState({
       stage: "Uploading additional files",
@@ -1097,9 +1846,10 @@ const MatterSection = ({
 
     try {
       const formData = new FormData();
-      selectedFiles.forEach((file) => {
+      filesToUpload.forEach((file) => {
         formData.append("matter", file);
       });
+      formData.append("matter_query", queryToUpload);
 
       const response = await fetch(
         buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/files`),
@@ -1122,15 +1872,16 @@ const MatterSection = ({
 
       updateAppendLoaderStage(payload.stage, payload.progress);
       await refreshStoredMatters();
-      const result = await pollMatterJob(payload.job_id);
+      const result = await pollMatterJob(payload.job_id, updateAppendLoaderStage);
       updateMatter(result);
-      if (input) input.value = "";
+      closeUploadPopup(true);
     } catch (error) {
+      setIsUploadPopupOpen(true);
       if (error instanceof MatterPollingTimeoutError) {
         await refreshStoredMatters().catch(() => {});
-        window.alert(error.message);
+        setUploadPopupError(error.message);
       } else {
-        window.alert(
+        setUploadPopupError(
           error instanceof Error
             ? error.message
             : "Failed to add files to this matter.",
@@ -1139,6 +1890,86 @@ const MatterSection = ({
     } finally {
       setIsAppendingMatterFiles(false);
       setAppendingFileName("");
+    }
+  };
+
+  const handleSubmitBriefAnswers = async (answerOverride?: string) => {
+    if (!activeMatter || isSubmittingBriefAnswers) return;
+    const answer = (answerOverride ?? briefAnswerText).trim();
+    if (!answer) {
+      setBriefAnswerError("Add the missing information before continuing.");
+      return;
+    }
+
+    setIsSubmittingBriefAnswers(true);
+    setBriefAnswerError("");
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/brief/answers`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            answers: [
+              {
+                question: briefQuestions.join("\n") || "Additional information",
+                answer,
+              },
+            ],
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        result?: MatterProcessedResult;
+        error?: string;
+      };
+      if (!response.ok || !payload?.success || !payload.result) {
+        throw new Error(payload?.error || "Brief continuation failed.");
+      }
+      updateMatter(payload.result);
+      setBriefAnswerText("");
+    } catch (error) {
+      setBriefAnswerError(
+        error instanceof Error
+          ? error.message
+          : "Failed to continue brief generation.",
+      );
+    } finally {
+      setIsSubmittingBriefAnswers(false);
+    }
+  };
+
+  const handleAcceptBrief = async () => {
+    if (!activeMatter || isAcceptingBrief) return;
+    setIsAcceptingBrief(true);
+    setBriefAcceptError("");
+    try {
+      const response = await fetch(
+        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/brief/accept`),
+        {
+          method: "POST",
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        result?: MatterProcessedResult;
+        error?: string;
+      };
+      if (!response.ok || !payload?.success || !payload.result) {
+        throw new Error(payload?.error || "Failed to accept brief.");
+      }
+      updateMatter(payload.result);
+    } catch (error) {
+      setBriefAcceptError(
+        error instanceof Error ? error.message : "Failed to accept brief.",
+      );
+    } finally {
+      setIsAcceptingBrief(false);
     }
   };
 
@@ -1440,14 +2271,81 @@ const MatterSection = ({
     activeSuggestion?.rewrittenText ||
     "";
 
+  void isPageAwareOpen;
+  void openClauseSections;
+  void totalBlockCount;
+  void highlightMap;
+  void blankFieldMap;
+  void sectionRiskStatusById;
+  void sectionRiskErrorById;
+  void quickAnalysisStatus;
+  void quickAnalysisProgress;
+  void pageAwareRiskSummary;
+  void blockWarningLevel;
+  void activeRedlineError;
+  void activeRedlineLoading;
+  void activeAcceptedCount;
+  void activeDiff;
+  void runQuickRiskAnalysis;
+  void handleClauseSelect;
+  void handleRedlinePositionSelect;
+  void handleUseAiRedlining;
+  void handleAcceptRedline;
+  void activeDraftTitle;
+  void activeDraftText;
+
   return (
     <section className="matterOverviewWrap">
+      <UploadPopUp
+        open={isUploadPopupOpen}
+        title={uploadPopupMode === "append" ? "Add files to this matter" : "Upload matter files"}
+        description={
+          uploadPopupMode === "append"
+            ? "Add more source files to this matter. We will verify them first, then ingest them into the same matter context."
+            : "Upload up to five source files and add any context you want to carry with the matter."
+        }
+        queryValue={uploadQuery}
+        onQueryChange={setUploadQuery}
+        selectedFiles={pendingUploadFiles}
+        validations={uploadValidations}
+        maxFiles={popupFileLimit}
+        sizeLimitLabel="10 MB"
+        maxPages={MATTER_UPLOAD_MAX_PAGES}
+        isValidating={isValidatingUploadFiles}
+        isSubmitting={isUploadingMatter || isAppendingMatterFiles}
+        errorMessage={uploadPopupError}
+        submitLabel={uploadPopupMode === "append" ? "Upload files" : "Upload matter"}
+        onFilesSelected={handlePopupFilesSelected}
+        onRemoveFile={handleRemovePendingUploadFile}
+        onCancel={() => closeUploadPopup()}
+        onSubmit={() => {
+          if (uploadPopupMode === "append") {
+            void handleAppendMatterFiles();
+            return;
+          }
+          void submitNewMatterUpload();
+        }}
+      />
+
       {isDeletingMatter && (
         <Loader
           variant="spinner"
           eyebrow="Deleting Matter"
           title="Removing Matter"
           message="Deleting matter records, linked drafts, and stored files."
+          mode="overlay"
+        />
+      )}
+
+      {isUploadingMatter && (
+        <Loader
+          fileName={ingestingFileName}
+          eyebrow="Matter Upload"
+          title="Creating Matter Workspace"
+          message="Preparing your matter workspace with live ingestion status."
+          stage={matterUploadLoaderState.stage}
+          progress={matterUploadLoaderState.progress}
+          steps={matterUploadLoaderState.history}
           mode="overlay"
         />
       )}
@@ -1465,29 +2363,36 @@ const MatterSection = ({
         />
       )}
 
-      <input
-        ref={appendFilesInputRef}
-        type="file"
-        aria-label="Add files to this matter"
-        accept=".pdf,.md,.txt,application/pdf,text/markdown,text/plain"
-        style={{ display: "none" }}
-        multiple
-        onChange={(event) => {
-          void handleAppendMatterFiles(event);
-        }}
-      />
+      {isValidatingUploadFiles && (
+        <Loader
+          fileName={ingestingFileName || appendingFileName}
+          eyebrow="File Verification"
+          title="Checking Uploaded Files"
+          message="Running file-type detection, size checks, and page limits before upload."
+          stage="Running file detection checks"
+          progress={18}
+          steps={[
+            "Inspecting uploaded files",
+            "Checking size and page limits",
+            "Detecting executable signals",
+          ]}
+          mode="overlay"
+        />
+      )}
 
       <header className="matterOverviewHead">
         <p className="matterEyebrow">Matter Overview</p>
         <div className="matterOverviewTitleRow">
-          <h1>{activeMatter?.title || "No matter uploaded yet"}</h1>
+          <h1>{matterHeading}</h1>
           <div className="matterOverviewActionRow">
             <Button
               type="button"
               className="matterAddFilesBtn"
-              disabled={!activeMatter || isAppendingMatterFiles}
-              onClick={() => appendFilesInputRef.current?.click()}
-              text="Add files"
+              disabled={isAddFilesDisabled}
+              onClick={() =>
+                openUploadPopup(activeMatter ? "append" : "create")
+              }
+              text={activeMatter ? "Add files" : "Upload matter"}
               showImage
               image={<Plus size={17} />}
             />
@@ -1522,83 +2427,367 @@ const MatterSection = ({
           Focused view for quick orientation, working notes, and clause-aware
           document review.
         </p>
-      </header>
 
-      <section className="matterPeopleSection">
-        <div className="matterPeopleHead">
-          <h2>People</h2>
-          <Button
-            type="button"
-            className="matterPeopleAddBtn"
-            disabled={!activeMatter}
-            onClick={() => setIsPeopleDialogOpen(true)}
-            aria-label="Add a person to this matter"
-            showImage
-            image={<Plus size={18} />}
-          />
+        <section className="matterPeopleSection">
+          <div className="matterPeopleHead">
+            <h2>People</h2>
+            <Button
+              type="button"
+              className="matterPeopleAddBtn"
+              disabled={!activeMatter}
+              onClick={() => setIsPeopleDialogOpen(true)}
+              aria-label="Add a person to this matter"
+              showImage
+              image={<Plus size={18} />}
+            />
+          </div>
+
+          {people.length ? (
+            <div className="matterPeopleGrid">
+              {people.map((person) => (
+                <article className="matterPersonCard" key={person.id}>
+                  <Button
+                    type="button"
+                    className="matterPersonRemoveBtn"
+                    aria-label={`Remove ${person.name}`}
+                    onClick={() =>
+                      activeMatter &&
+                      removePersonFromMatter(activeMatter.id, person.id)
+                    }
+                    showImage
+                    image={<X size={14} />}
+                  />
+                  <span className="matterPersonAvatar">{person.initials}</span>
+                  <div>
+                    <h3>{person.name}</h3>
+                    <strong>{person.role}</strong>
+                    <p>{person.description}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <Button
+              type="button"
+              className="matterPeopleEmptyAdd"
+              disabled={!activeMatter}
+              onClick={() => setIsPeopleDialogOpen(true)}
+              text="Add relevant people manually"
+              showImage
+              image={<Plus size={22} />}
+            />
+          )}
+        </section>
+
+        <div className="matterMetaGrid">
+          <article className="matterMetaCard">
+            <span className="matterMetaIcon">
+              <FolderOpen size={16} />
+            </span>
+            <div>
+              <h3>File name</h3>
+              <p>{activeMatter?.fileName || "Upload a file to start."}</p>
+            </div>
+          </article>
+          <article className="matterMetaCard">
+            <span className="matterMetaIcon">
+              <CalendarClock size={16} />
+            </span>
+            <div>
+              <h3>Uploaded</h3>
+              <p>
+                {activeMatter?.uploadedAt
+                  ? formatUploadedAt(activeMatter.uploadedAt)
+                  : "Not available"}
+              </p>
+            </div>
+          </article>
         </div>
 
-        {people.length ? (
-          <div className="matterPeopleGrid">
-            {people.map((person) => (
-              <article className="matterPersonCard" key={person.id}>
-                <Button
-                  type="button"
-                  className="matterPersonRemoveBtn"
-                  aria-label={`Remove ${person.name}`}
-                  onClick={() =>
-                    activeMatter &&
-                    removePersonFromMatter(activeMatter.id, person.id)
-                  }
-                  showImage
-                  image={<X size={14} />}
-                />
-                <span className="matterPersonAvatar">{person.initials}</span>
-                <div>
-                  <h3>{person.name}</h3>
-                  <strong>{person.role}</strong>
-                  <p>{person.description}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <Button
-            type="button"
-            className="matterPeopleEmptyAdd"
-            disabled={!activeMatter}
-            onClick={() => setIsPeopleDialogOpen(true)}
-            text="Add relevant people manually"
-            showImage
-            image={<Plus size={22} />}
-          />
-        )}
-      </section>
+        {activeMatter ? (
+          <>
+            <article className="matterBriefLoopPanel">
+              <div className="matterBriefLoopHead">
+                <p className="matterEyebrow">
+                  Agent Brief ·{" "}
+                  {activeMatter.intelligence_statuses?.brief_generation === "ready"
+                    ? "Generated"
+                    : activeMatter.intelligence_statuses?.brief_generation ===
+                        "query_required"
+                      ? "Needs Input"
+                      : "Pending"}{" "}
+                  · {uploadedDocumentCount} file
+                  {uploadedDocumentCount === 1 ? "" : "s"}
+                </p>
+                <span className={`matterBriefStatus is-${activeMatter.intelligence_statuses?.brief_generation || "not_started"}`}>
+                  {activeMatter.intelligence_statuses?.brief_generation || "not started"}
+                </span>
+              </div>
 
-      <div className="matterMetaGrid">
-        <article className="matterMetaCard">
-          <span className="matterMetaIcon">
-            <FolderOpen size={16} />
-          </span>
-          <div>
-            <h3>File name</h3>
-            <p>{activeMatter?.fileName || "Upload a file to start."}</p>
-          </div>
-        </article>
-        <article className="matterMetaCard">
-          <span className="matterMetaIcon">
-            <CalendarClock size={16} />
-          </span>
-          <div>
-            <h3>Uploaded</h3>
-            <p>
-              {activeMatter?.uploadedAt
-                ? formatUploadedAt(activeMatter.uploadedAt)
-                : "Not available"}
-            </p>
-          </div>
-        </article>
-      </div>
+              {isBriefQueryRequired ? (
+                <div className="matterBriefQuestionBox">
+                  <p>
+                    The agent does not yet have enough grounded information to
+                    generate the matter brief. Answer the questions below to
+                    continue the loop.
+                  </p>
+                  {briefQuestions.length ? (
+                    <ul>
+                      {briefQuestions.map((question) => (
+                        <li key={question}>{question}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {briefAnswerError ? (
+                    <p className="matterBriefError">{briefAnswerError}</p>
+                  ) : null}
+                  <div className="matterBriefActions">
+                    <Button
+                      type="button"
+                      disabled={isSubmittingBriefAnswers}
+                      onClick={() => setIsMatterChatOpen(true)}
+                    >
+                      Answer in matter chat
+                    </Button>
+                  </div>
+                </div>
+              ) : accumulatedBrief?.decision === "generate_brief" ? (
+                <>
+                  {briefPoints.length ? (
+                    <div className="matterBriefPoints">
+                      {briefPoints.map((point) => (
+                        <article
+                          className="matterBriefPoint"
+                          key={point.id}
+                        >
+                          <div
+                            className={`matterBriefPointHeading tone-${point.tone || "neutral"}`}
+                          >
+                            <span className="matterBriefPointHeadingText">{point.heading}</span>
+                            <span className="matterBriefPointHeadingMeta">
+                              <span className="matterBriefPointHeadingMetaItem">
+                                <span className="matterBriefPointHeadingMetaLabel">Source file:</span>
+                                {splitSourceNames(point.sourceDocument).length ? (
+                                  <span className="matterSourceFileList">
+                                    {splitSourceNames(point.sourceDocument).map((sourceName) => (
+                                      <Button
+                                        type="button"
+                                        className="matterSourceFileButton"
+                                        key={`${point.id}-${sourceName}`}
+                                        onClick={() =>
+                                          openSourceViewer({
+                                            sourceName,
+                                            fallbackText: `${point.heading} ${point.detail}`,
+                                          })
+                                        }
+                                      >
+                                        {sourceName}
+                                      </Button>
+                                    ))}
+                                  </span>
+                                ) : (
+                                  <span className="matterBriefPointHeadingMetaValue">
+                                    Uploaded document set
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                          </div>
+                          <p className="matterBriefPointDetail">{point.detail}</p>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="matterBriefText">
+                      {accumulatedBrief.accumulated_brief || "Brief generated."}
+                    </p>
+                  )}
+                  <div className="matterBriefSourceRow">
+                    <span>{activeMatter.classification?.classification_name || "Matter classification"}</span>
+                    <span>{uploadedDocumentCount} linked document{uploadedDocumentCount === 1 ? "" : "s"}</span>
+                    <span>Facts only</span>
+                  </div>
+                  {!activeMatter?.acceptedBrief?.accepted_at ? (
+                    <div className="matterBriefActions">
+                      <Button
+                        type="button"
+                        disabled={isAcceptingBrief}
+                        onClick={() => void handleAcceptBrief()}
+                      >
+                        {isAcceptingBrief ? "Accepting..." : "Accept Brief"}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {activeMatter?.acceptedBrief?.accepted_at ? (
+                    <p className="matterBriefAcceptedMeta">
+                      Accepted on {formatUploadedAt(activeMatter.acceptedBrief.accepted_at)}
+                    </p>
+                  ) : null}
+                  {briefAcceptError ? (
+                    <p className="matterBriefError">{briefAcceptError}</p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="matterBriefText">
+                  Upload and extraction are complete. The matter brief agent will
+                  either generate a facts-only brief or ask for missing information.
+                </p>
+              )}
+            </article>
+
+            {shouldShowGroundAnalysis ? (
+              <article className="matterDebriefPanel">
+                <div className="matterDebriefHead">
+                  <p className="matterEyebrow">
+                    Ground Analysis {groundAnalysis?.meta?.error ? "· Degraded" : "· Facts / Law / Inference separated"}
+                  </p>
+                  <span className={`matterBriefStatus is-${groundAnalysisStatus}`}>
+                    {groundAnalysisStatus || "not started"}
+                  </span>
+                </div>
+
+                {activeMatter.intelligence_statuses?.debrief_generation === "processing" ||
+                activeMatter.intelligence_statuses?.debrief_verification === "processing" ||
+                activeMatter.intelligence_statuses?.law_generation === "processing" ||
+                activeMatter.intelligence_statuses?.law_verification === "processing" ? (
+                  <div className="matterDebriefLoading">
+                    <Loader
+                      mode="inline"
+                      variant="spinner"
+                      eyebrow="Ground Analysis"
+                      title={
+                        activeMatter.intelligence_statuses?.law_generation === "processing" ||
+                        activeMatter.intelligence_statuses?.law_verification === "processing"
+                          ? "Researching Law"
+                          : "Generating Signals"
+                      }
+                      message={
+                        activeMatter.intelligence_statuses?.law_generation === "processing" ||
+                        activeMatter.intelligence_statuses?.law_verification === "processing"
+                          ? "Finding ranked Indian authorities and attaching cautious law support to each fact-grounded ground."
+                          : "Building fact-grounded matter signals from the accepted brief and uploaded documents."
+                      }
+                    />
+                  </div>
+                ) : groundAnalysis?.no_signals_found ? (
+                  <p className="matterDebriefEmpty">
+                    No fact-grounded debrief signals were found in the current uploaded set.
+                  </p>
+                ) : groundAnalysisCards.length ? (
+                  <div className="matterDebriefCards">
+                    {groundAnalysisCards.map((card) => (
+                      <article className="matterDebriefCard" key={card.id}>
+                        <div className="matterDebriefCardTop">
+                          <h3>{card.title}</h3>
+                          <strong>
+                            {typeof card.supportScore === "number"
+                              ? Math.round(card.supportScore * 100)
+                              : card.confidencePercent}
+                            %
+                          </strong>
+                        </div>
+                        <div className="matterDebriefBarTrack" aria-hidden="true">
+                          <span
+                            className={`matterDebriefBarFill is-${card.status}`}
+                            style={{
+                              width: `${
+                                typeof card.supportScore === "number"
+                                  ? Math.round(card.supportScore * 100)
+                                  : card.confidencePercent
+                              }%`,
+                            }}
+                          />
+                        </div>
+                        <div className="matterDebriefFactGrid">
+                          <div className="matterDebriefFactBlock">
+                            <span>Fact</span>
+                            <p>{card.factText}</p>
+                          </div>
+                          <div className="matterDebriefFactBlock matterDebriefLawBlock">
+                            <span>Law</span>
+                            <p>
+                              {card.lawText ||
+                                (card.lawVerificationStatus === "failed"
+                                  ? "No supported legal rule extracted yet."
+                                  : "Law research in progress.")}
+                            </p>
+                          </div>
+                          <div className="matterDebriefFactBlock matterDebriefInferenceBlock">
+                            <span>Inference</span>
+                            <p>{card.inferenceText || "Inference pipeline pending."}</p>
+                          </div>
+                        </div>
+                        <div className="matterDebriefMeta">
+                          {card.lawSources.length ? (
+                            <div className="matterDebriefLawSourcesBlock">
+                              <strong>Sources referred:</strong>
+                              <div className="matterDebriefLawSources">
+                                {card.lawSources.map((source) => (
+                                  <a
+                                    key={`${card.id}-${source.source_id}`}
+                                    href={String(source?.url || "#")}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="matterDebriefLawSourceLink"
+                                  >
+                                    {String(source?.title || "Authority")}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          <p>
+                            <strong>Source files:</strong>{" "}
+                            {card.sourceFiles.length ? (
+                              <span className="matterSourceFileList">
+                                {card.sourceFiles.map((sourceName) => {
+                                  const matchingRef =
+                                    card.sourceRefs.find(
+                                      (ref) =>
+                                        normalizeSourceName(ref.file_name || "") ===
+                                        normalizeSourceName(sourceName),
+                                    ) || card.sourceRefs[0] || null;
+                                  return (
+                                    <Button
+                                      type="button"
+                                      className="matterSourceFileButton"
+                                      key={`${card.id}-${sourceName}`}
+                                      onClick={() =>
+                                        openSourceViewer({
+                                          sourceName,
+                                          sourceRef: matchingRef,
+                                          fallbackText: `${card.title} ${card.factText}`,
+                                        })
+                                      }
+                                    >
+                                      {sourceName}
+                                    </Button>
+                                  );
+                                })}
+                              </span>
+                            ) : (
+                              "Uploaded document set"
+                            )}
+                          </p>
+                          {card.researchGaps.length ? (
+                            <p>
+                              <strong>Research gaps:</strong> {card.researchGaps.join(" ")}
+                            </p>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="matterDebriefEmpty">
+                    Ground analysis has not been generated yet for this accepted brief.
+                  </p>
+                )}
+              </article>
+            ) : null}
+          </>
+        ) : null}
+      </header>
 
       {blankFieldHits.length > 0 ? (
         <article className="matterBlankBanner">
@@ -1647,542 +2836,6 @@ const MatterSection = ({
           ) : null}
         </article>
       ) : null}
-
-      <article className="matterQualityPanel">
-        <div className="matterTextPanelHead">
-          <h2>Page-aware structure</h2>
-          <div className="matterPanelHeadActions">
-            {MATTER_AI_ENABLED ? (
-              <>
-                <div className="matterRiskRibbon">
-                  <span className="isHigh">
-                    {pageAwareRiskSummary.high} HIGH RISK
-                  </span>
-                  <span className="isReview">
-                    {pageAwareRiskSummary.review} REVIEW
-                  </span>
-                  <span className="isClean">
-                    {pageAwareRiskSummary.clean} CLEAN
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  className="matterQuickAnalysisBtn"
-                  disabled={quickAnalysisStatus === "running"}
-                  onClick={() => void runQuickRiskAnalysis()}
-                  title="Run risk classification across all extracted sections."
-                >
-                  {quickAnalysisStatus === "running"
-                    ? `Analyzing ${quickAnalysisProgress.done}/${quickAnalysisProgress.total}`
-                    : "Quick analysis"}
-                </Button>
-              </>
-            ) : null}
-            <span>{visibleClauseSections.length} sections</span>
-            <Button
-              type="button"
-              className="matterCollapseButton"
-              onClick={() => setIsPageAwareOpen((prev) => !prev)}
-              aria-expanded={isPageAwareOpen}
-              aria-controls="matter-page-aware-body"
-              title={
-                isPageAwareOpen
-                  ? "Collapse page-aware structure."
-                  : "Expand page-aware structure."
-              }
-            >
-              {isPageAwareOpen ? (
-                <ChevronDown size={16} />
-              ) : (
-                <ChevronRight size={16} />
-              )}
-            </Button>
-          </div>
-        </div>
-        {isPageAwareOpen && (
-          <div className="matterClauseSections" id="matter-page-aware-body">
-            {visibleClauseSections.length ? (
-              visibleClauseSections.map((section) => {
-                const sectionStateKey = `${activeMatter?.id || "matter"}:${section.section_id}`;
-                const isSectionOpen =
-                  openClauseSections[sectionStateKey] ?? true;
-                const sectionRisk = sectionRiskMaps.get(section.section_id);
-                const sectionFlag =
-                  sectionRisk?.section_flag || defaultSectionRiskFlag(section);
-                const sectionRiskItems = new Map(
-                  (sectionRisk?.items || []).map((item) => [
-                    item.clause_id,
-                    item,
-                  ]),
-                );
-                const sectionRiskStatus =
-                  sectionRiskStatusById[section.section_id] || "idle";
-
-                return (
-                  <section
-                    className="matterClauseSectionCard"
-                    key={section.section_id}
-                    ref={(node) => {
-                      sectionRefs.current[section.section_id] = node;
-                    }}
-                  >
-                    <Button
-                      type="button"
-                      className="matterClauseSectionToggle"
-                      onClick={() => {
-                        const nextIsOpen = !(
-                          openClauseSections[sectionStateKey] ?? true
-                        );
-                        setOpenClauseSections((prev) => ({
-                          ...prev,
-                          [sectionStateKey]: nextIsOpen,
-                        }));
-                      }}
-                      aria-expanded={isSectionOpen}
-                      title={
-                        isSectionOpen
-                          ? `Collapse ${section.section_label}.`
-                          : `Expand ${section.section_label}.`
-                      }
-                      showImage
-                      image={
-                        isSectionOpen ? (
-                          <ChevronDown size={16} />
-                        ) : (
-                          <ChevronRight size={16} />
-                        )
-                      }
-                      imagePosition="right"
-                    >
-                      <div className="matterClauseSectionHead">
-                        <div>
-                          <strong>{section.section_label}</strong>
-                          <span>
-                            Page {section.page_start}
-                            {section.page_end !== section.page_start
-                              ? `-${section.page_end}`
-                              : ""}
-                          </span>
-                        </div>
-                        <div className="matterClauseSectionHeadMeta">
-                          <span className="matterClauseStatusBadge isReady">
-                            {section.clauses.length} clauses
-                          </span>
-                          <span
-                            className={`matterClauseFlagPill ${sectionRiskClassName(sectionFlag)}`}
-                          >
-                            {sectionFlag}
-                          </span>
-                          <small>
-                            {section.section_type.replace(/_/g, " ")}
-                          </small>
-                        </div>
-                      </div>
-                    </Button>
-
-                    {isSectionOpen ? (
-                        <div className="matterClauseList">
-                          {sectionRiskStatus === "loading" ? (
-                            <p className="matterClauseEmpty">
-                              Classifying risk for this section...
-                            </p>
-                          ) : null}
-                          {sectionRiskStatus === "error" ? (
-                            <p className="matterClauseEmpty">
-                              {sectionRiskErrorById[section.section_id] ||
-                                "Risk classification failed."}
-                            </p>
-                          ) : null}
-                          {section.clauses.map((clause) => {
-                            const riskItem = sectionRiskItems.get(
-                              clause.clause_id,
-                            );
-                            const riskClass =
-                              riskItem?.risk === "high"
-                                ? "isHighRisk"
-                                : riskItem?.risk === "clean"
-                                  ? "isCleanRisk"
-                                  : "isReviewRisk";
-                            return (
-                              <div
-                                key={clause.clause_id}
-                                className={`matterClauseItem ${
-                                  activeClauseId === clause.clause_id
-                                    ? "active"
-                                    : ""
-                                } ${riskClass}`}
-                              >
-                                <Button
-                                  type="button"
-                                  className="matterClauseItemMain"
-                                  onClick={() => handleClauseSelect(clause)}
-                                  title="Open this clause for review, redlining, and source navigation."
-                                >
-                                  <strong>{clause.heading}</strong>
-                                  <p>{clause.display_text}</p>
-                                  <span>
-                                    {clause.grounding_status === "approximate"
-                                      ? "Approximate match"
-                                      : "Exact match"}
-                                  </span>
-                                </Button>
-                                {activeClauseId === clause.clause_id ? (
-                                  <div className="matterClauseRedlineArea">
-                                    <div className="matterClauseRedlineHead">
-                                      <strong>Positions</strong>
-                                      <div className="matterClausePartyGroup">
-                                        <Button
-                                          type="button"
-                                          className={
-                                            representedParty ===
-                                            "service_provider"
-                                              ? "isActive"
-                                              : ""
-                                          }
-                                          onClick={() =>
-                                            setRepresentedParty(
-                                              "service_provider",
-                                            )
-                                          }
-                                          title="Review this clause from the Service Provider position."
-                                        >
-                                          Service Provider
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          className={
-                                            representedParty === "ippb"
-                                              ? "isActive"
-                                              : ""
-                                          }
-                                          onClick={() =>
-                                            setRepresentedParty("ippb")
-                                          }
-                                          title="Review this clause from the IPPB position."
-                                        >
-                                          IPPB
-                                        </Button>
-                                      </div>
-                                    </div>
-                                    <div className="matterClausePositionToggle">
-                                      {(
-                                        [
-                                          "aggressive",
-                                          "market",
-                                          "fallback",
-                                        ] as const
-                                      ).map((position) => (
-                                        <Button
-                                          type="button"
-                                          key={position}
-                                          className={
-                                            activeRedlinePosition === position
-                                              ? "isActive"
-                                              : ""
-                                          }
-                                          onClick={() =>
-                                            handleRedlinePositionSelect(
-                                              clause.clause_id,
-                                              position,
-                                            )
-                                          }
-                                          title={`Generate a ${position} redline position for this clause.`}
-                                        >
-                                          {position}
-                                        </Button>
-                                      ))}
-                                    </div>
-                                    {activeRedlineLoading ? (
-                                      <div className="matterClauseRedlineState">
-                                        <p>Generating suggested redline...</p>
-                                        <Button
-                                          type="button"
-                                          className="matterAcceptRedlineBtn"
-                                          disabled
-                                        >
-                                          Accept redline
-                                        </Button>
-                                      </div>
-                                    ) : activeRedlineError ? (
-                                      <div className="matterClauseRedlineState">
-                                        <p>{activeRedlineError}</p>
-                                        <Button
-                                          type="button"
-                                          onClick={() =>
-                                            void handleUseAiRedlining()
-                                          }
-                                          title="Retry AI redline generation for this clause."
-                                        >
-                                          Retry
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          className="matterAcceptRedlineBtn"
-                                          disabled
-                                        >
-                                          Accept redline
-                                        </Button>
-                                      </div>
-                                    ) : activeSuggestion ? (
-                                      <>
-                                        <div className="matterClauseDiffView">
-                                          {activeDiff.map((part, partIndex) => (
-                                            <span
-                                              key={`${part.type}_${partIndex}`}
-                                              className={`matterClauseDiff-${part.type}`}
-                                            >
-                                              {part.text}
-                                            </span>
-                                          ))}
-                                        </div>
-                                        <label className="matterClauseEditLabel">
-                                          Redline title
-                                          <input
-                                            value={activeDraftTitle}
-                                            onChange={(event) =>
-                                              activeClauseKey &&
-                                              setRedlineTitleDraftByKey(
-                                                (prev) => ({
-                                                  ...prev,
-                                                  [activeClauseKey]:
-                                                    event.target.value,
-                                                }),
-                                              )
-                                            }
-                                          />
-                                        </label>
-                                        <label className="matterClauseEditLabel">
-                                          Editable redline text
-                                          <textarea
-                                            value={activeDraftText}
-                                            rows={4}
-                                            onChange={(event) =>
-                                              activeClauseKey &&
-                                              setRedlineTextDraftByKey(
-                                                (prev) => ({
-                                                  ...prev,
-                                                  [activeClauseKey]:
-                                                    event.target.value,
-                                                }),
-                                              )
-                                            }
-                                          />
-                                        </label>
-                                        <div className="matterClauseRedlineActions">
-                                          <Button
-                                            type="button"
-                                            className="matterUseAiRedlineBtn"
-                                            onClick={() =>
-                                              void handleUseAiRedlining()
-                                            }
-                                            title="Generate an AI rewrite for the selected clause and position."
-                                          >
-                                            Use AI redlining
-                                          </Button>
-                                          <Button
-                                            type="button"
-                                            className="matterAcceptRedlineBtn"
-                                            onClick={handleAcceptRedline}
-                                            title="Save this redline into the playbook for later reuse."
-                                          >
-                                            Accept redline
-                                          </Button>
-                                          {activeAcceptedCount ? (
-                                            <span>
-                                              {activeAcceptedCount} accepted for
-                                              this clause
-                                            </span>
-                                          ) : null}
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <div className="matterClauseRedlineState">
-                                        <p>
-                                          Pick a position and click Use AI
-                                          redlining to generate a suggested
-                                          rewrite.
-                                        </p>
-                                        <Button
-                                          type="button"
-                                          className="matterUseAiRedlineBtn"
-                                          onClick={() =>
-                                            void handleUseAiRedlining()
-                                          }
-                                          title="Generate an AI rewrite for the selected clause and position."
-                                        >
-                                          Use AI redlining
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          className="matterAcceptRedlineBtn"
-                                          disabled
-                                        >
-                                          Accept redline
-                                        </Button>
-                                      </div>
-                                    )}
-                                    <div className="matterClauseJumpRow">
-                                      <Button
-                                        type="button"
-                                        className="matterClauseJumpBtn"
-                                        aria-label="Jump to the extracted source text for this clause"
-                                        title="Scroll to the extracted source text for this clause in the document viewer."
-                                        onClick={() =>
-                                          handleJumpToClausePage(
-                                            clause.clause_id,
-                                            true,
-                                          )
-                                        }
-                                      >
-                                        Go to text
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                  </section>
-                );
-              })
-            ) : (
-              <p className="matterQualityEmpty">
-                No page-aware structure available yet.
-              </p>
-            )}
-          </div>
-        )}
-      </article>
-
-      <article className="matterTextPanel">
-        <div className="matterTextPanelHead">
-          <h2>Extracted document</h2>
-          <span>
-            {pages.length} pages · {totalBlockCount} blocks
-          </span>
-        </div>
-        <div className="matterDocumentViewer">
-          {pages.length ? (
-            pages.map((page) => (
-              <section className="matterDocumentPage" key={page.page_number}>
-                <div className="matterDocumentPageHead">
-                  <strong>Page {page.page_number}</strong>
-                  <span>{page.label || "other"}</span>
-                </div>
-                <div className="matterDocumentBlockList">
-                  {page.blocks.map((block) => {
-                    const blockRanges = highlightMap.get(block.block_id) || [];
-                    const blankRanges = blankFieldMap.get(block.block_id) || [];
-                    const warningLevel = blockWarningLevel.get(block.block_id);
-                    return (
-                      <div
-                        key={block.block_id}
-                        ref={(node) => {
-                          blockRefs.current[block.block_id] = node;
-                        }}
-                        className={`matterDocumentBlock matterDocumentBlock-${block.type} ${
-                          blockRanges.length ? "isHighlighted" : ""
-                        } ${
-                          warningLevel === "high"
-                            ? "hasHighWarning"
-                            : warningLevel === "review"
-                              ? "hasReviewWarning"
-                              : ""
-                        }`}
-                      >
-                        {warningLevel === "high" ? (
-                          <span
-                            className="matterBlockWarning matterBlockWarningHigh"
-                            title="This clause appears one-sided."
-                          >
-                            One-sided clause warning
-                          </span>
-                        ) : warningLevel === "review" ? (
-                          <span
-                            className="matterBlockWarning matterBlockWarningReview"
-                            title="This clause may require legal review."
-                          >
-                            Review this clause
-                          </span>
-                        ) : null}
-                        <p>
-                          {renderHighlightedText(
-                            block.text,
-                            blockRanges,
-                            blankRanges,
-                          )}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ))
-          ) : (
-            <p className="matterQualityEmpty">
-              No extracted document available yet.
-            </p>
-          )}
-        </div>
-      </article>
-
-      <article className="matterQualityPanel">
-        <div className="matterTextPanelHead">
-          <h2>Text quality</h2>
-          <span>{activeMatter?.nextStep || "Waiting for upload"}</span>
-        </div>
-        <div className="matterQualityBody">
-          <div className="matterQualityScore">
-            <span className="matterMetaIcon">
-              <ShieldCheck size={16} />
-            </span>
-            <div>
-              <h3>{activeMatter?.textQuality.level || "UNKNOWN"}</h3>
-              <p>
-                {activeMatter
-                  ? `${Math.round(activeMatter.textQuality.score * 100)}% quality score`
-                  : "No quality check available"}
-              </p>
-            </div>
-          </div>
-
-          <div className="matterQualityMetrics">
-            <span>
-              Characters:{" "}
-              {activeMatter?.textQuality.metrics.character_count || 0}
-            </span>
-            <span>
-              Words: {activeMatter?.textQuality.metrics.word_count || 0}
-            </span>
-            <span>
-              Empty pages: {activeMatter?.textQuality.metrics.empty_pages || 0}
-            </span>
-            <span>
-              Script:{" "}
-              {activeMatter?.textQuality.metrics.language_script || "Unknown"}
-            </span>
-            <span>
-              Tables:{" "}
-              {activeMatter?.textQuality.metrics.table_like_block_count || 0}
-            </span>
-            <span>Blocks: {totalBlockCount || 0}</span>
-          </div>
-
-          {activeMatter?.textQuality.issues.length ? (
-            <ul className="matterQualityIssues">
-              {activeMatter.textQuality.issues.map((issue) => (
-                <li key={issue}>{issue}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="matterQualityEmpty">
-              No blocking quality issues detected.
-            </p>
-          )}
-        </div>
-      </article>
 
       {MATTER_AI_ENABLED ? (
         <>
@@ -2492,6 +3145,24 @@ const MatterSection = ({
         </aside>
       ) : null}
 
+      <SearchBar
+        activeSection="matterLibrary"
+        allowTextOnly
+        onActivate={() => setIsMatterChatOpen(true)}
+        placeholderOverride="Write a matter note or question..."
+      />
+
+      <ChatBoxMatterSection
+        open={isMatterChatOpen}
+        matterTitle={matterHeading}
+        clarificationQuestions={isBriefQueryRequired ? briefQuestions : []}
+        isSubmittingClarification={isSubmittingBriefAnswers}
+        clarificationError={briefAnswerError}
+        onClose={() => setIsMatterChatOpen(false)}
+        onSubmitClarification={(answer) => handleSubmitBriefAnswers(answer)}
+        onSkipClarification={() => handleSubmitBriefAnswers("__skip__")}
+      />
+
       {isPeopleDialogOpen && (
         <div className="matterDialogBackdrop" role="presentation">
           <form className="matterPeopleDialog" onSubmit={handleAddPerson}>
@@ -2612,6 +3283,56 @@ const MatterSection = ({
           </div>
         </div>
       )}
+
+      {sourceViewer ? (
+        <div className="matterDialogBackdrop" role="presentation">
+          <section className="matterSourceDialog" role="dialog" aria-modal="true">
+            <header className="matterSourceDialogHead">
+              <div>
+                <p className="matterEyebrow">Source File</p>
+                <h2>{sourceViewer.fileName}</h2>
+              </div>
+              <div className="matterSourceDialogActions">
+                <Button
+                  type="button"
+                  className="matterStartDraftingBtn"
+                  onClick={() => {
+                    navigate(
+                      `/draft?matter=${encodeURIComponent(sourceViewer.matterId)}&sourceDocument=${encodeURIComponent(sourceViewer.fileName)}&mode=edit`,
+                    );
+                  }}
+                >
+                  Open draft
+                </Button>
+                <Button
+                  type="button"
+                  aria-label="Close source file"
+                  onClick={() => setSourceViewer(null)}
+                  showImage
+                  image={<X size={18} />}
+                />
+              </div>
+            </header>
+            <div className="matterSourceFrame">
+              {sourceViewer.blocks.map((block) => {
+                const isHighlighted = block.block_id === sourceViewer.highlightBlockId;
+                return (
+                  <article
+                    className={`matterSourceBlock ${isHighlighted ? "isHighlighted" : ""}`}
+                    key={block.block_id}
+                    ref={(node) => {
+                      sourceBlockRefs.current[block.block_id] = node;
+                    }}
+                  >
+                    <span>Page {block.page}</span>
+                    <p>{block.text}</p>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 };
