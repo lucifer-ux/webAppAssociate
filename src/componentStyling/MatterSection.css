@@ -2384,6 +2384,102 @@
   box-shadow: none;
 }
 
+.matterDebriefLoadingInline {
+  margin-bottom: 16px;
+}
+
+.matterDebriefLoadingInline .matterUploadLoaderSpinnerCard {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 18px 20px;
+}
+
+.matterDebriefLoadingInline .matterUploadLoaderSpinnerText h2 {
+  font-size: clamp(22px, 2.2vw, 28px);
+}
+
+.matterDebriefLoadingInline .matterUploadLoaderSpinnerText .matterUploadLoaderLead {
+  font-size: 16px;
+}
+
+.matterDebriefLoadingStack {
+  display: grid;
+  gap: 16px;
+}
+
+.matterDebriefCardsShimmer {
+  opacity: 0.92;
+}
+
+.matterDebriefCardShimmer {
+  overflow: hidden;
+}
+
+.matterDebriefBarFillShimmer {
+  width: 62%;
+  background: linear-gradient(90deg, #eadfcc 0%, #f6ecdc 50%, #eadfcc 100%);
+  background-size: 220% 100%;
+  animation: matterShimmer 1.4s linear infinite;
+}
+
+.matterDebriefFactBlockShimmer p {
+  display: none;
+}
+
+.matterShimmerParagraph {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.matterShimmerLine,
+.matterShimmerChip {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #efe5d7;
+}
+
+.matterShimmerLine::after,
+.matterShimmerChip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(239, 229, 215, 0) 0%, rgba(255, 250, 244, 0.88) 50%, rgba(239, 229, 215, 0) 100%);
+  transform: translateX(-100%);
+  animation: matterShimmer 1.4s linear infinite;
+}
+
+.matterShimmerLine {
+  height: 14px;
+  width: 100%;
+}
+
+.matterShimmerLineTitle {
+  height: 30px;
+  width: min(320px, 62%);
+}
+
+.matterShimmerLineShort {
+  width: 68%;
+}
+
+.matterShimmerChip {
+  width: 64px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.matterDebriefInlineShimmer {
+  min-height: 44px;
+}
+
+@keyframes matterShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 .matterSourceDialog {
   width: min(980px, 92vw);
   max-height: 86vh;

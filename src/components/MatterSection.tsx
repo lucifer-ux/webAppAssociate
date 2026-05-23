@@ -449,6 +449,8 @@ const MatterSection = ({
   const groundAnalysis = activeMatter?.groundAnalysis || null;
   const groundAnalysisStatus = useMemo(() => {
     const statuses = [
+      activeMatter?.intelligence_statuses?.inference_verification,
+      activeMatter?.intelligence_statuses?.inference_generation,
       activeMatter?.intelligence_statuses?.law_verification,
       activeMatter?.intelligence_statuses?.law_generation,
       activeMatter?.intelligence_statuses?.debrief_verification,
@@ -460,6 +462,8 @@ const MatterSection = ({
     if (statuses.includes("ready")) return "ready";
     return statuses[0] || "not_started";
   }, [
+    activeMatter?.intelligence_statuses?.inference_verification,
+    activeMatter?.intelligence_statuses?.inference_generation,
     activeMatter?.intelligence_statuses?.law_verification,
     activeMatter?.intelligence_statuses?.law_generation,
     activeMatter?.intelligence_statuses?.debrief_verification,
@@ -491,6 +495,15 @@ const MatterSection = ({
                 card?.inference_text == null
                   ? null
                   : String(card.inference_text || "").trim(),
+              inferenceDisplayStatus: String(
+                card?.inference_card?.display_status || "review",
+              )
+                .trim()
+                .toLowerCase(),
+              inferenceMetaError:
+                card?.inference_meta == null
+                  ? null
+                  : String(card.inference_meta?.error || "").trim() || null,
               lawSources: Array.isArray(card?.law_sources) ? card.law_sources : [],
               legalRules: Array.isArray(card?.legal_rules) ? card.legal_rules : [],
               contraryPoints: Array.isArray(card?.contrary_or_limiting_points)
@@ -518,18 +531,42 @@ const MatterSection = ({
   const shouldShowGroundAnalysis =
     Boolean(activeMatter?.acceptedBrief?.accepted_at) ||
     Boolean(groundAnalysis) ||
+    activeMatter?.intelligence_statuses?.inference_generation === "processing" ||
+    activeMatter?.intelligence_statuses?.inference_verification === "processing" ||
     activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
     activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
     activeMatter?.intelligence_statuses?.law_generation === "processing" ||
     activeMatter?.intelligence_statuses?.law_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.inference_generation === "ready" ||
+    activeMatter?.intelligence_statuses?.inference_verification === "ready" ||
     activeMatter?.intelligence_statuses?.debrief_generation === "ready" ||
     activeMatter?.intelligence_statuses?.debrief_verification === "ready" ||
     activeMatter?.intelligence_statuses?.law_generation === "ready" ||
     activeMatter?.intelligence_statuses?.law_verification === "ready" ||
+    activeMatter?.intelligence_statuses?.inference_generation === "failed" ||
+    activeMatter?.intelligence_statuses?.inference_verification === "failed" ||
     activeMatter?.intelligence_statuses?.debrief_generation === "failed" ||
     activeMatter?.intelligence_statuses?.debrief_verification === "failed" ||
     activeMatter?.intelligence_statuses?.law_generation === "failed" ||
     activeMatter?.intelligence_statuses?.law_verification === "failed";
+  const isGroundAnalysisProcessing =
+    activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
+    activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.law_generation === "processing" ||
+    activeMatter?.intelligence_statuses?.law_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.inference_generation === "processing" ||
+    activeMatter?.intelligence_statuses?.inference_verification === "processing";
+  const groundAnalysisFailed =
+    activeMatter?.intelligence_statuses?.debrief_generation === "failed" ||
+    activeMatter?.intelligence_statuses?.debrief_verification === "failed" ||
+    activeMatter?.intelligence_statuses?.law_generation === "failed" ||
+    activeMatter?.intelligence_statuses?.law_verification === "failed" ||
+    activeMatter?.intelligence_statuses?.inference_generation === "failed" ||
+    activeMatter?.intelligence_statuses?.inference_verification === "failed";
+  const groundAnalysisErrorMessage =
+    String(groundAnalysis?.meta?.error || "").trim() ||
+    "Ground analysis failed during background processing. Check the server logs for the first pipeline error after document-signals-collected.";
+  const groundAnalysisShimmerCount = Math.max(3, groundAnalysisCards.length || 0);
 
   const findDocumentBySource = (
     sourceName: string,
@@ -1116,7 +1153,9 @@ const MatterSection = ({
       (activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
         activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
         activeMatter?.intelligence_statuses?.law_generation === "processing" ||
-        activeMatter?.intelligence_statuses?.law_verification === "processing");
+        activeMatter?.intelligence_statuses?.law_verification === "processing" ||
+        activeMatter?.intelligence_statuses?.inference_generation === "processing" ||
+        activeMatter?.intelligence_statuses?.inference_verification === "processing");
 
     if (!shouldPollGroundAnalysis || !activeMatter?.id) {
       return;
@@ -1143,6 +1182,8 @@ const MatterSection = ({
             verification?: string;
             law_generation?: string;
             law_verification?: string;
+            inference_generation?: string;
+            inference_verification?: string;
           };
         };
 
@@ -1158,7 +1199,9 @@ const MatterSection = ({
           payload.statuses?.generation === "processing" ||
           payload.statuses?.verification === "processing" ||
           payload.statuses?.law_generation === "processing" ||
-          payload.statuses?.law_verification === "processing";
+          payload.statuses?.law_verification === "processing" ||
+          payload.statuses?.inference_generation === "processing" ||
+          payload.statuses?.inference_verification === "processing";
 
         if (!cancelled && shouldContinue) {
           timeoutId = window.setTimeout(() => {
@@ -1186,6 +1229,8 @@ const MatterSection = ({
     activeMatter?.intelligence_statuses?.debrief_verification,
     activeMatter?.intelligence_statuses?.law_generation,
     activeMatter?.intelligence_statuses?.law_verification,
+    activeMatter?.intelligence_statuses?.inference_generation,
+    activeMatter?.intelligence_statuses?.inference_verification,
     updateMatter,
   ]);
 
@@ -2646,30 +2691,97 @@ const MatterSection = ({
                   </span>
                 </div>
 
-                {activeMatter.intelligence_statuses?.debrief_generation === "processing" ||
-                activeMatter.intelligence_statuses?.debrief_verification === "processing" ||
-                activeMatter.intelligence_statuses?.law_generation === "processing" ||
-                activeMatter.intelligence_statuses?.law_verification === "processing" ? (
-                  <div className="matterDebriefLoading">
+                {isGroundAnalysisProcessing && !groundAnalysisCards.length ? (
+                  <div className="matterDebriefLoadingStack">
+                    <div className="matterDebriefLoading">
+                      <Loader
+                        mode="inline"
+                        variant="spinner"
+                        eyebrow="Ground Analysis"
+                        title={
+                          activeMatter.intelligence_statuses?.inference_generation === "processing" ||
+                          activeMatter.intelligence_statuses?.inference_verification === "processing"
+                            ? "Generating Inference"
+                            : activeMatter.intelligence_statuses?.law_generation === "processing" ||
+                                activeMatter.intelligence_statuses?.law_verification === "processing"
+                              ? "Researching Law"
+                              : "Generating Signals"
+                        }
+                        message={
+                          activeMatter.intelligence_statuses?.inference_generation === "processing" ||
+                          activeMatter.intelligence_statuses?.inference_verification === "processing"
+                            ? "Combining fact-grounded findings with verified law support to produce cautious inference cards."
+                            : activeMatter.intelligence_statuses?.law_generation === "processing" ||
+                                activeMatter.intelligence_statuses?.law_verification === "processing"
+                              ? "Finding ranked Indian authorities and attaching cautious law support to each fact-grounded ground."
+                              : "Building fact-grounded matter signals from the accepted brief and uploaded documents."
+                        }
+                      />
+                    </div>
+                    <div className="matterDebriefCards matterDebriefCardsShimmer">
+                      {Array.from({ length: groundAnalysisShimmerCount }).map((_, index) => (
+                        <article className="matterDebriefCard matterDebriefCardShimmer" key={`ga-shimmer-${index}`}>
+                          <div className="matterDebriefCardTop">
+                            <div className="matterShimmerLine matterShimmerLineTitle" />
+                            <div className="matterShimmerChip" />
+                          </div>
+                          <div className="matterDebriefBarTrack" aria-hidden="true">
+                            <span className="matterDebriefBarFill matterDebriefBarFillShimmer" />
+                          </div>
+                          <div className="matterDebriefFactGrid">
+                            <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
+                              <span>Fact</span>
+                              <div className="matterShimmerParagraph">
+                                <div className="matterShimmerLine" />
+                                <div className="matterShimmerLine" />
+                                <div className="matterShimmerLine matterShimmerLineShort" />
+                              </div>
+                            </div>
+                            <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
+                              <span>Law</span>
+                              <div className="matterShimmerParagraph">
+                                <div className="matterShimmerLine" />
+                                <div className="matterShimmerLine matterShimmerLineShort" />
+                              </div>
+                            </div>
+                            <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
+                              <span>Inference</span>
+                              <div className="matterShimmerParagraph">
+                                <div className="matterShimmerLine" />
+                                <div className="matterShimmerLine matterShimmerLineShort" />
+                              </div>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {isGroundAnalysisProcessing && groundAnalysisCards.length ? (
+                  <div className="matterDebriefLoading matterDebriefLoadingInline">
                     <Loader
                       mode="inline"
                       variant="spinner"
                       eyebrow="Ground Analysis"
                       title={
-                        activeMatter.intelligence_statuses?.law_generation === "processing" ||
-                        activeMatter.intelligence_statuses?.law_verification === "processing"
-                          ? "Researching Law"
-                          : "Generating Signals"
+                        activeMatter.intelligence_statuses?.inference_generation === "processing" ||
+                        activeMatter.intelligence_statuses?.inference_verification === "processing"
+                          ? "Updating Inference"
+                          : activeMatter.intelligence_statuses?.law_generation === "processing" ||
+                              activeMatter.intelligence_statuses?.law_verification === "processing"
+                            ? "Updating Law"
+                            : "Updating Signals"
                       }
-                      message={
-                        activeMatter.intelligence_statuses?.law_generation === "processing" ||
-                        activeMatter.intelligence_statuses?.law_verification === "processing"
-                          ? "Finding ranked Indian authorities and attaching cautious law support to each fact-grounded ground."
-                          : "Building fact-grounded matter signals from the accepted brief and uploaded documents."
-                      }
+                      message="Completed cards are shown below while the remaining analysis finishes."
                     />
                   </div>
-                ) : groundAnalysis?.no_signals_found ? (
+                ) : null}
+                {groundAnalysisFailed && !groundAnalysisCards.length && !isGroundAnalysisProcessing ? (
+                  <p className="matterDebriefEmpty">
+                    {groundAnalysisErrorMessage}
+                  </p>
+                ) : groundAnalysis?.no_signals_found && !groundAnalysisCards.length && !isGroundAnalysisProcessing ? (
                   <p className="matterDebriefEmpty">
                     No fact-grounded debrief signals were found in the current uploaded set.
                   </p>
@@ -2705,16 +2817,38 @@ const MatterSection = ({
                           </div>
                           <div className="matterDebriefFactBlock matterDebriefLawBlock">
                             <span>Law</span>
-                            <p>
-                              {card.lawText ||
-                                (card.lawVerificationStatus === "failed"
+                            {card.lawText ? (
+                              <p>{card.lawText}</p>
+                            ) : isGroundAnalysisProcessing ? (
+                              <div className="matterShimmerParagraph matterDebriefInlineShimmer">
+                                <div className="matterShimmerLine" />
+                                <div className="matterShimmerLine matterShimmerLineShort" />
+                              </div>
+                            ) : (
+                              <p>
+                                {card.lawVerificationStatus === "failed"
                                   ? "No supported legal rule extracted yet."
-                                  : "Law research in progress.")}
-                            </p>
+                                  : "Law research in progress."}
+                              </p>
+                            )}
                           </div>
                           <div className="matterDebriefFactBlock matterDebriefInferenceBlock">
                             <span>Inference</span>
-                            <p>{card.inferenceText || "Inference pipeline pending."}</p>
+                            {card.inferenceText ? (
+                              <p>{card.inferenceText}</p>
+                            ) : isGroundAnalysisProcessing ? (
+                              <div className="matterShimmerParagraph matterDebriefInlineShimmer">
+                                <div className="matterShimmerLine" />
+                                <div className="matterShimmerLine matterShimmerLineShort" />
+                              </div>
+                            ) : (
+                              <p>
+                                {card.inferenceDisplayStatus === "needs_review" ||
+                                card.inferenceMetaError
+                                  ? "Inference generated with review required."
+                                  : "Inference pipeline pending."}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="matterDebriefMeta">

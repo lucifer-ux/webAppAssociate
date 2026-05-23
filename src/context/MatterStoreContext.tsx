@@ -68,6 +68,8 @@ export type MatterUploadPayload = {
     debrief_verification?: string;
     law_generation?: string;
     law_verification?: string;
+    inference_generation?: string;
+    inference_verification?: string;
   };
   documents?: Array<{
     index: number;
@@ -310,6 +312,8 @@ export type MatterRecord = MatterUploadPayload & {
   documentSignalMeta?: MatterProcessedResult["document_signal_meta"];
   lawResearchPayloads?: MatterProcessedResult["law_research_payloads"];
   lawResearchMeta?: MatterProcessedResult["law_research_meta"];
+  inferencePayloads?: MatterProcessedResult["inference_payloads"];
+  inferenceMeta?: MatterProcessedResult["inference_meta"];
   acceptedBriefVersionFingerprint?: string | null;
 };
 
@@ -441,6 +445,8 @@ export type MatterProcessedResult = {
   }> | null;
   law_research_payloads?: Array<Record<string, unknown>> | null;
   law_research_meta?: Array<Record<string, unknown>> | null;
+  inference_payloads?: Array<Record<string, unknown>> | null;
+  inference_meta?: Array<Record<string, unknown>> | null;
   ground_analysis?: {
     version?: number;
     no_signals_found?: boolean;
@@ -488,6 +494,48 @@ export type MatterProcessedResult = {
         error?: string | null;
         retrieval_errors?: string[];
       } | null;
+      inference_card?: {
+        ground_id?: string;
+        card_type?: string;
+        inference_type?: string;
+        text?: string;
+        basis?: {
+          fact_used?: string[];
+          law_used?: string[];
+        };
+        limits?: string[];
+        recommended_actions?: Array<{
+          action_type?: string;
+          title?: string;
+        }>;
+        confidence?: string;
+        display_status?: string;
+      } | null;
+      inference_verification?: {
+        passed?: boolean;
+        issues?: Array<{
+          type?: string;
+          message?: string;
+        }>;
+        downgrade_required?: boolean;
+        recommended_status?: string;
+        confidence_adjustment?: number;
+      } | null;
+      inference_guardrails?: {
+        passed?: boolean;
+        issues?: Array<{
+          type?: string;
+          message?: string;
+        }>;
+        downgrade_required?: boolean;
+        recommended_status?: string;
+      } | null;
+      inference_meta?: {
+        generator_model?: string | null;
+        verifier_model?: string | null;
+        degraded?: boolean;
+        error?: string | null;
+      } | null;
       source_files: string[];
       why_this_point: string;
       backing_signal_ids: string[];
@@ -500,6 +548,8 @@ export type MatterProcessedResult = {
       verifier_model?: string | null;
       law_generation_model?: string | null;
       law_verifier_model?: string | null;
+      inference_generation_model?: string | null;
+      inference_verifier_model?: string | null;
       error?: string | null;
     };
   } | null;
@@ -638,6 +688,14 @@ const normalizeSavedJobState = (
         matter.intelligence_statuses?.law_verification === "processing"
           ? "failed"
           : matter.intelligence_statuses?.law_verification,
+      inference_generation:
+        matter.intelligence_statuses?.inference_generation === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.inference_generation,
+      inference_verification:
+        matter.intelligence_statuses?.inference_verification === "processing"
+          ? "failed"
+          : matter.intelligence_statuses?.inference_verification,
     },
   };
 };
@@ -688,6 +746,8 @@ const buildMatterRecord = (
     documentSignalMeta: result.document_signal_meta || undefined,
     lawResearchPayloads: result.law_research_payloads || undefined,
     lawResearchMeta: result.law_research_meta || undefined,
+    inferencePayloads: result.inference_payloads || undefined,
+    inferenceMeta: result.inference_meta || undefined,
   };
 };
 
@@ -832,6 +892,14 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
               matter.intelligence_statuses?.law_verification === "processing"
                 ? "failed"
                 : matter.intelligence_statuses?.law_verification,
+            inference_generation:
+              matter.intelligence_statuses?.inference_generation === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.inference_generation,
+            inference_verification:
+              matter.intelligence_statuses?.inference_verification === "processing"
+                ? "failed"
+                : matter.intelligence_statuses?.inference_verification,
           },
         };
       }),
