@@ -2317,6 +2317,79 @@
   background: #f2e4cc;
 }
 
+.matterDebriefNextStepsBlock {
+  background: #e7efe3;
+}
+
+.matterDebriefGlobalNextSteps {
+  margin-top: 14px;
+}
+
+.matterNextStepsList {
+  display: grid;
+  gap: 10px;
+}
+
+.matterNextStepCard {
+  width: 100%;
+  border: 1px solid #d4dfcd;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 10px 12px;
+  text-align: left;
+  display: grid;
+  gap: 6px;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.matterNextStepCard:hover {
+  border-color: #88a07f;
+  background: #fffefb;
+  transform: translateY(-1px);
+}
+
+.matterNextStepCard strong,
+.matterNextStepCard span,
+.matterNextStepCard small {
+  display: block;
+}
+
+.matterNextStepCard strong {
+  font-family: "Work Sans", sans-serif;
+  font-size: 14px;
+  color: #263222;
+}
+
+.matterNextStepCard span {
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #4f5c49;
+}
+
+.matterNextStepCard small {
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #687563;
+}
+
+.matterNextStepPriority-high {
+  border-color: #d0a789;
+}
+
+.matterNextStepPriority-medium {
+  border-color: #d4dfcd;
+}
+
+.matterNextStepPriority-low {
+  border-color: #cad4dd;
+}
+
 .matterDebriefLawSources {
   margin-top: 10px;
   display: flex;
@@ -2557,6 +2630,54 @@
   font-size: 18px;
   line-height: 1.48;
   color: #241b17;
+}
+
+.matterNextStepDialog {
+  width: min(760px, 92vw);
+}
+
+.matterNextStepDialogBody {
+  padding: 18px 20px 22px;
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+}
+
+.matterNextStepDialogLead,
+.matterNextStepDialogBody p,
+.matterNextStepInputs li {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #2b211c;
+}
+
+.matterNextStepInputs {
+  display: grid;
+  gap: 6px;
+}
+
+.matterNextStepInputs strong {
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6a5a50;
+}
+
+.matterNextStepInputs ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.matterNextStepDraftActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 @media (max-width: 900px) {

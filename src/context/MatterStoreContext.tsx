@@ -391,7 +391,58 @@ export type MatterProcessedResult = {
   brief_user_answers?: Array<{ question: string; answer: string }>;
   verified_brief?: Record<string, unknown> | null;
   brief_verification?: Record<string, unknown> | null;
-  next_step_plan?: Record<string, unknown> | null;
+  next_step_plan?: {
+    version?: number;
+    items?: Array<{
+      ground_id?: string;
+      title?: string;
+      status?: string;
+      recommended_next_steps?: Array<{
+        step_id?: string;
+        title?: string;
+        description?: string;
+        action_type?: string;
+        priority?: string;
+        status?: string;
+        reason?: string;
+        required_before_drafting?: boolean;
+        draft_type?: string | null;
+        template_key?: string | null;
+        required_inputs?: string[];
+      }>;
+      primary_drafting_action?: {
+        label?: string;
+        draft_type?: string | null;
+        template_key?: string | null;
+        cta?: string;
+      } | null;
+      meta?: {
+        model?: string | null;
+        provider?: string | null;
+        degraded?: boolean;
+        error?: string | null;
+      } | null;
+    }>;
+    template_cache?: Record<
+      string,
+      {
+        template_key?: string;
+        title?: string;
+        source_url?: string;
+        content_html?: string;
+        content_text?: string;
+        fetched_at?: string;
+        draft_type?: string | null;
+        search_query?: string | null;
+      }
+    >;
+    meta?: {
+      degraded?: boolean;
+      provider?: string | null;
+      model?: string | null;
+      error?: string | null;
+    } | null;
+  } | null;
   drafting_context?: Record<string, unknown> | null;
   latest_draft_review?: Record<string, unknown> | null;
   document_signal_payloads?: Array<{
@@ -536,6 +587,34 @@ export type MatterProcessedResult = {
         degraded?: boolean;
         error?: string | null;
       } | null;
+      next_steps_status?: string;
+      next_steps?: {
+        recommended_next_steps?: Array<{
+          step_id?: string;
+          title?: string;
+          description?: string;
+          action_type?: string;
+          priority?: string;
+          status?: string;
+          reason?: string;
+          required_before_drafting?: boolean;
+          draft_type?: string | null;
+          template_key?: string | null;
+          required_inputs?: string[];
+        }>;
+        primary_drafting_action?: {
+          label?: string;
+          draft_type?: string | null;
+          template_key?: string | null;
+          cta?: string;
+        } | null;
+      } | null;
+      next_steps_meta?: {
+        model?: string | null;
+        provider?: string | null;
+        degraded?: boolean;
+        error?: string | null;
+      } | null;
       source_files: string[];
       why_this_point: string;
       backing_signal_ids: string[];
@@ -550,6 +629,7 @@ export type MatterProcessedResult = {
       law_verifier_model?: string | null;
       inference_generation_model?: string | null;
       inference_verifier_model?: string | null;
+      next_step_generation_model?: string | null;
       error?: string | null;
     };
   } | null;
@@ -801,7 +881,7 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     let createdRecord: MatterRecord | null = null;
 
     setMatters((prev) => {
-      const duplicate = prev.find((item) => item.sha256 === result.matter.sha256);
+      const duplicate = prev.find((item) => item.id === result.matter.id);
       if (duplicate) {
         createdRecord = buildMatterRecord(
           result,
@@ -838,7 +918,7 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
   const updateMatter = useCallback((result: MatterProcessedResult) => {
     setMatters((prev) =>
       prev.map((matter) => {
-        if (matter.id !== result.matter.id && matter.sha256 !== result.matter.sha256) {
+        if (matter.id !== result.matter.id) {
           return matter;
         }
 
@@ -914,9 +994,7 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     setMatters((prev) => {
       const next = [...prev];
       results.forEach((result) => {
-        const existing = next.find(
-          (item) => item.id === result.matter.id || item.sha256 === result.matter.sha256,
-        );
+        const existing = next.find((item) => item.id === result.matter.id);
         if (existing) {
           const patched = buildMatterRecord(result, existing.version, existing.people);
           const index = next.findIndex((item) => item.id === existing.id);

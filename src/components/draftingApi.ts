@@ -234,6 +234,40 @@ export const getDraftReview = async (draftId: string) => {
   return payload.review_job;
 };
 
+export const getNextStepTemplate = async (input: {
+  matterId: string;
+  groundId: string;
+  stepId: string;
+  templateKey: string;
+}) => {
+  const response = await fetch(
+    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/next-steps/template`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({
+        ground_id: input.groundId,
+        step_id: input.stepId,
+        template_key: input.templateKey,
+      }),
+    },
+  );
+  const payload = await readJson<{
+    success: true;
+    template: {
+      template_key?: string;
+      title?: string;
+      source_url?: string;
+      content_html?: string;
+      content_text?: string;
+      fetched_at?: string;
+      draft_type?: string | null;
+      search_query?: string | null;
+    };
+  }>(response);
+  return payload.template;
+};
+
 const extractDefinedTerm = (value: string): DefinedTerm | null => {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
   if (!normalized) return null;

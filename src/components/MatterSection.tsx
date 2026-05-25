@@ -97,6 +97,54 @@ type SourceViewerState = {
   matterId: string;
 };
 
+type GroundNextStep = {
+  stepId: string;
+  title: string;
+  description: string;
+  actionType: string;
+  priority: string;
+  status: string;
+  reason: string;
+  requiredBeforeDrafting: boolean;
+  draftType: string | null;
+  templateKey: string | null;
+  requiredInputs: string[];
+};
+
+type GroundNextStepsState = {
+  status: string;
+  recommendedSteps: GroundNextStep[];
+  primaryDraftingAction: {
+    label: string;
+    draftType: string | null;
+    templateKey: string | null;
+    cta: string;
+  } | null;
+  metaError: string | null;
+};
+
+type ConsolidatedNextStep = {
+  cardId: string;
+  cardTitle: string;
+  step: GroundNextStep;
+};
+
+type NextStepModalState = {
+  cardId: string;
+  cardTitle: string;
+  step: GroundNextStep;
+};
+
+const DRAFT_ACTION_TYPES = new Set([
+  "draft_notice",
+  "draft_reply",
+  "draft_application",
+  "draft_clause_redline",
+  "draft_note",
+  "prepare_argument",
+  "prepare_evidence",
+]);
+
 type MatterDocumentEntry = NonNullable<MatterProcessedResult["documents"]>[number];
 
 class MatterPollingTimeoutError extends Error {
@@ -368,6 +416,7 @@ const MatterSection = ({
   const [briefAcceptError, setBriefAcceptError] = useState("");
   const [isMatterChatOpen, setIsMatterChatOpen] = useState(false);
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null);
+  const [nextStepModal, setNextStepModal] = useState<NextStepModalState | null>(null);
   const sourceBlockRefs = useRef<Record<string, HTMLElement | null>>({});
   const [personName, setPersonName] = useState("");
   const [personRole, setPersonRole] = useState("");
@@ -423,16 +472,18 @@ const MatterSection = ({
     return activeMatter?.title || "No matter uploaded yet";
   }, [activeMatter?.classification?.classification_name, activeMatter?.title]);
   const accumulatedBrief = activeMatter?.accumulatedBrief || null;
-  const briefQuestions = Array.isArray(accumulatedBrief?.questions)
-    ? accumulatedBrief.questions.filter(Boolean)
+  const briefDisplayPayload =
+    activeMatter?.acceptedBrief?.brief || accumulatedBrief || null;
+  const briefQuestions = Array.isArray(briefDisplayPayload?.questions)
+    ? briefDisplayPayload.questions.filter(Boolean)
     : [];
   const isBriefQueryRequired =
     activeMatter?.intelligence_statuses?.brief_generation === "query_required" ||
-    accumulatedBrief?.decision === "query_for_user";
+    briefDisplayPayload?.decision === "query_for_user";
   const briefPoints = useMemo(
     () =>
-      Array.isArray(accumulatedBrief?.brief_points)
-        ? accumulatedBrief.brief_points
+      Array.isArray(briefDisplayPayload?.brief_points)
+        ? briefDisplayPayload.brief_points
             .map((point) => ({
               id: String(point?.id || ""),
               heading: String(point?.heading || "").trim(),
@@ -444,11 +495,12 @@ const MatterSection = ({
             .filter((point) => point.id && point.heading && point.detail)
             .slice(0, 6)
         : [],
-    [accumulatedBrief?.brief_points],
+    [briefDisplayPayload?.brief_points],
   );
   const groundAnalysis = activeMatter?.groundAnalysis || null;
   const groundAnalysisStatus = useMemo(() => {
     const statuses = [
+      activeMatter?.intelligence_statuses?.next_step_planner,
       activeMatter?.intelligence_statuses?.inference_verification,
       activeMatter?.intelligence_statuses?.inference_generation,
       activeMatter?.intelligence_statuses?.law_verification,
@@ -464,6 +516,7 @@ const MatterSection = ({
   }, [
     activeMatter?.intelligence_statuses?.inference_verification,
     activeMatter?.intelligence_statuses?.inference_generation,
+    activeMatter?.intelligence_statuses?.next_step_planner,
     activeMatter?.intelligence_statuses?.law_verification,
     activeMatter?.intelligence_statuses?.law_generation,
     activeMatter?.intelligence_statuses?.debrief_verification,
@@ -504,6 +557,50 @@ const MatterSection = ({
                 card?.inference_meta == null
                   ? null
                   : String(card.inference_meta?.error || "").trim() || null,
+              nextSteps: {
+                status: String(card?.next_steps_status || "not_started").trim().toLowerCase(),
+                recommendedSteps: Array.isArray(card?.next_steps?.recommended_next_steps)
+                  ? card.next_steps.recommended_next_steps.map((step) => ({
+                      stepId: String(step?.step_id || ""),
+                      title: String(step?.title || "").trim(),
+                      description: String(step?.description || "").trim(),
+                      actionType: String(step?.action_type || "").trim().toLowerCase(),
+                      priority: String(step?.priority || "medium").trim().toLowerCase(),
+                      status: String(step?.status || "ready").trim().toLowerCase(),
+                      reason: String(step?.reason || "").trim(),
+                      requiredBeforeDrafting: Boolean(step?.required_before_drafting),
+                      draftType:
+                        step?.draft_type == null ? null : String(step.draft_type || "").trim() || null,
+                      templateKey:
+                        step?.template_key == null ? null : String(step.template_key || "").trim() || null,
+                      requiredInputs: Array.isArray(step?.required_inputs)
+                        ? step.required_inputs
+                            .map((item) => String(item || "").trim())
+                            .filter(Boolean)
+                        : [],
+                    }))
+                  : [],
+                primaryDraftingAction:
+                  card?.next_steps?.primary_drafting_action == null
+                    ? null
+                    : {
+                        label: String(card.next_steps.primary_drafting_action?.label || "").trim(),
+                        draftType:
+                          card.next_steps.primary_drafting_action?.draft_type == null
+                            ? null
+                            : String(card.next_steps.primary_drafting_action?.draft_type || "").trim() || null,
+                        templateKey:
+                          card.next_steps.primary_drafting_action?.template_key == null
+                            ? null
+                            : String(card.next_steps.primary_drafting_action?.template_key || "").trim() || null,
+                        cta:
+                          String(card.next_steps.primary_drafting_action?.cta || "Open draft").trim(),
+                      },
+                metaError:
+                  card?.next_steps_meta == null
+                    ? null
+                    : String(card.next_steps_meta?.error || "").trim() || null,
+              } satisfies GroundNextStepsState,
               lawSources: Array.isArray(card?.law_sources) ? card.law_sources : [],
               legalRules: Array.isArray(card?.legal_rules) ? card.legal_rules : [],
               contraryPoints: Array.isArray(card?.contrary_or_limiting_points)
@@ -528,6 +625,40 @@ const MatterSection = ({
         : [],
     [groundAnalysis?.cards],
   );
+  const consolidatedNextSteps = useMemo(() => {
+    const steps: ConsolidatedNextStep[] = [];
+    const seen = new Set<string>();
+    const priorityRank = (value: string) => {
+      if (value === "high") return 0;
+      if (value === "medium") return 1;
+      return 2;
+    };
+
+    groundAnalysisCards.forEach((card) => {
+      card.nextSteps.recommendedSteps.forEach((step) => {
+        if (!step.stepId || !step.title) return;
+        const key = `${step.actionType}|${step.title.trim().toLowerCase()}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        steps.push({
+          cardId: card.id,
+          cardTitle: card.title,
+          step,
+        });
+      });
+    });
+
+    steps.sort((a, b) => {
+      const byPriority = priorityRank(a.step.priority) - priorityRank(b.step.priority);
+      if (byPriority !== 0) return byPriority;
+      if (a.step.requiredBeforeDrafting !== b.step.requiredBeforeDrafting) {
+        return a.step.requiredBeforeDrafting ? -1 : 1;
+      }
+      return a.step.title.localeCompare(b.step.title);
+    });
+
+    return steps.slice(0, 3);
+  }, [groundAnalysisCards]);
   const shouldShowGroundAnalysis =
     Boolean(activeMatter?.acceptedBrief?.accepted_at) ||
     Boolean(groundAnalysis) ||
@@ -537,32 +668,37 @@ const MatterSection = ({
     activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
     activeMatter?.intelligence_statuses?.law_generation === "processing" ||
     activeMatter?.intelligence_statuses?.law_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.next_step_planner === "processing" ||
     activeMatter?.intelligence_statuses?.inference_generation === "ready" ||
     activeMatter?.intelligence_statuses?.inference_verification === "ready" ||
     activeMatter?.intelligence_statuses?.debrief_generation === "ready" ||
     activeMatter?.intelligence_statuses?.debrief_verification === "ready" ||
     activeMatter?.intelligence_statuses?.law_generation === "ready" ||
     activeMatter?.intelligence_statuses?.law_verification === "ready" ||
+    activeMatter?.intelligence_statuses?.next_step_planner === "ready" ||
     activeMatter?.intelligence_statuses?.inference_generation === "failed" ||
     activeMatter?.intelligence_statuses?.inference_verification === "failed" ||
     activeMatter?.intelligence_statuses?.debrief_generation === "failed" ||
     activeMatter?.intelligence_statuses?.debrief_verification === "failed" ||
     activeMatter?.intelligence_statuses?.law_generation === "failed" ||
-    activeMatter?.intelligence_statuses?.law_verification === "failed";
+    activeMatter?.intelligence_statuses?.law_verification === "failed" ||
+    activeMatter?.intelligence_statuses?.next_step_planner === "failed";
   const isGroundAnalysisProcessing =
     activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
     activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
     activeMatter?.intelligence_statuses?.law_generation === "processing" ||
     activeMatter?.intelligence_statuses?.law_verification === "processing" ||
     activeMatter?.intelligence_statuses?.inference_generation === "processing" ||
-    activeMatter?.intelligence_statuses?.inference_verification === "processing";
+    activeMatter?.intelligence_statuses?.inference_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.next_step_planner === "processing";
   const groundAnalysisFailed =
     activeMatter?.intelligence_statuses?.debrief_generation === "failed" ||
     activeMatter?.intelligence_statuses?.debrief_verification === "failed" ||
     activeMatter?.intelligence_statuses?.law_generation === "failed" ||
     activeMatter?.intelligence_statuses?.law_verification === "failed" ||
     activeMatter?.intelligence_statuses?.inference_generation === "failed" ||
-    activeMatter?.intelligence_statuses?.inference_verification === "failed";
+    activeMatter?.intelligence_statuses?.inference_verification === "failed" ||
+    activeMatter?.intelligence_statuses?.next_step_planner === "failed";
   const groundAnalysisErrorMessage =
     String(groundAnalysis?.meta?.error || "").trim() ||
     "Ground analysis failed during background processing. Check the server logs for the first pipeline error after document-signals-collected.";
@@ -636,6 +772,40 @@ const MatterSection = ({
       .sort((a, b) => b.score - a.score);
 
     return scored[0]?.score > 0 ? scored[0].block.block_id : blocks[0]?.block_id || null;
+  };
+
+  const isDraftCapableStep = (step: GroundNextStep) =>
+    DRAFT_ACTION_TYPES.has(step.actionType) || Boolean(step.draftType || step.templateKey);
+
+  const openNextStepModal = (
+    cardId: string,
+    cardTitle: string,
+    step: GroundNextStep,
+  ) => {
+    setNextStepModal({
+      cardId,
+      cardTitle,
+      step,
+    });
+  };
+
+  const openNextStepDraft = ({
+    cardId,
+    step,
+    mode,
+  }: {
+    cardId: string;
+    step: GroundNextStep;
+    mode: "scratch" | "template";
+  }) => {
+    if (!activeMatter?.id) return;
+    const params = new URLSearchParams();
+    params.set("matter", activeMatter.id);
+    params.set("plannerGround", cardId);
+    params.set("plannerStep", step.stepId);
+    params.set("draftMode", mode);
+    navigate(`/draft?${params.toString()}`);
+    setNextStepModal(null);
   };
 
   const openSourceViewer = ({
@@ -1155,7 +1325,8 @@ const MatterSection = ({
         activeMatter?.intelligence_statuses?.law_generation === "processing" ||
         activeMatter?.intelligence_statuses?.law_verification === "processing" ||
         activeMatter?.intelligence_statuses?.inference_generation === "processing" ||
-        activeMatter?.intelligence_statuses?.inference_verification === "processing");
+        activeMatter?.intelligence_statuses?.inference_verification === "processing" ||
+        activeMatter?.intelligence_statuses?.next_step_planner === "processing");
 
     if (!shouldPollGroundAnalysis || !activeMatter?.id) {
       return;
@@ -1184,6 +1355,7 @@ const MatterSection = ({
             law_verification?: string;
             inference_generation?: string;
             inference_verification?: string;
+            next_step_planner?: string;
           };
         };
 
@@ -1201,7 +1373,8 @@ const MatterSection = ({
           payload.statuses?.law_generation === "processing" ||
           payload.statuses?.law_verification === "processing" ||
           payload.statuses?.inference_generation === "processing" ||
-          payload.statuses?.inference_verification === "processing";
+          payload.statuses?.inference_verification === "processing" ||
+          payload.statuses?.next_step_planner === "processing";
 
         if (!cancelled && shouldContinue) {
           timeoutId = window.setTimeout(() => {
@@ -1231,6 +1404,7 @@ const MatterSection = ({
     activeMatter?.intelligence_statuses?.law_verification,
     activeMatter?.intelligence_statuses?.inference_generation,
     activeMatter?.intelligence_statuses?.inference_verification,
+    activeMatter?.intelligence_statuses?.next_step_planner,
     updateMatter,
   ]);
 
@@ -2596,7 +2770,7 @@ const MatterSection = ({
                     </Button>
                   </div>
                 </div>
-              ) : accumulatedBrief?.decision === "generate_brief" ? (
+              ) : briefDisplayPayload?.decision === "generate_brief" ? (
                 <>
                   {briefPoints.length ? (
                     <div className="matterBriefPoints">
@@ -2644,7 +2818,7 @@ const MatterSection = ({
                     </div>
                   ) : (
                     <p className="matterBriefText">
-                      {accumulatedBrief.accumulated_brief || "Brief generated."}
+                      {briefDisplayPayload?.accumulated_brief || "Brief generated."}
                     </p>
                   )}
                   <div className="matterBriefSourceRow">
@@ -2702,6 +2876,8 @@ const MatterSection = ({
                           activeMatter.intelligence_statuses?.inference_generation === "processing" ||
                           activeMatter.intelligence_statuses?.inference_verification === "processing"
                             ? "Generating Inference"
+                            : activeMatter.intelligence_statuses?.next_step_planner === "processing"
+                              ? "Planning Next Steps"
                             : activeMatter.intelligence_statuses?.law_generation === "processing" ||
                                 activeMatter.intelligence_statuses?.law_verification === "processing"
                               ? "Researching Law"
@@ -2711,6 +2887,8 @@ const MatterSection = ({
                           activeMatter.intelligence_statuses?.inference_generation === "processing" ||
                           activeMatter.intelligence_statuses?.inference_verification === "processing"
                             ? "Combining fact-grounded findings with verified law support to produce cautious inference cards."
+                            : activeMatter.intelligence_statuses?.next_step_planner === "processing"
+                              ? "Turning completed fact, law, and inference cards into drafting and evidence actions."
                             : activeMatter.intelligence_statuses?.law_generation === "processing" ||
                                 activeMatter.intelligence_statuses?.law_verification === "processing"
                               ? "Finding ranked Indian authorities and attaching cautious law support to each fact-grounded ground."
@@ -2751,6 +2929,13 @@ const MatterSection = ({
                                 <div className="matterShimmerLine matterShimmerLineShort" />
                               </div>
                             </div>
+                            <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
+                              <span>Next Steps</span>
+                              <div className="matterShimmerParagraph">
+                                <div className="matterShimmerLine" />
+                                <div className="matterShimmerLine matterShimmerLineShort" />
+                              </div>
+                            </div>
                           </div>
                         </article>
                       ))}
@@ -2768,6 +2953,8 @@ const MatterSection = ({
                         activeMatter.intelligence_statuses?.inference_generation === "processing" ||
                         activeMatter.intelligence_statuses?.inference_verification === "processing"
                           ? "Updating Inference"
+                          : activeMatter.intelligence_statuses?.next_step_planner === "processing"
+                            ? "Planning Next Steps"
                           : activeMatter.intelligence_statuses?.law_generation === "processing" ||
                               activeMatter.intelligence_statuses?.law_verification === "processing"
                             ? "Updating Law"
@@ -2912,6 +3099,37 @@ const MatterSection = ({
                       </article>
                     ))}
                   </div>
+                ) : null}
+                {groundAnalysisCards.length ? (
+                  <section className="matterDebriefFactBlock matterDebriefNextStepsBlock matterDebriefGlobalNextSteps">
+                    <span>Next Steps</span>
+                    {consolidatedNextSteps.length ? (
+                      <div className="matterNextStepsList">
+                        {consolidatedNextSteps.map(({ cardId, cardTitle, step }) => (
+                          <Button
+                            key={`${cardId}-${step.stepId}`}
+                            type="button"
+                            className={`matterNextStepCard matterNextStepPriority-${step.priority}`}
+                            onClick={() => openNextStepModal(cardId, cardTitle, step)}
+                          >
+                            <strong>{step.title}</strong>
+                            <span>{step.description || step.reason || "Open next step details."}</span>
+                            <small>
+                              {step.actionType.replace(/_/g, " ")} · {step.priority} · {cardTitle}
+                            </small>
+                          </Button>
+                        ))}
+                      </div>
+                    ) : activeMatter?.intelligence_statuses?.next_step_planner === "processing" ? (
+                      <div className="matterShimmerParagraph matterDebriefInlineShimmer">
+                        <div className="matterShimmerLine" />
+                        <div className="matterShimmerLine" />
+                        <div className="matterShimmerLine matterShimmerLineShort" />
+                      </div>
+                    ) : (
+                      <p>No next-step recommendation generated yet.</p>
+                    )}
+                  </section>
                 ) : (
                   <p className="matterDebriefEmpty">
                     Ground analysis has not been generated yet for this accepted brief.
@@ -3463,6 +3681,87 @@ const MatterSection = ({
                   </article>
                 );
               })}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {nextStepModal ? (
+        <div className="matterDialogBackdrop" role="presentation">
+          <section className="matterSourceDialog matterNextStepDialog" role="dialog" aria-modal="true">
+            <header className="matterSourceDialogHead">
+              <div>
+                <p className="matterEyebrow">Next Step</p>
+                <h2>{nextStepModal.step.title}</h2>
+              </div>
+              <div className="matterSourceDialogActions">
+                <Button
+                  type="button"
+                  aria-label="Close next step"
+                  onClick={() => setNextStepModal(null)}
+                  showImage
+                  image={<X size={18} />}
+                />
+              </div>
+            </header>
+            <div className="matterNextStepDialogBody">
+              <p className="matterNextStepDialogLead">
+                {nextStepModal.step.description || "Review the recommended next action for this ground."}
+              </p>
+              {nextStepModal.step.reason ? (
+                <p>
+                  <strong>Reason:</strong> {nextStepModal.step.reason}
+                </p>
+              ) : null}
+              <p>
+                <strong>Action type:</strong> {nextStepModal.step.actionType.replace(/_/g, " ")}
+              </p>
+              <p>
+                <strong>Priority:</strong> {nextStepModal.step.priority}
+              </p>
+              <p>
+                <strong>Status:</strong> {nextStepModal.step.status}
+              </p>
+              {nextStepModal.step.requiredInputs.length ? (
+                <div className="matterNextStepInputs">
+                  <strong>Required inputs</strong>
+                  <ul>
+                    {nextStepModal.step.requiredInputs.map((item) => (
+                      <li key={`${nextStepModal.step.stepId}-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {isDraftCapableStep(nextStepModal.step) ? (
+                <div className="matterNextStepDraftActions">
+                  <Button
+                    type="button"
+                    className="matterStartDraftingBtn"
+                    onClick={() =>
+                      openNextStepDraft({
+                        cardId: nextStepModal.cardId,
+                        step: nextStepModal.step,
+                        mode: "scratch",
+                      })
+                    }
+                  >
+                    Draft from scratch
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() =>
+                      openNextStepDraft({
+                        cardId: nextStepModal.cardId,
+                        step: nextStepModal.step,
+                        mode: "template",
+                      })
+                    }
+                    disabled={!nextStepModal.step.templateKey}
+                  >
+                    Use template
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>

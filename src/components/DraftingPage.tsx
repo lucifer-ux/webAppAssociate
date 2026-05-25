@@ -15,6 +15,7 @@ import {
   deriveDraftContextFromMatter,
   getDraftReview,
   getDraft,
+  getNextStepTemplate,
   hashDraftContent,
   patchDraft,
   saveDraft,
@@ -70,6 +71,29 @@ const blankDraftHtml = () =>
     "<p></p>",
   ].join("");
 
+const nextStepScratchHtml = ({
+  title,
+  description,
+  reason,
+  requiredInputs,
+}: {
+  title: string;
+  description: string;
+  reason: string;
+  requiredInputs: string[];
+}) =>
+  [
+    `<h1>${escapeHtml(title || "Draft from next step")}</h1>`,
+    description ? `<p>${escapeHtml(description)}</p>` : "<p></p>",
+    reason ? `<h2>Why This Draft</h2><p>${escapeHtml(reason)}</p>` : "",
+    requiredInputs.length
+      ? `<h2>Required Inputs</h2>${requiredInputs
+          .map((item) => `<p>[ ] ${escapeHtml(item)}</p>`)
+          .join("")}`
+      : "",
+    "<h2>Draft</h2><p></p>",
+  ].join("");
+
 const initialToolbarState: DraftingToolbarState = {
   paragraphStyle: "normal",
   fontFamily: "Newsreader",
@@ -109,8 +133,12 @@ const DraftingPage = () => {
   const matterIdFromQuery = String(searchParams.get("matter") || "").trim();
   const draftIdFromQuery = String(searchParams.get("draft") || "").trim();
   const sourceDocumentFromQuery = String(searchParams.get("sourceDocument") || "").trim();
+  const plannerGroundFromQuery = String(searchParams.get("plannerGround") || "").trim();
+  const plannerStepFromQuery = String(searchParams.get("plannerStep") || "").trim();
+  const draftModeFromQuery = String(searchParams.get("draftMode") || "").trim().toLowerCase();
   const sourceDraftRequestRef = useRef("");
   const blankDraftRequestRef = useRef("");
+  const nextStepDraftRequestRef = useRef("");
   const selectedMatter = useMemo(
     () =>
       matters.find((matter) => matter.id === matterIdFromQuery) ||
@@ -266,7 +294,84 @@ const DraftingPage = () => {
   }, [createEditableDraft, draftIdFromQuery, selectedMatter, sourceDocumentFromQuery]);
 
   useEffect(() => {
-    if (draftIdFromQuery || sourceDocumentFromQuery) return;
+    if (draftIdFromQuery || sourceDocumentFromQuery || !plannerGroundFromQuery || !plannerStepFromQuery) return;
+
+    const requestKey = `${selectedMatter?.id || "none"}:${plannerGroundFromQuery}:${plannerStepFromQuery}:${draftModeFromQuery}`;
+    if (nextStepDraftRequestRef.current === requestKey) return;
+    nextStepDraftRequestRef.current = requestKey;
+
+    const planItems = Array.isArray(selectedMatter?.nextStepPlan?.items)
+      ? selectedMatter?.nextStepPlan?.items
+      : [];
+    const groundItem = planItems.find((item) => item?.ground_id === plannerGroundFromQuery);
+    const step = Array.isArray(groundItem?.recommended_next_steps)
+      ? groundItem.recommended_next_steps.find((item) => item?.step_id === plannerStepFromQuery)
+      : null;
+
+    if (!selectedMatter || !groundItem || !step) {
+      setSaveStatus("error");
+      setLoadError("Next step details are not available for drafting.");
+      return;
+    }
+
+    const createNextStepDraft = async () => {
+      try {
+        if (draftModeFromQuery === "template" && step.template_key) {
+          const template = await getNextStepTemplate({
+            matterId: selectedMatter.id,
+            groundId: plannerGroundFromQuery,
+            stepId: plannerStepFromQuery,
+            templateKey: step.template_key,
+          });
+
+          await createEditableDraft({
+            title: template?.title || step.title || groundItem.title || "Template draft",
+            matterId: selectedMatter.id,
+            templateId: step.template_key,
+            html:
+              String(template?.content_html || "").trim() ||
+              sourceTextToHtml(
+                template?.title || step.title || "Template draft",
+                String(template?.content_text || "").trim(),
+              ),
+            buildReplaceUrl: (draft) =>
+              `/draft?draft=${encodeURIComponent(draft.id)}&matter=${encodeURIComponent(selectedMatter.id)}`,
+          });
+          return;
+        }
+
+        await createEditableDraft({
+          title: step.title || groundItem.title || "Scratch draft",
+          matterId: selectedMatter.id,
+          templateId: step.draft_type || "next-step-scratch",
+          html: nextStepScratchHtml({
+            title: step.title || groundItem.title || "Scratch draft",
+            description: String(step.description || ""),
+            reason: String(step.reason || ""),
+            requiredInputs: Array.isArray(step.required_inputs) ? step.required_inputs : [],
+          }),
+          buildReplaceUrl: (draft) =>
+            `/draft?draft=${encodeURIComponent(draft.id)}&matter=${encodeURIComponent(selectedMatter.id)}`,
+        });
+      } catch (error) {
+        setSaveStatus("error");
+        setLoadError(error instanceof Error ? error.message : "Failed to open next-step draft.");
+      }
+    };
+
+    void createNextStepDraft();
+  }, [
+    createEditableDraft,
+    draftIdFromQuery,
+    draftModeFromQuery,
+    plannerGroundFromQuery,
+    plannerStepFromQuery,
+    selectedMatter,
+    sourceDocumentFromQuery,
+  ]);
+
+  useEffect(() => {
+    if (draftIdFromQuery || sourceDocumentFromQuery || plannerGroundFromQuery || plannerStepFromQuery) return;
 
     const requestKey = selectedMatter?.id || "blank";
     if (blankDraftRequestRef.current === requestKey) return;
