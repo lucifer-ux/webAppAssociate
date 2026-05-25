@@ -84,6 +84,29 @@
   cursor: not-allowed;
 }
 
+.matterMockModeBtn {
+  border: 1px solid #a9b68c;
+  background: #f7fbf0;
+  color: #4a6126;
+  min-height: 40px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.matterMockModeBtn.isActive {
+  border-color: #4f6a1f;
+  background: linear-gradient(180deg, #f0f8df 0%, #d8ecb4 100%);
+  color: #30430c;
+}
+
 .matterStartDraftingBtn {
   border: 1px solid #4c0003;
   background: #700d0d;

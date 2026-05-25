@@ -35,6 +35,14 @@ import UploadPopUp, { type UploadPopupValidationItem } from "./UploadPopUp";
 import SearchBar from "./SearchBar";
 import ChatBoxMatterSection from "./ChatBoxMatterSection";
 import { buildApiUrl } from "../lib/apiBase";
+import {
+  createMockMatterScenario,
+  deleteMockMatterResult,
+  isMockMatterId,
+  loadMockModeEnabled,
+  saveMockModeEnabled,
+  upsertMockMatterResult,
+} from "../utils/mockMatterIngestion";
 
 const formatUploadedAt = (value: string) => {
   const parsed = new Date(value);
@@ -358,6 +366,7 @@ const MatterSection = ({
 }: MatterSectionProps) => {
   const navigate = useNavigate();
   const {
+    matters,
     activeMatter,
     addMatter,
     addPersonToMatter,
@@ -377,11 +386,15 @@ const MatterSection = ({
     deleteMatter,
     markMatterJobExpired,
     setMattersFromServer,
+    setActiveMatterId,
   } = useMatterStore();
   const [isPeopleDialogOpen, setIsPeopleDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingMatter, setIsDeletingMatter] = useState(false);
+  const [isMockModeEnabled, setIsMockModeEnabled] = useState(() =>
+    loadMockModeEnabled(),
+  );
   const [isUploadPopupOpen, setIsUploadPopupOpen] = useState(false);
   const [uploadPopupMode, setUploadPopupMode] =
     useState<UploadPopupMode>("create");
@@ -418,6 +431,8 @@ const MatterSection = ({
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null);
   const [nextStepModal, setNextStepModal] = useState<NextStepModalState | null>(null);
   const sourceBlockRefs = useRef<Record<string, HTMLElement | null>>({});
+  const mockPipelineTimeoutsRef = useRef<Array<{ matterId: string; timeoutId: number }>>([]);
+  const lastRealMatterIdRef = useRef<string | null>(null);
   const [personName, setPersonName] = useState("");
   const [personRole, setPersonRole] = useState("");
   const [personDescription, setPersonDescription] = useState("");
@@ -452,13 +467,15 @@ const MatterSection = ({
     0,
     MATTER_UPLOAD_MAX_FILES - uploadedDocumentCount,
   );
+  const isActiveMockMatter = isMockMatterId(activeMatter?.id);
   const popupFileLimit =
     uploadPopupMode === "append" ? appendRemainingSlots : MATTER_UPLOAD_MAX_FILES;
   const isAddFilesDisabled =
     !activeMatter ||
     isAppendingMatterFiles ||
     isUploadingMatter ||
-    appendRemainingSlots <= 0;
+    appendRemainingSlots <= 0 ||
+    isActiveMockMatter;
   const matterHeading = useMemo(() => {
     const classificationName = String(
       activeMatter?.classification?.classification_name || "",
@@ -654,6 +671,10 @@ const MatterSection = ({
       if (a.step.requiredBeforeDrafting !== b.step.requiredBeforeDrafting) {
         return a.step.requiredBeforeDrafting ? -1 : 1;
       }
+      if (a.step.stepId && b.step.stepId) {
+        const byStepId = a.step.stepId.localeCompare(b.step.stepId);
+        if (byStepId !== 0) return byStepId;
+      }
       return a.step.title.localeCompare(b.step.title);
     });
 
@@ -782,6 +803,14 @@ const MatterSection = ({
     cardTitle: string,
     step: GroundNextStep,
   ) => {
+    if (isActiveMockMatter && isDraftCapableStep(step)) {
+      openNextStepDraft({
+        cardId,
+        step,
+        mode: "template",
+      });
+      return;
+    }
     setNextStepModal({
       cardId,
       cardTitle,
@@ -1252,6 +1281,7 @@ const MatterSection = ({
       activeMatter?.intelligence_statuses?.next_step_planner === "processing";
     if (
       !activeMatter?.job_id ||
+      isMockMatterId(activeMatter.id) ||
       (activeMatter.extractedFieldsStatus !== "processing" &&
         !shouldPollIntelligence)
     ) {
@@ -1320,6 +1350,7 @@ const MatterSection = ({
   useEffect(() => {
     const shouldPollGroundAnalysis =
       Boolean(activeMatter?.id) &&
+      !isMockMatterId(activeMatter?.id) &&
       (activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
         activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
         activeMatter?.intelligence_statuses?.law_generation === "processing" ||
@@ -1657,6 +1688,102 @@ const MatterSection = ({
     setUploadPopupError("");
   };
 
+  useEffect(() => {
+    saveMockModeEnabled(isMockModeEnabled);
+  }, [isMockModeEnabled]);
+
+  useEffect(() => {
+    if (activeMatter?.id && !isMockMatterId(activeMatter.id)) {
+      lastRealMatterIdRef.current = activeMatter.id;
+    }
+  }, [activeMatter?.id]);
+
+  useEffect(() => {
+    if (isMockModeEnabled) {
+      const existingMockMatter = matters.find((matter) => isMockMatterId(matter.id));
+      if (existingMockMatter) {
+        if (activeMatter?.id !== existingMockMatter.id) {
+          setActiveMatterId(existingMockMatter.id);
+        }
+        return;
+      }
+
+      const scenario = createMockMatterScenario({
+        query:
+          activeMatter?.user_message ||
+          "Benchmark the Mehra Exports v. CloudServ matter and surface the model's ideal output.",
+        fileNames: Array.isArray(activeMatter?.documents)
+          ? activeMatter.documents.map((entry) => entry.file_name)
+          : undefined,
+      });
+      addMatter(scenario.initialResult);
+      persistMockMatter(scenario.initialResult);
+      return;
+    }
+
+    if (activeMatter?.id && isMockMatterId(activeMatter.id)) {
+      const fallbackRealMatterId =
+        (lastRealMatterIdRef.current &&
+        matters.some((matter) => matter.id === lastRealMatterIdRef.current)
+          ? lastRealMatterIdRef.current
+          : null) ||
+        matters.find((matter) => !isMockMatterId(matter.id))?.id ||
+        null;
+
+      setActiveMatterId(fallbackRealMatterId);
+    }
+  }, [
+    activeMatter?.documents,
+    activeMatter?.id,
+    activeMatter?.user_message,
+    addMatter,
+    isMockModeEnabled,
+    matters,
+    setActiveMatterId,
+  ]);
+
+  const clearMockPipelineTimeouts = (matterId?: string) => {
+    mockPipelineTimeoutsRef.current = mockPipelineTimeoutsRef.current.filter(
+      (entry) => {
+        const shouldClear = !matterId || entry.matterId === matterId;
+        if (shouldClear) {
+          window.clearTimeout(entry.timeoutId);
+        }
+        return !shouldClear;
+      },
+    );
+  };
+
+  useEffect(
+    () => () => {
+      clearMockPipelineTimeouts();
+    },
+    [],
+  );
+
+  const persistMockMatter = (result: MatterProcessedResult) => {
+    if (!isMockMatterId(result?.matter?.id)) return;
+    upsertMockMatterResult(result);
+  };
+
+  const applyMockMatterResult = (result: MatterProcessedResult) => {
+    updateMatter(result);
+    persistMockMatter(result);
+  };
+
+  const scheduleMockMatterPipeline = (scenario: ReturnType<typeof createMockMatterScenario>) => {
+    clearMockPipelineTimeouts(scenario.acceptedResult.matter.id);
+    scenario.stageResults.forEach((stage) => {
+      const timeoutId = window.setTimeout(() => {
+        applyMockMatterResult(stage.result);
+      }, stage.delayMs);
+      mockPipelineTimeoutsRef.current.push({
+        matterId: scenario.acceptedResult.matter.id,
+        timeoutId,
+      });
+    });
+  };
+
   const openUploadPopup = (mode: UploadPopupMode) => {
     if (mode === "append" && !activeMatter) return;
     setUploadPopupMode(mode);
@@ -1921,6 +2048,15 @@ const MatterSection = ({
       return;
     setIsDeletingMatter(true);
     try {
+      if (isMockMatterId(activeMatter.id)) {
+        clearMockPipelineTimeouts(activeMatter.id);
+        deleteMockMatterResult(activeMatter.id);
+        deleteMatter(activeMatter.id);
+        setIsDeleteDialogOpen(false);
+        setDeleteConfirmText("");
+        navigate("/dashboard");
+        return;
+      }
       const response = await fetch(
         buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}`),
         { method: "DELETE" },
@@ -1947,7 +2083,7 @@ const MatterSection = ({
 
   const submitNewMatterUpload = async () => {
     if (
-      !pendingUploadFiles.length ||
+      (!pendingUploadFiles.length && !isMockModeEnabled) ||
       isUploadingMatter ||
       isValidatingUploadFiles
     ) {
@@ -1967,11 +2103,32 @@ const MatterSection = ({
     setIngestingFileName(
       filesToUpload.length === 1
         ? filesToUpload[0].name
-        : `${filesToUpload.length} files selected`,
+        : filesToUpload.length
+          ? `${filesToUpload.length} files selected`
+          : "Mock matter benchmark",
     );
     updateMatterUploadLoaderStage("Uploading files to backend", 10);
 
     try {
+      if (isMockModeEnabled) {
+        updateMatterUploadLoaderStage("Loading mock answer key", 18);
+        await sleep(550);
+        updateMatterUploadLoaderStage("Synthesizing matter classification", 44);
+        await sleep(700);
+        updateMatterUploadLoaderStage("Generating structured agent brief", 76);
+        await sleep(900);
+        const scenario = createMockMatterScenario({
+          query: queryToUpload,
+          fileNames: filesToUpload.map((file) => file.name),
+        });
+        updateMatterUploadLoaderStage("Publishing mock matter workspace", 100);
+        addMatter(scenario.initialResult);
+        persistMockMatter(scenario.initialResult);
+        closeUploadPopup(true);
+        navigate("/matter");
+        return;
+      }
+
       const formData = new FormData();
       filesToUpload.forEach((file) => {
         formData.append("matter", file);
@@ -2013,6 +2170,7 @@ const MatterSection = ({
       }
 
       addMatter(result);
+      persistMockMatter(result);
       closeUploadPopup(true);
       navigate("/matter");
     } catch (error) {
@@ -2168,6 +2326,45 @@ const MatterSection = ({
     setIsAcceptingBrief(true);
     setBriefAcceptError("");
     try {
+      if (isMockMatterId(activeMatter.id)) {
+        const scenario = createMockMatterScenario({
+          query: uploadQuery.trim() || activeMatter.user_message || "Mock matter analysis",
+          fileNames: Array.isArray(activeMatter.documents)
+            ? activeMatter.documents.map((entry) => entry.file_name)
+            : undefined,
+        });
+        const acceptedResult = {
+          ...scenario.acceptedResult,
+          matter: {
+            ...scenario.acceptedResult.matter,
+            id: activeMatter.id,
+            job_id: activeMatter.job_id,
+            uploaded_at: activeMatter.uploaded_at,
+            uploadedAt: activeMatter.uploadedAt,
+            user_message: activeMatter.user_message,
+          },
+        };
+        applyMockMatterResult(acceptedResult);
+        scheduleMockMatterPipeline({
+          ...scenario,
+          acceptedResult,
+          stageResults: scenario.stageResults.map((stage) => ({
+            ...stage,
+            result: {
+              ...stage.result,
+              matter: {
+                ...stage.result.matter,
+                id: activeMatter.id,
+                job_id: activeMatter.job_id,
+                uploaded_at: activeMatter.uploaded_at,
+                uploadedAt: activeMatter.uploadedAt,
+                user_message: activeMatter.user_message,
+              },
+            },
+          })),
+        });
+        return;
+      }
       const response = await fetch(
         buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/brief/accept`),
         {
@@ -2534,6 +2731,7 @@ const MatterSection = ({
         isSubmitting={isUploadingMatter || isAppendingMatterFiles}
         errorMessage={uploadPopupError}
         submitLabel={uploadPopupMode === "append" ? "Upload files" : "Upload matter"}
+        allowEmptyFiles={isMockModeEnabled && uploadPopupMode === "create"}
         onFilesSelected={handlePopupFilesSelected}
         onRemoveFile={handleRemovePendingUploadFile}
         onCancel={() => closeUploadPopup()}
@@ -2604,6 +2802,13 @@ const MatterSection = ({
         <div className="matterOverviewTitleRow">
           <h1>{matterHeading}</h1>
           <div className="matterOverviewActionRow">
+            <Button
+              type="button"
+              className={`matterMockModeBtn ${isMockModeEnabled ? "isActive" : ""}`}
+              onClick={() => setIsMockModeEnabled((current) => !current)}
+            >
+              Mock mode {isMockModeEnabled ? "on" : "off"}
+            </Button>
             <Button
               type="button"
               className="matterAddFilesBtn"

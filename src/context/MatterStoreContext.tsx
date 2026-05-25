@@ -7,6 +7,7 @@ import {
   type PropsWithChildren,
 } from "react";
 import { buildApiUrl } from "../lib/apiBase";
+import { loadMockMatterResults } from "../utils/mockMatterIngestion";
 
 const MATTER_JOB_TTL_MS = 60 * 60 * 1000;
 
@@ -42,6 +43,7 @@ export type MatterUploadPayload = {
   sha256: string;
   kind: "pdf" | "md" | "txt" | "mixed" | "document" | string;
   versionFingerprint: string;
+  user_message?: string;
   classification?: {
     classification_id: string | null;
     classification_name: string;
@@ -866,6 +868,7 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
         // Ignore hydration failures; uploads still work.
       } finally {
         if (!cancelled) {
+          setMattersFromServer(loadMockMatterResults());
           setIsSavedMattersLoading(false);
         }
       }

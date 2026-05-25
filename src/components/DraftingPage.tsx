@@ -28,6 +28,10 @@ import {
   type ZoomLevel,
 } from "./draftingApi";
 import { buildDraftingExtensions } from "./draftingExtensions";
+import {
+  getMockTemplatePayload,
+  isMockMatterId,
+} from "../utils/mockMatterIngestion";
 
 const FONT_FAMILIES = ["Newsreader", "Georgia", "Times New Roman", "Work Sans"];
 const COLOR_CHOICES = ["#1b1c19", "#4c0003", "#6f5d55", "#0f5b78"];
@@ -146,6 +150,10 @@ const DraftingPage = () => {
       null,
     [activeMatter, matterIdFromQuery, matters],
   );
+  const selectedMatterDraftId =
+    selectedMatter && isMockMatterId(selectedMatter.id)
+      ? null
+      : selectedMatter?.id || null;
 
   const [activeDraft, setActiveDraft] = useState<DraftDetail | null>(null);
   const [documentTitle, setDocumentTitle] = useState("Untitled legal draft");
@@ -278,7 +286,7 @@ const DraftingPage = () => {
       try {
         await createEditableDraft({
           title: `Editable source - ${sourceDocument.document.fileName}`,
-          matterId: selectedMatter.id,
+          matterId: selectedMatterDraftId,
           templateId: "source-document",
           html: sourceTextToHtml(sourceDocument.document.fileName, sourceText),
           buildReplaceUrl: (draft) =>
@@ -291,7 +299,7 @@ const DraftingPage = () => {
     };
 
     void createSourceDraft();
-  }, [createEditableDraft, draftIdFromQuery, selectedMatter, sourceDocumentFromQuery]);
+  }, [createEditableDraft, draftIdFromQuery, selectedMatter, selectedMatterDraftId, sourceDocumentFromQuery]);
 
   useEffect(() => {
     if (draftIdFromQuery || sourceDocumentFromQuery || !plannerGroundFromQuery || !plannerStepFromQuery) return;
@@ -317,16 +325,18 @@ const DraftingPage = () => {
     const createNextStepDraft = async () => {
       try {
         if (draftModeFromQuery === "template" && step.template_key) {
-          const template = await getNextStepTemplate({
-            matterId: selectedMatter.id,
-            groundId: plannerGroundFromQuery,
-            stepId: plannerStepFromQuery,
-            templateKey: step.template_key,
-          });
+          const template = isMockMatterId(selectedMatter.id)
+            ? getMockTemplatePayload(selectedMatter, step.template_key)
+            : await getNextStepTemplate({
+                matterId: selectedMatter.id,
+                groundId: plannerGroundFromQuery,
+                stepId: plannerStepFromQuery,
+                templateKey: step.template_key,
+              });
 
           await createEditableDraft({
             title: template?.title || step.title || groundItem.title || "Template draft",
-            matterId: selectedMatter.id,
+            matterId: selectedMatterDraftId,
             templateId: step.template_key,
             html:
               String(template?.content_html || "").trim() ||
@@ -342,7 +352,7 @@ const DraftingPage = () => {
 
         await createEditableDraft({
           title: step.title || groundItem.title || "Scratch draft",
-          matterId: selectedMatter.id,
+          matterId: selectedMatterDraftId,
           templateId: step.draft_type || "next-step-scratch",
           html: nextStepScratchHtml({
             title: step.title || groundItem.title || "Scratch draft",
@@ -367,6 +377,7 @@ const DraftingPage = () => {
     plannerGroundFromQuery,
     plannerStepFromQuery,
     selectedMatter,
+    selectedMatterDraftId,
     sourceDocumentFromQuery,
   ]);
 
@@ -381,7 +392,7 @@ const DraftingPage = () => {
       try {
         await createEditableDraft({
           title: selectedMatter ? `Draft - ${selectedMatter.title}` : "Untitled legal draft",
-          matterId: selectedMatter?.id || null,
+          matterId: selectedMatterDraftId,
           templateId: "blank-document",
           html: blankDraftHtml(),
           buildReplaceUrl: (draft) =>
@@ -396,7 +407,7 @@ const DraftingPage = () => {
     };
 
     void createBlankDraft();
-  }, [createEditableDraft, draftIdFromQuery, selectedMatter, sourceDocumentFromQuery]);
+  }, [createEditableDraft, draftIdFromQuery, selectedMatter, selectedMatterDraftId, sourceDocumentFromQuery]);
 
   useEffect(() => {
     if (!activeDraft) return;

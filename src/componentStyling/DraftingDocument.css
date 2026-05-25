@@ -2,7 +2,11 @@
   padding-top: 194px;
   padding-right: 26px;
   background:
-    radial-gradient(circle at top right, rgba(112, 13, 13, 0.06), transparent 24%),
+    radial-gradient(
+      circle at top right,
+      rgba(112, 13, 13, 0.06),
+      transparent 24%
+    ),
     linear-gradient(180deg, #f7f3ec 0%, #f3efe8 100%);
 }
 
@@ -251,7 +255,7 @@
 }
 
 .draftPaperSheet.compact {
-  width: min(100%, 900px);
+  width: min(100%);
   min-height: 1180px;
   background: #fffdfa;
   border: 1px solid #d8cbc2;
@@ -285,7 +289,11 @@
 }
 
 .draftPaperEditor.readOnly {
-  background: linear-gradient(180deg, rgba(247, 243, 236, 0.48), rgba(247, 243, 236, 0.48));
+  background: linear-gradient(
+    180deg,
+    rgba(247, 243, 236, 0.48),
+    rgba(247, 243, 236, 0.48)
+  );
 }
 
 .draftPaperEditor h1,
@@ -364,7 +372,9 @@
   border-left: 3px solid #cf4e45;
   background: rgba(207, 78, 69, 0.08);
   padding-left: 6px;
-  transition: background 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    background 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .draftAnnotationAnchor.type-reaction {
@@ -788,53 +798,6 @@
 .inlineCommentActions button:hover {
   background: #f0e9e1;
   color: #4c0003;
-}
-
-@media (max-width: 1380px) {
-  .draftTemplateSelection {
-    grid-template-columns: 1fr;
-  }
-
-  .draftMatterContextPanel {
-    border-left: 0;
-    border-top: 1px solid #dfbfbc;
-    padding: 20px 0 0;
-    position: static;
-  }
-
-  .draftingCanvasArea.soloCanvas {
-    align-items: flex-start;
-    justify-content: center;
-    flex-direction: row;
-    overflow-x: visible;
-  }
-
-  .draftCommentRail {
-    width: 100%;
-    max-width: 900px;
-    margin: 0 auto;
-    padding-top: 0;
-    min-height: 0;
-  }
-
-  .draftCommentComposerInline,
-  .inlineCommentCard {
-    position: static;
-    width: 100%;
-    margin-bottom: 12px;
-  }
-
-  .commentInlineList {
-    min-height: 0;
-    display: grid;
-    gap: 12px;
-  }
-
-  .draftPaperSheet.zoom-80,
-  .draftPaperSheet.zoom-100,
-  .draftPaperSheet.zoom-125 {
-    transform: none;
-  }
 }
 
 @media (max-width: 760px) {

@@ -35,6 +35,7 @@ type UploadPopUpProps = {
   isSubmitting: boolean;
   errorMessage: string;
   submitLabel: string;
+  allowEmptyFiles?: boolean;
   onFilesSelected: (files: File[]) => void;
   onRemoveFile: (fileName: string) => void;
   onCancel: () => void;
@@ -68,6 +69,7 @@ const UploadPopUp = ({
   isSubmitting,
   errorMessage,
   submitLabel,
+  allowEmptyFiles = false,
   onFilesSelected,
   onRemoveFile,
   onCancel,
@@ -101,9 +103,10 @@ const UploadPopUp = ({
   const acceptedCount = validations.filter((item) => item.accepted).length;
   const hasMessage = Boolean(queryValue.trim());
   const allAccepted =
-    selectedFiles.length > 0 &&
-    validations.length === selectedFiles.length &&
-    validations.every((item) => item.accepted);
+    allowEmptyFiles ||
+    (selectedFiles.length > 0 &&
+      validations.length === selectedFiles.length &&
+      validations.every((item) => item.accepted));
 
   return (
     <div
@@ -189,7 +192,11 @@ const UploadPopUp = ({
               <h3>Selected files</h3>
               <span>
                 {selectedFiles.length} selected
-                {selectedFiles.length ? ` • ${acceptedCount} verified` : ""}
+                {selectedFiles.length
+                  ? ` • ${acceptedCount} verified`
+                  : allowEmptyFiles
+                    ? " • optional in mock mode"
+                    : ""}
               </span>
             </div>
 
