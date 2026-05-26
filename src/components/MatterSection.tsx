@@ -153,13 +153,17 @@ const DRAFT_ACTION_TYPES = new Set([
   "prepare_evidence",
 ]);
 
-type MatterDocumentEntry = NonNullable<MatterProcessedResult["documents"]>[number];
+type MatterDocumentEntry = NonNullable<
+  MatterProcessedResult["documents"]
+>[number];
 
 class MatterPollingTimeoutError extends Error {
   jobId: string;
 
   constructor(jobId: string) {
-    super("Matter ingestion is still running. Refresh shortly to see the new files.");
+    super(
+      "Matter ingestion is still running. Refresh shortly to see the new files.",
+    );
     this.jobId = jobId;
   }
 }
@@ -209,7 +213,7 @@ const renderHighlightedText = (
           .join(" ")}
         title={
           inBlank
-            ? "This field is unfilled — contract cannot be executed."
+            ? "This field is unfilled contract cannot be executed."
             : undefined
         }
       >
@@ -222,7 +226,9 @@ const renderHighlightedText = (
 };
 
 const normalizeSourceName = (value: string) =>
-  String(value || "").trim().toLowerCase();
+  String(value || "")
+    .trim()
+    .toLowerCase();
 
 const splitSourceNames = (value: string) =>
   String(value || "")
@@ -428,10 +434,16 @@ const MatterSection = ({
   const [isAcceptingBrief, setIsAcceptingBrief] = useState(false);
   const [briefAcceptError, setBriefAcceptError] = useState("");
   const [isMatterChatOpen, setIsMatterChatOpen] = useState(false);
-  const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null);
-  const [nextStepModal, setNextStepModal] = useState<NextStepModalState | null>(null);
+  const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(
+    null,
+  );
+  const [nextStepModal, setNextStepModal] = useState<NextStepModalState | null>(
+    null,
+  );
   const sourceBlockRefs = useRef<Record<string, HTMLElement | null>>({});
-  const mockPipelineTimeoutsRef = useRef<Array<{ matterId: string; timeoutId: number }>>([]);
+  const mockPipelineTimeoutsRef = useRef<
+    Array<{ matterId: string; timeoutId: number }>
+  >([]);
   const lastRealMatterIdRef = useRef<string | null>(null);
   const [personName, setPersonName] = useState("");
   const [personRole, setPersonRole] = useState("");
@@ -469,7 +481,9 @@ const MatterSection = ({
   );
   const isActiveMockMatter = isMockMatterId(activeMatter?.id);
   const popupFileLimit =
-    uploadPopupMode === "append" ? appendRemainingSlots : MATTER_UPLOAD_MAX_FILES;
+    uploadPopupMode === "append"
+      ? appendRemainingSlots
+      : MATTER_UPLOAD_MAX_FILES;
   const isAddFilesDisabled =
     !activeMatter ||
     isAppendingMatterFiles ||
@@ -495,8 +509,8 @@ const MatterSection = ({
     ? briefDisplayPayload.questions.filter(Boolean)
     : [];
   const isBriefQueryRequired =
-    activeMatter?.intelligence_statuses?.brief_generation === "query_required" ||
-    briefDisplayPayload?.decision === "query_for_user";
+    activeMatter?.intelligence_statuses?.brief_generation ===
+      "query_required" || briefDisplayPayload?.decision === "query_for_user";
   const briefPoints = useMemo(
     () =>
       Array.isArray(briefDisplayPayload?.brief_points)
@@ -505,7 +519,9 @@ const MatterSection = ({
               id: String(point?.id || ""),
               heading: String(point?.heading || "").trim(),
               detail: String(point?.detail || "").trim(),
-              tone: String(point?.tone || "neutral").trim().toLowerCase(),
+              tone: String(point?.tone || "neutral")
+                .trim()
+                .toLowerCase(),
               sourceDocument: String(point?.source_document || "").trim(),
               reason: String(point?.reason || "").trim(),
             }))
@@ -547,7 +563,9 @@ const MatterSection = ({
               id: String(card?.card_id || ""),
               title: String(card?.title || "").trim(),
               status:
-                String(card?.status || "").trim().toLowerCase() === "open"
+                String(card?.status || "")
+                  .trim()
+                  .toLowerCase() === "open"
                   ? "open"
                   : "ready",
               confidencePercent: Math.max(
@@ -560,7 +578,9 @@ const MatterSection = ({
                   : null,
               factText: String(card?.fact_text || "").trim(),
               lawText:
-                card?.law_text == null ? null : String(card.law_text || "").trim(),
+                card?.law_text == null
+                  ? null
+                  : String(card.law_text || "").trim(),
               inferenceText:
                 card?.inference_text == null
                   ? null
@@ -575,21 +595,37 @@ const MatterSection = ({
                   ? null
                   : String(card.inference_meta?.error || "").trim() || null,
               nextSteps: {
-                status: String(card?.next_steps_status || "not_started").trim().toLowerCase(),
-                recommendedSteps: Array.isArray(card?.next_steps?.recommended_next_steps)
+                status: String(card?.next_steps_status || "not_started")
+                  .trim()
+                  .toLowerCase(),
+                recommendedSteps: Array.isArray(
+                  card?.next_steps?.recommended_next_steps,
+                )
                   ? card.next_steps.recommended_next_steps.map((step) => ({
                       stepId: String(step?.step_id || ""),
                       title: String(step?.title || "").trim(),
                       description: String(step?.description || "").trim(),
-                      actionType: String(step?.action_type || "").trim().toLowerCase(),
-                      priority: String(step?.priority || "medium").trim().toLowerCase(),
-                      status: String(step?.status || "ready").trim().toLowerCase(),
+                      actionType: String(step?.action_type || "")
+                        .trim()
+                        .toLowerCase(),
+                      priority: String(step?.priority || "medium")
+                        .trim()
+                        .toLowerCase(),
+                      status: String(step?.status || "ready")
+                        .trim()
+                        .toLowerCase(),
                       reason: String(step?.reason || "").trim(),
-                      requiredBeforeDrafting: Boolean(step?.required_before_drafting),
+                      requiredBeforeDrafting: Boolean(
+                        step?.required_before_drafting,
+                      ),
                       draftType:
-                        step?.draft_type == null ? null : String(step.draft_type || "").trim() || null,
+                        step?.draft_type == null
+                          ? null
+                          : String(step.draft_type || "").trim() || null,
                       templateKey:
-                        step?.template_key == null ? null : String(step.template_key || "").trim() || null,
+                        step?.template_key == null
+                          ? null
+                          : String(step.template_key || "").trim() || null,
                       requiredInputs: Array.isArray(step?.required_inputs)
                         ? step.required_inputs
                             .map((item) => String(item || "").trim())
@@ -601,25 +637,41 @@ const MatterSection = ({
                   card?.next_steps?.primary_drafting_action == null
                     ? null
                     : {
-                        label: String(card.next_steps.primary_drafting_action?.label || "").trim(),
+                        label: String(
+                          card.next_steps.primary_drafting_action?.label || "",
+                        ).trim(),
                         draftType:
-                          card.next_steps.primary_drafting_action?.draft_type == null
+                          card.next_steps.primary_drafting_action?.draft_type ==
+                          null
                             ? null
-                            : String(card.next_steps.primary_drafting_action?.draft_type || "").trim() || null,
+                            : String(
+                                card.next_steps.primary_drafting_action
+                                  ?.draft_type || "",
+                              ).trim() || null,
                         templateKey:
-                          card.next_steps.primary_drafting_action?.template_key == null
+                          card.next_steps.primary_drafting_action
+                            ?.template_key == null
                             ? null
-                            : String(card.next_steps.primary_drafting_action?.template_key || "").trim() || null,
-                        cta:
-                          String(card.next_steps.primary_drafting_action?.cta || "Open draft").trim(),
+                            : String(
+                                card.next_steps.primary_drafting_action
+                                  ?.template_key || "",
+                              ).trim() || null,
+                        cta: String(
+                          card.next_steps.primary_drafting_action?.cta ||
+                            "Open draft",
+                        ).trim(),
                       },
                 metaError:
                   card?.next_steps_meta == null
                     ? null
                     : String(card.next_steps_meta?.error || "").trim() || null,
               } satisfies GroundNextStepsState,
-              lawSources: Array.isArray(card?.law_sources) ? card.law_sources : [],
-              legalRules: Array.isArray(card?.legal_rules) ? card.legal_rules : [],
+              lawSources: Array.isArray(card?.law_sources)
+                ? card.law_sources
+                : [],
+              legalRules: Array.isArray(card?.legal_rules)
+                ? card.legal_rules
+                : [],
               contraryPoints: Array.isArray(card?.contrary_or_limiting_points)
                 ? card.contrary_or_limiting_points
                 : [],
@@ -636,7 +688,9 @@ const MatterSection = ({
                     .map((item) => String(item || "").trim())
                     .filter(Boolean)
                 : [],
-              sourceRefs: Array.isArray(card?.source_refs) ? card.source_refs : [],
+              sourceRefs: Array.isArray(card?.source_refs)
+                ? card.source_refs
+                : [],
             }))
             .filter((card) => card.id && card.title && card.factText)
         : [],
@@ -666,7 +720,8 @@ const MatterSection = ({
     });
 
     steps.sort((a, b) => {
-      const byPriority = priorityRank(a.step.priority) - priorityRank(b.step.priority);
+      const byPriority =
+        priorityRank(a.step.priority) - priorityRank(b.step.priority);
       if (byPriority !== 0) return byPriority;
       if (a.step.requiredBeforeDrafting !== b.step.requiredBeforeDrafting) {
         return a.step.requiredBeforeDrafting ? -1 : 1;
@@ -683,10 +738,13 @@ const MatterSection = ({
   const shouldShowGroundAnalysis =
     Boolean(activeMatter?.acceptedBrief?.accepted_at) ||
     Boolean(groundAnalysis) ||
-    activeMatter?.intelligence_statuses?.inference_generation === "processing" ||
-    activeMatter?.intelligence_statuses?.inference_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.inference_generation ===
+      "processing" ||
+    activeMatter?.intelligence_statuses?.inference_verification ===
+      "processing" ||
     activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
-    activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.debrief_verification ===
+      "processing" ||
     activeMatter?.intelligence_statuses?.law_generation === "processing" ||
     activeMatter?.intelligence_statuses?.law_verification === "processing" ||
     activeMatter?.intelligence_statuses?.next_step_planner === "processing" ||
@@ -706,11 +764,14 @@ const MatterSection = ({
     activeMatter?.intelligence_statuses?.next_step_planner === "failed";
   const isGroundAnalysisProcessing =
     activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
-    activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.debrief_verification ===
+      "processing" ||
     activeMatter?.intelligence_statuses?.law_generation === "processing" ||
     activeMatter?.intelligence_statuses?.law_verification === "processing" ||
-    activeMatter?.intelligence_statuses?.inference_generation === "processing" ||
-    activeMatter?.intelligence_statuses?.inference_verification === "processing" ||
+    activeMatter?.intelligence_statuses?.inference_generation ===
+      "processing" ||
+    activeMatter?.intelligence_statuses?.inference_verification ===
+      "processing" ||
     activeMatter?.intelligence_statuses?.next_step_planner === "processing";
   const groundAnalysisFailed =
     activeMatter?.intelligence_statuses?.debrief_generation === "failed" ||
@@ -723,7 +784,10 @@ const MatterSection = ({
   const groundAnalysisErrorMessage =
     String(groundAnalysis?.meta?.error || "").trim() ||
     "Ground analysis failed during background processing. Check the server logs for the first pipeline error after document-signals-collected.";
-  const groundAnalysisShimmerCount = Math.max(3, groundAnalysisCards.length || 0);
+  const groundAnalysisShimmerCount = Math.max(
+    3,
+    groundAnalysisCards.length || 0,
+  );
 
   const findDocumentBySource = (
     sourceName: string,
@@ -734,7 +798,9 @@ const MatterSection = ({
       : [];
     const normalizedName = normalizeSourceName(sourceName);
     const sourceKey = sourceNameKey(sourceName);
-    const normalizedRefDocumentId = normalizeSourceName(sourceRef?.document_id || "");
+    const normalizedRefDocumentId = normalizeSourceName(
+      sourceRef?.document_id || "",
+    );
 
     return documents.find((entry) => {
       const fileName = normalizeSourceName(entry?.document?.fileName || "");
@@ -744,7 +810,8 @@ const MatterSection = ({
         (normalizedRefDocumentId && documentId === normalizedRefDocumentId) ||
         (normalizedName && fileName === normalizedName) ||
         (normalizedName && fileName.includes(normalizedName)) ||
-        (normalizedName && normalizeSourceName(sourceName).includes(fileName)) ||
+        (normalizedName &&
+          normalizeSourceName(sourceName).includes(fileName)) ||
         (sourceKey && fileKey === sourceKey) ||
         (sourceKey && fileKey.includes(sourceKey)) ||
         (sourceKey && sourceKey.includes(fileKey))
@@ -756,8 +823,9 @@ const MatterSection = ({
     documentEntry: MatterDocumentEntry | undefined,
   ) => {
     const pageBlocks =
-      documentEntry?.page_aware_structure?.pages?.flatMap((page: { blocks?: PageAwareBlock[] }) =>
-        Array.isArray(page.blocks) ? page.blocks : [],
+      documentEntry?.page_aware_structure?.pages?.flatMap(
+        (page: { blocks?: PageAwareBlock[] }) =>
+          Array.isArray(page.blocks) ? page.blocks : [],
       ) || [];
     if (pageBlocks.length) return pageBlocks;
 
@@ -774,7 +842,9 @@ const MatterSection = ({
     fallbackText: string,
   ) => {
     if (sourceRef?.page) {
-      const pageBlocks = blocks.filter((block) => block.page === sourceRef.page);
+      const pageBlocks = blocks.filter(
+        (block) => block.page === sourceRef.page,
+      );
       const quote = String(sourceRef.quote || sourceRef.fact || "").trim();
       if (quote) {
         const quoteMatch = pageBlocks.find((block) =>
@@ -792,11 +862,14 @@ const MatterSection = ({
       }))
       .sort((a, b) => b.score - a.score);
 
-    return scored[0]?.score > 0 ? scored[0].block.block_id : blocks[0]?.block_id || null;
+    return scored[0]?.score > 0
+      ? scored[0].block.block_id
+      : blocks[0]?.block_id || null;
   };
 
   const isDraftCapableStep = (step: GroundNextStep) =>
-    DRAFT_ACTION_TYPES.has(step.actionType) || Boolean(step.draftType || step.templateKey);
+    DRAFT_ACTION_TYPES.has(step.actionType) ||
+    Boolean(step.draftType || step.templateKey);
 
   const openNextStepModal = (
     cardId: string,
@@ -852,7 +925,9 @@ const MatterSection = ({
 
     if (!documentEntry || !blocks.length) return;
 
-    const highlightText = String(sourceRef?.quote || sourceRef?.fact || fallbackText || "").trim();
+    const highlightText = String(
+      sourceRef?.quote || sourceRef?.fact || fallbackText || "",
+    ).trim();
     setSourceViewer({
       matterId: activeMatter.id,
       fileName: documentEntry.document.fileName,
@@ -1261,7 +1336,9 @@ const MatterSection = ({
   useEffect(() => {
     if (!sourceViewer?.highlightBlockId) return;
     window.setTimeout(() => {
-      sourceBlockRefs.current[sourceViewer.highlightBlockId || ""]?.scrollIntoView({
+      sourceBlockRefs.current[
+        sourceViewer.highlightBlockId || ""
+      ]?.scrollIntoView({
         behavior: "smooth",
         block: "center",
       });
@@ -1277,7 +1354,8 @@ const MatterSection = ({
   useEffect(() => {
     const shouldPollIntelligence =
       activeMatter?.intelligence_statuses?.brief_generation === "processing" ||
-      activeMatter?.intelligence_statuses?.brief_verification === "processing" ||
+      activeMatter?.intelligence_statuses?.brief_verification ===
+        "processing" ||
       activeMatter?.intelligence_statuses?.next_step_planner === "processing";
     if (
       !activeMatter?.job_id ||
@@ -1317,9 +1395,12 @@ const MatterSection = ({
         const nextResult = payload.result;
         const shouldContinue =
           nextResult?.extracted_fields_status === "processing" ||
-          nextResult?.matter?.intelligence_statuses?.brief_generation === "processing" ||
-          nextResult?.matter?.intelligence_statuses?.brief_verification === "processing" ||
-          nextResult?.matter?.intelligence_statuses?.next_step_planner === "processing";
+          nextResult?.matter?.intelligence_statuses?.brief_generation ===
+            "processing" ||
+          nextResult?.matter?.intelligence_statuses?.brief_verification ===
+            "processing" ||
+          nextResult?.matter?.intelligence_statuses?.next_step_planner ===
+            "processing";
 
         if (!cancelled && shouldContinue) {
           window.setTimeout(() => {
@@ -1351,13 +1432,19 @@ const MatterSection = ({
     const shouldPollGroundAnalysis =
       Boolean(activeMatter?.id) &&
       !isMockMatterId(activeMatter?.id) &&
-      (activeMatter?.intelligence_statuses?.debrief_generation === "processing" ||
-        activeMatter?.intelligence_statuses?.debrief_verification === "processing" ||
+      (activeMatter?.intelligence_statuses?.debrief_generation ===
+        "processing" ||
+        activeMatter?.intelligence_statuses?.debrief_verification ===
+          "processing" ||
         activeMatter?.intelligence_statuses?.law_generation === "processing" ||
-        activeMatter?.intelligence_statuses?.law_verification === "processing" ||
-        activeMatter?.intelligence_statuses?.inference_generation === "processing" ||
-        activeMatter?.intelligence_statuses?.inference_verification === "processing" ||
-        activeMatter?.intelligence_statuses?.next_step_planner === "processing");
+        activeMatter?.intelligence_statuses?.law_verification ===
+          "processing" ||
+        activeMatter?.intelligence_statuses?.inference_generation ===
+          "processing" ||
+        activeMatter?.intelligence_statuses?.inference_verification ===
+          "processing" ||
+        activeMatter?.intelligence_statuses?.next_step_planner ===
+          "processing");
 
     if (!shouldPollGroundAnalysis || !activeMatter?.id) {
       return;
@@ -1700,7 +1787,9 @@ const MatterSection = ({
 
   useEffect(() => {
     if (isMockModeEnabled) {
-      const existingMockMatter = matters.find((matter) => isMockMatterId(matter.id));
+      const existingMockMatter = matters.find((matter) =>
+        isMockMatterId(matter.id),
+      );
       if (existingMockMatter) {
         if (activeMatter?.id !== existingMockMatter.id) {
           setActiveMatterId(existingMockMatter.id);
@@ -1771,7 +1860,9 @@ const MatterSection = ({
     persistMockMatter(result);
   };
 
-  const scheduleMockMatterPipeline = (scenario: ReturnType<typeof createMockMatterScenario>) => {
+  const scheduleMockMatterPipeline = (
+    scenario: ReturnType<typeof createMockMatterScenario>,
+  ) => {
     clearMockPipelineTimeouts(scenario.acceptedResult.matter.id);
     scenario.stageResults.forEach((stage) => {
       const timeoutId = window.setTimeout(() => {
@@ -1851,7 +1942,9 @@ const MatterSection = ({
   };
 
   useEffect(() => {
-    const shouldOpenUploader = sessionStorage.getItem(MATTER_UPLOAD_SESSION_KEY);
+    const shouldOpenUploader = sessionStorage.getItem(
+      MATTER_UPLOAD_SESSION_KEY,
+    );
     if (shouldOpenUploader !== "1") return;
     sessionStorage.removeItem(MATTER_UPLOAD_SESSION_KEY);
     openUploadPopup("create");
@@ -1867,7 +1960,12 @@ const MatterSection = ({
     return () => {
       window.removeEventListener("matter-uploader:open", handleOpenUploader);
     };
-  }, [activeMatter?.id, isUploadingMatter, isAppendingMatterFiles, isValidatingUploadFiles]);
+  }, [
+    activeMatter?.id,
+    isUploadingMatter,
+    isAppendingMatterFiles,
+    isValidatingUploadFiles,
+  ]);
 
   const mergePendingFiles = (current: File[], next: File[]) => {
     const merged = [...current];
@@ -1931,9 +2029,15 @@ const MatterSection = ({
       const rejected = validations.filter((item) => !item.accepted);
       if (rejected.length) {
         setUploadPopupError(
-          [leadingError, rejected
-            .map((item) => `${item.fileName}: ${item.error || "Validation failed."}`)
-            .join(" ")]
+          [
+            leadingError,
+            rejected
+              .map(
+                (item) =>
+                  `${item.fileName}: ${item.error || "Validation failed."}`,
+              )
+              .join(" "),
+          ]
             .filter(Boolean)
             .join(" "),
         );
@@ -1941,7 +2045,10 @@ const MatterSection = ({
     } catch (error) {
       setUploadValidations([]);
       setUploadPopupError(
-        [leadingError, error instanceof Error ? error.message : "File validation failed."]
+        [
+          leadingError,
+          error instanceof Error ? error.message : "File validation failed.",
+        ]
           .filter(Boolean)
           .join(" "),
       );
@@ -1988,7 +2095,9 @@ const MatterSection = ({
   };
 
   const handleRemovePendingUploadFile = (fileName: string) => {
-    const nextFiles = pendingUploadFiles.filter((file) => file.name !== fileName);
+    const nextFiles = pendingUploadFiles.filter(
+      (file) => file.name !== fileName,
+    );
     setPendingUploadFiles(nextFiles);
     setUploadPopupError("");
     void validateSelectedFiles(nextFiles);
@@ -2015,7 +2124,9 @@ const MatterSection = ({
       onProgress(payload.stage, payload.progress);
 
       if (!response.ok || !payload.success) {
-        throw new Error(payload.error || "Matter ingestion status check failed.");
+        throw new Error(
+          payload.error || "Matter ingestion status check failed.",
+        );
       }
 
       if (payload.status === "failed") {
@@ -2160,11 +2271,17 @@ const MatterSection = ({
 
       let result: MatterProcessedResult;
       if ("existing" in payload && payload.existing && payload.result) {
-        updateMatterUploadLoaderStage("Loaded existing matter from storage", 100);
+        updateMatterUploadLoaderStage(
+          "Loaded existing matter from storage",
+          100,
+        );
         result = payload.result;
       } else if ("job_id" in payload && payload.job_id) {
         updateMatterUploadLoaderStage(payload.stage, payload.progress);
-        result = await pollMatterJob(payload.job_id, updateMatterUploadLoaderStage);
+        result = await pollMatterJob(
+          payload.job_id,
+          updateMatterUploadLoaderStage,
+        );
       } else {
         throw new Error("Matter upload response was invalid.");
       }
@@ -2229,7 +2346,9 @@ const MatterSection = ({
       formData.append("matter_query", queryToUpload);
 
       const response = await fetch(
-        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/files`),
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/files`,
+        ),
         {
           method: "POST",
           body: formData,
@@ -2244,12 +2363,17 @@ const MatterSection = ({
       };
 
       if (!response.ok || !payload?.success || !payload.job_id) {
-        throw new Error(payload?.error || "Additional file upload did not start.");
+        throw new Error(
+          payload?.error || "Additional file upload did not start.",
+        );
       }
 
       updateAppendLoaderStage(payload.stage, payload.progress);
       await refreshStoredMatters();
-      const result = await pollMatterJob(payload.job_id, updateAppendLoaderStage);
+      const result = await pollMatterJob(
+        payload.job_id,
+        updateAppendLoaderStage,
+      );
       updateMatter(result);
       closeUploadPopup(true);
     } catch (error) {
@@ -2328,7 +2452,10 @@ const MatterSection = ({
     try {
       if (isMockMatterId(activeMatter.id)) {
         const scenario = createMockMatterScenario({
-          query: uploadQuery.trim() || activeMatter.user_message || "Mock matter analysis",
+          query:
+            uploadQuery.trim() ||
+            activeMatter.user_message ||
+            "Mock matter analysis",
           fileNames: Array.isArray(activeMatter.documents)
             ? activeMatter.documents.map((entry) => entry.file_name)
             : undefined,
@@ -2366,7 +2493,9 @@ const MatterSection = ({
         return;
       }
       const response = await fetch(
-        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/brief/accept`),
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/brief/accept`,
+        ),
         {
           method: "POST",
         },
@@ -2714,7 +2843,11 @@ const MatterSection = ({
     <section className="matterOverviewWrap">
       <UploadPopUp
         open={isUploadPopupOpen}
-        title={uploadPopupMode === "append" ? "Add files to this matter" : "Upload matter files"}
+        title={
+          uploadPopupMode === "append"
+            ? "Add files to this matter"
+            : "Upload matter files"
+        }
         description={
           uploadPopupMode === "append"
             ? "Add more source files to this matter. We will verify them first, then ingest them into the same matter context."
@@ -2730,7 +2863,9 @@ const MatterSection = ({
         isValidating={isValidatingUploadFiles}
         isSubmitting={isUploadingMatter || isAppendingMatterFiles}
         errorMessage={uploadPopupError}
-        submitLabel={uploadPopupMode === "append" ? "Upload files" : "Upload matter"}
+        submitLabel={
+          uploadPopupMode === "append" ? "Upload files" : "Upload matter"
+        }
         allowEmptyFiles={isMockModeEnabled && uploadPopupMode === "create"}
         onFilesSelected={handlePopupFilesSelected}
         onRemoveFile={handleRemovePendingUploadFile}
@@ -2934,7 +3069,8 @@ const MatterSection = ({
               <div className="matterBriefLoopHead">
                 <p className="matterEyebrow">
                   Agent Brief ·{" "}
-                  {activeMatter.intelligence_statuses?.brief_generation === "ready"
+                  {activeMatter.intelligence_statuses?.brief_generation ===
+                  "ready"
                     ? "Generated"
                     : activeMatter.intelligence_statuses?.brief_generation ===
                         "query_required"
@@ -2943,8 +3079,11 @@ const MatterSection = ({
                   · {uploadedDocumentCount} file
                   {uploadedDocumentCount === 1 ? "" : "s"}
                 </p>
-                <span className={`matterBriefStatus is-${activeMatter.intelligence_statuses?.brief_generation || "not_started"}`}>
-                  {activeMatter.intelligence_statuses?.brief_generation || "not started"}
+                <span
+                  className={`matterBriefStatus is-${activeMatter.intelligence_statuses?.brief_generation || "not_started"}`}
+                >
+                  {activeMatter.intelligence_statuses?.brief_generation ||
+                    "not started"}
                 </span>
               </div>
 
@@ -2980,34 +3119,38 @@ const MatterSection = ({
                   {briefPoints.length ? (
                     <div className="matterBriefPoints">
                       {briefPoints.map((point) => (
-                        <article
-                          className="matterBriefPoint"
-                          key={point.id}
-                        >
+                        <article className="matterBriefPoint" key={point.id}>
                           <div
                             className={`matterBriefPointHeading tone-${point.tone || "neutral"}`}
                           >
-                            <span className="matterBriefPointHeadingText">{point.heading}</span>
+                            <span className="matterBriefPointHeadingText">
+                              {point.heading}
+                            </span>
                             <span className="matterBriefPointHeadingMeta">
                               <span className="matterBriefPointHeadingMetaItem">
-                                <span className="matterBriefPointHeadingMetaLabel">Source file:</span>
-                                {splitSourceNames(point.sourceDocument).length ? (
+                                <span className="matterBriefPointHeadingMetaLabel">
+                                  Source file:
+                                </span>
+                                {splitSourceNames(point.sourceDocument)
+                                  .length ? (
                                   <span className="matterSourceFileList">
-                                    {splitSourceNames(point.sourceDocument).map((sourceName) => (
-                                      <Button
-                                        type="button"
-                                        className="matterSourceFileButton"
-                                        key={`${point.id}-${sourceName}`}
-                                        onClick={() =>
-                                          openSourceViewer({
-                                            sourceName,
-                                            fallbackText: `${point.heading} ${point.detail}`,
-                                          })
-                                        }
-                                      >
-                                        {sourceName}
-                                      </Button>
-                                    ))}
+                                    {splitSourceNames(point.sourceDocument).map(
+                                      (sourceName) => (
+                                        <Button
+                                          type="button"
+                                          className="matterSourceFileButton"
+                                          key={`${point.id}-${sourceName}`}
+                                          onClick={() =>
+                                            openSourceViewer({
+                                              sourceName,
+                                              fallbackText: `${point.heading} ${point.detail}`,
+                                            })
+                                          }
+                                        >
+                                          {sourceName}
+                                        </Button>
+                                      ),
+                                    )}
                                   </span>
                                 ) : (
                                   <span className="matterBriefPointHeadingMetaValue">
@@ -3017,18 +3160,27 @@ const MatterSection = ({
                               </span>
                             </span>
                           </div>
-                          <p className="matterBriefPointDetail">{point.detail}</p>
+                          <p className="matterBriefPointDetail">
+                            {point.detail}
+                          </p>
                         </article>
                       ))}
                     </div>
                   ) : (
                     <p className="matterBriefText">
-                      {briefDisplayPayload?.accumulated_brief || "Brief generated."}
+                      {briefDisplayPayload?.accumulated_brief ||
+                        "Brief generated."}
                     </p>
                   )}
                   <div className="matterBriefSourceRow">
-                    <span>{activeMatter.classification?.classification_name || "Matter classification"}</span>
-                    <span>{uploadedDocumentCount} linked document{uploadedDocumentCount === 1 ? "" : "s"}</span>
+                    <span>
+                      {activeMatter.classification?.classification_name ||
+                        "Matter classification"}
+                    </span>
+                    <span>
+                      {uploadedDocumentCount} linked document
+                      {uploadedDocumentCount === 1 ? "" : "s"}
+                    </span>
                     <span>Facts only</span>
                   </div>
                   {!activeMatter?.acceptedBrief?.accepted_at ? (
@@ -3044,7 +3196,8 @@ const MatterSection = ({
                   ) : null}
                   {activeMatter?.acceptedBrief?.accepted_at ? (
                     <p className="matterBriefAcceptedMeta">
-                      Accepted on {formatUploadedAt(activeMatter.acceptedBrief.accepted_at)}
+                      Accepted on{" "}
+                      {formatUploadedAt(activeMatter.acceptedBrief.accepted_at)}
                     </p>
                   ) : null}
                   {briefAcceptError ? (
@@ -3053,8 +3206,9 @@ const MatterSection = ({
                 </>
               ) : (
                 <p className="matterBriefText">
-                  Upload and extraction are complete. The matter brief agent will
-                  either generate a facts-only brief or ask for missing information.
+                  Upload and extraction are complete. The matter brief agent
+                  will either generate a facts-only brief or ask for missing
+                  information.
                 </p>
               )}
             </article>
@@ -3063,9 +3217,14 @@ const MatterSection = ({
               <article className="matterDebriefPanel">
                 <div className="matterDebriefHead">
                   <p className="matterEyebrow">
-                    Ground Analysis {groundAnalysis?.meta?.error ? "· Degraded" : "· Facts / Law / Inference separated"}
+                    Ground Analysis{" "}
+                    {groundAnalysis?.meta?.error
+                      ? "· Degraded"
+                      : "· Facts / Law / Inference separated"}
                   </p>
-                  <span className={`matterBriefStatus is-${groundAnalysisStatus}`}>
+                  <span
+                    className={`matterBriefStatus is-${groundAnalysisStatus}`}
+                  >
                     {groundAnalysisStatus || "not started"}
                   </span>
                 </div>
@@ -3078,72 +3237,90 @@ const MatterSection = ({
                         variant="spinner"
                         eyebrow="Ground Analysis"
                         title={
-                          activeMatter.intelligence_statuses?.inference_generation === "processing" ||
-                          activeMatter.intelligence_statuses?.inference_verification === "processing"
+                          activeMatter.intelligence_statuses
+                            ?.inference_generation === "processing" ||
+                          activeMatter.intelligence_statuses
+                            ?.inference_verification === "processing"
                             ? "Generating Inference"
-                            : activeMatter.intelligence_statuses?.next_step_planner === "processing"
+                            : activeMatter.intelligence_statuses
+                                  ?.next_step_planner === "processing"
                               ? "Planning Next Steps"
-                            : activeMatter.intelligence_statuses?.law_generation === "processing" ||
-                                activeMatter.intelligence_statuses?.law_verification === "processing"
-                              ? "Researching Law"
-                              : "Generating Signals"
+                              : activeMatter.intelligence_statuses
+                                    ?.law_generation === "processing" ||
+                                  activeMatter.intelligence_statuses
+                                    ?.law_verification === "processing"
+                                ? "Researching Law"
+                                : "Generating Signals"
                         }
                         message={
-                          activeMatter.intelligence_statuses?.inference_generation === "processing" ||
-                          activeMatter.intelligence_statuses?.inference_verification === "processing"
+                          activeMatter.intelligence_statuses
+                            ?.inference_generation === "processing" ||
+                          activeMatter.intelligence_statuses
+                            ?.inference_verification === "processing"
                             ? "Combining fact-grounded findings with verified law support to produce cautious inference cards."
-                            : activeMatter.intelligence_statuses?.next_step_planner === "processing"
+                            : activeMatter.intelligence_statuses
+                                  ?.next_step_planner === "processing"
                               ? "Turning completed fact, law, and inference cards into drafting and evidence actions."
-                            : activeMatter.intelligence_statuses?.law_generation === "processing" ||
-                                activeMatter.intelligence_statuses?.law_verification === "processing"
-                              ? "Finding ranked Indian authorities and attaching cautious law support to each fact-grounded ground."
-                              : "Building fact-grounded matter signals from the accepted brief and uploaded documents."
+                              : activeMatter.intelligence_statuses
+                                    ?.law_generation === "processing" ||
+                                  activeMatter.intelligence_statuses
+                                    ?.law_verification === "processing"
+                                ? "Finding ranked Indian authorities and attaching cautious law support to each fact-grounded ground."
+                                : "Building fact-grounded matter signals from the accepted brief and uploaded documents."
                         }
                       />
                     </div>
                     <div className="matterDebriefCards matterDebriefCardsShimmer">
-                      {Array.from({ length: groundAnalysisShimmerCount }).map((_, index) => (
-                        <article className="matterDebriefCard matterDebriefCardShimmer" key={`ga-shimmer-${index}`}>
-                          <div className="matterDebriefCardTop">
-                            <div className="matterShimmerLine matterShimmerLineTitle" />
-                            <div className="matterShimmerChip" />
-                          </div>
-                          <div className="matterDebriefBarTrack" aria-hidden="true">
-                            <span className="matterDebriefBarFill matterDebriefBarFillShimmer" />
-                          </div>
-                          <div className="matterDebriefFactGrid">
-                            <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
-                              <span>Fact</span>
-                              <div className="matterShimmerParagraph">
-                                <div className="matterShimmerLine" />
-                                <div className="matterShimmerLine" />
-                                <div className="matterShimmerLine matterShimmerLineShort" />
+                      {Array.from({ length: groundAnalysisShimmerCount }).map(
+                        (_, index) => (
+                          <article
+                            className="matterDebriefCard matterDebriefCardShimmer"
+                            key={`ga-shimmer-${index}`}
+                          >
+                            <div className="matterDebriefCardTop">
+                              <div className="matterShimmerLine matterShimmerLineTitle" />
+                              <div className="matterShimmerChip" />
+                            </div>
+                            <div
+                              className="matterDebriefBarTrack"
+                              aria-hidden="true"
+                            >
+                              <span className="matterDebriefBarFill matterDebriefBarFillShimmer" />
+                            </div>
+                            <div className="matterDebriefFactGrid">
+                              <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
+                                <span>Fact</span>
+                                <div className="matterShimmerParagraph">
+                                  <div className="matterShimmerLine" />
+                                  <div className="matterShimmerLine" />
+                                  <div className="matterShimmerLine matterShimmerLineShort" />
+                                </div>
+                              </div>
+                              <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
+                                <span>Law</span>
+                                <div className="matterShimmerParagraph">
+                                  <div className="matterShimmerLine" />
+                                  <div className="matterShimmerLine matterShimmerLineShort" />
+                                </div>
+                              </div>
+                              <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
+                                <span>Inference</span>
+                                <div className="matterShimmerParagraph">
+                                  <div className="matterShimmerLine" />
+                                  <div className="matterShimmerLine matterShimmerLineShort" />
+                                </div>
+                              </div>
+                              <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
+                                <span>Next Steps</span>
+                                <div className="matterShimmerParagraph">
+                                  <div className="matterShimmerLine" />
+                                  <div className="matterShimmerLine matterShimmerLineShort" />
+                                </div>
                               </div>
                             </div>
-                            <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
-                              <span>Law</span>
-                              <div className="matterShimmerParagraph">
-                                <div className="matterShimmerLine" />
-                                <div className="matterShimmerLine matterShimmerLineShort" />
-                              </div>
-                            </div>
-                            <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
-                              <span>Inference</span>
-                              <div className="matterShimmerParagraph">
-                                <div className="matterShimmerLine" />
-                                <div className="matterShimmerLine matterShimmerLineShort" />
-                              </div>
-                            </div>
-                            <div className="matterDebriefFactBlock matterDebriefFactBlockShimmer">
-                              <span>Next Steps</span>
-                              <div className="matterShimmerParagraph">
-                                <div className="matterShimmerLine" />
-                                <div className="matterShimmerLine matterShimmerLineShort" />
-                              </div>
-                            </div>
-                          </div>
-                        </article>
-                      ))}
+                          </article>
+                        ),
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -3155,27 +3332,37 @@ const MatterSection = ({
                       variant="spinner"
                       eyebrow="Ground Analysis"
                       title={
-                        activeMatter.intelligence_statuses?.inference_generation === "processing" ||
-                        activeMatter.intelligence_statuses?.inference_verification === "processing"
+                        activeMatter.intelligence_statuses
+                          ?.inference_generation === "processing" ||
+                        activeMatter.intelligence_statuses
+                          ?.inference_verification === "processing"
                           ? "Updating Inference"
-                          : activeMatter.intelligence_statuses?.next_step_planner === "processing"
+                          : activeMatter.intelligence_statuses
+                                ?.next_step_planner === "processing"
                             ? "Planning Next Steps"
-                          : activeMatter.intelligence_statuses?.law_generation === "processing" ||
-                              activeMatter.intelligence_statuses?.law_verification === "processing"
-                            ? "Updating Law"
-                            : "Updating Signals"
+                            : activeMatter.intelligence_statuses
+                                  ?.law_generation === "processing" ||
+                                activeMatter.intelligence_statuses
+                                  ?.law_verification === "processing"
+                              ? "Updating Law"
+                              : "Updating Signals"
                       }
                       message="Completed cards are shown below while the remaining analysis finishes."
                     />
                   </div>
                 ) : null}
-                {groundAnalysisFailed && !groundAnalysisCards.length && !isGroundAnalysisProcessing ? (
+                {groundAnalysisFailed &&
+                !groundAnalysisCards.length &&
+                !isGroundAnalysisProcessing ? (
                   <p className="matterDebriefEmpty">
                     {groundAnalysisErrorMessage}
                   </p>
-                ) : groundAnalysis?.no_signals_found && !groundAnalysisCards.length && !isGroundAnalysisProcessing ? (
+                ) : groundAnalysis?.no_signals_found &&
+                  !groundAnalysisCards.length &&
+                  !isGroundAnalysisProcessing ? (
                   <p className="matterDebriefEmpty">
-                    No fact-grounded debrief signals were found in the current uploaded set.
+                    No fact-grounded debrief signals were found in the current
+                    uploaded set.
                   </p>
                 ) : groundAnalysisCards.length ? (
                   <div className="matterDebriefCards">
@@ -3190,7 +3377,10 @@ const MatterSection = ({
                             %
                           </strong>
                         </div>
-                        <div className="matterDebriefBarTrack" aria-hidden="true">
+                        <div
+                          className="matterDebriefBarTrack"
+                          aria-hidden="true"
+                        >
                           <span
                             className={`matterDebriefBarFill is-${card.status}`}
                             style={{
@@ -3235,8 +3425,8 @@ const MatterSection = ({
                               </div>
                             ) : (
                               <p>
-                                {card.inferenceDisplayStatus === "needs_review" ||
-                                card.inferenceMetaError
+                                {card.inferenceDisplayStatus ===
+                                  "needs_review" || card.inferenceMetaError
                                   ? "Inference generated with review required."
                                   : "Inference pipeline pending."}
                               </p>
@@ -3270,9 +3460,12 @@ const MatterSection = ({
                                   const matchingRef =
                                     card.sourceRefs.find(
                                       (ref) =>
-                                        normalizeSourceName(ref.file_name || "") ===
-                                        normalizeSourceName(sourceName),
-                                    ) || card.sourceRefs[0] || null;
+                                        normalizeSourceName(
+                                          ref.file_name || "",
+                                        ) === normalizeSourceName(sourceName),
+                                    ) ||
+                                    card.sourceRefs[0] ||
+                                    null;
                                   return (
                                     <Button
                                       type="button"
@@ -3297,7 +3490,8 @@ const MatterSection = ({
                           </p>
                           {card.researchGaps.length ? (
                             <p>
-                              <strong>Research gaps:</strong> {card.researchGaps.join(" ")}
+                              <strong>Research gaps:</strong>{" "}
+                              {card.researchGaps.join(" ")}
                             </p>
                           ) : null}
                         </div>
@@ -3310,22 +3504,32 @@ const MatterSection = ({
                     <span>Next Steps</span>
                     {consolidatedNextSteps.length ? (
                       <div className="matterNextStepsList">
-                        {consolidatedNextSteps.map(({ cardId, cardTitle, step }) => (
-                          <Button
-                            key={`${cardId}-${step.stepId}`}
-                            type="button"
-                            className={`matterNextStepCard matterNextStepPriority-${step.priority}`}
-                            onClick={() => openNextStepModal(cardId, cardTitle, step)}
-                          >
-                            <strong>{step.title}</strong>
-                            <span>{step.description || step.reason || "Open next step details."}</span>
-                            <small>
-                              {step.actionType.replace(/_/g, " ")} · {step.priority} · {cardTitle}
-                            </small>
-                          </Button>
-                        ))}
+                        {consolidatedNextSteps.map(
+                          ({ cardId, cardTitle, step }) => (
+                            <Button
+                              key={`${cardId}-${step.stepId}`}
+                              type="button"
+                              className={`matterNextStepCard matterNextStepPriority-${step.priority}`}
+                              onClick={() =>
+                                openNextStepModal(cardId, cardTitle, step)
+                              }
+                            >
+                              <strong>{step.title}</strong>
+                              <span>
+                                {step.description ||
+                                  step.reason ||
+                                  "Open next step details."}
+                              </span>
+                              <small>
+                                {step.actionType.replace(/_/g, " ")} ·{" "}
+                                {step.priority} · {cardTitle}
+                              </small>
+                            </Button>
+                          ),
+                        )}
                       </div>
-                    ) : activeMatter?.intelligence_statuses?.next_step_planner === "processing" ? (
+                    ) : activeMatter?.intelligence_statuses
+                        ?.next_step_planner === "processing" ? (
                       <div className="matterShimmerParagraph matterDebriefInlineShimmer">
                         <div className="matterShimmerLine" />
                         <div className="matterShimmerLine" />
@@ -3337,7 +3541,8 @@ const MatterSection = ({
                   </section>
                 ) : (
                   <p className="matterDebriefEmpty">
-                    Ground analysis has not been generated yet for this accepted brief.
+                    Ground analysis has not been generated yet for this accepted
+                    brief.
                   </p>
                 )}
               </article>
@@ -3396,267 +3601,271 @@ const MatterSection = ({
 
       {MATTER_AI_ENABLED ? (
         <>
-      <aside
-        className={`matterObligationPanel ${
-          isObligationPanelOpen ? "isOpen" : "isClosed"
-        }`}
-        role="complementary"
-        aria-hidden={!isObligationPanelOpen}
-      >
-        <div className="matterObligationPanelHead">
-          <div>
-            <p className="matterEyebrow">Obligation Mapper</p>
-            <h3>Obligation balance</h3>
-          </div>
-          <Button
-            type="button"
-            className="matterObligationClose"
-            onClick={() => onCloseObligationPanel?.()}
-            aria-label="Close obligation mapper panel"
-            showImage
-            image={<X size={16} />}
-          />
-        </div>
-
-        {obligationMapStatus === "loading" ? (
-          <Loader
-            mode="inline"
-            eyebrow="Obligation Mapper"
-            title="Mapping Obligations"
-            fileName={activeMatter?.fileName || "Current matter"}
-            message="Classifying clause summaries and building obligation balance."
-            stage="Analyzing obligation allocation"
-            progress={62}
-            steps={obligationLoaderSteps}
-          />
-        ) : obligationMapStatus === "error" ? (
-          <div className="matterObligationState">
-            <p>{obligationMapError || "Obligation mapping failed."}</p>
-            <Button type="button" onClick={() => void fetchObligationMap()}>
-              Retry
-            </Button>
-          </div>
-        ) : obligationMapStatus === "ready" && obligationMapResult ? (
-          <>
-            <div
-              className={`matterObligationScore matterObligationScore-${obligationMapResult.imbalance.level}`}
-            >
-              <strong>
-                IPPB: {obligationMapResult.counts.ippb} obligations
-              </strong>
-              <span>
-                Service Provider: {obligationMapResult.counts.service_provider}{" "}
-                obligations
-              </span>
+          <aside
+            className={`matterObligationPanel ${
+              isObligationPanelOpen ? "isOpen" : "isClosed"
+            }`}
+            role="complementary"
+            aria-hidden={!isObligationPanelOpen}
+          >
+            <div className="matterObligationPanelHead">
+              <div>
+                <p className="matterEyebrow">Obligation Mapper</p>
+                <h3>Obligation balance</h3>
+              </div>
+              <Button
+                type="button"
+                className="matterObligationClose"
+                onClick={() => onCloseObligationPanel?.()}
+                aria-label="Close obligation mapper panel"
+                showImage
+                image={<X size={16} />}
+              />
             </div>
 
-            <div className="matterObligationColumns">
-              <section>
-                <h4>IPPB obligations</h4>
-                {obligationColumns.ippb.length ? (
-                  <ul>
-                    {obligationColumns.ippb.map((item) => {
-                      const source = obligationClauseById.get(item.clause_id);
-                      if (!source) return null;
-                      return (
-                        <li key={`ippb-${item.clause_id}`}>
-                          <Button
-                            type="button"
-                            className="matterObligationLink"
-                            onClick={() =>
-                              handleJumpToClauseById(item.clause_id)
-                            }
-                          >
-                            {source.display_text}
-                          </Button>
-                          <div className="matterObligationMeta">
-                            <span>{source.heading}</span>
-                            {item.party === "mutual" ? (
-                              <span className="matterObligationMutual">
-                                Mutual
-                              </span>
-                            ) : null}
-                            <Button
-                              type="button"
-                              onClick={() =>
-                                handleJumpToClausePage(item.clause_id, true)
-                              }
-                            >
-                              Page {source.source_page || source.page_start}
-                            </Button>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p className="matterObligationEmpty">
-                    No obligations detected.
-                  </p>
-                )}
-              </section>
-
-              <section>
-                <h4>Service Provider obligations</h4>
-                {obligationColumns.serviceProvider.length ? (
-                  <ul>
-                    {obligationColumns.serviceProvider.map((item) => {
-                      const source = obligationClauseById.get(item.clause_id);
-                      if (!source) return null;
-                      return (
-                        <li key={`sp-${item.clause_id}`}>
-                          <Button
-                            type="button"
-                            className="matterObligationLink"
-                            onClick={() =>
-                              handleJumpToClauseById(item.clause_id)
-                            }
-                          >
-                            {source.display_text}
-                          </Button>
-                          <div className="matterObligationMeta">
-                            <span>{source.heading}</span>
-                            {item.party === "mutual" ? (
-                              <span className="matterObligationMutual">
-                                Mutual
-                              </span>
-                            ) : null}
-                            <Button
-                              type="button"
-                              onClick={() =>
-                                handleJumpToClausePage(item.clause_id, true)
-                              }
-                            >
-                              Page {source.source_page || source.page_start}
-                            </Button>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p className="matterObligationEmpty">
-                    No obligations detected.
-                  </p>
-                )}
-              </section>
-            </div>
-          </>
-        ) : (
-          <p className="matterObligationState">
-            Open the mapper to classify obligations from clause summaries.
-          </p>
-        )}
-      </aside>
-
-      <aside
-        className={`matterObligationPanel matterPlaybookPanel ${
-          isPlaybookPanelOpen ? "isOpen" : "isClosed"
-        }`}
-        role="complementary"
-        aria-hidden={!isPlaybookPanelOpen}
-      >
-        <div className="matterObligationPanelHead">
-          <div>
-            <p className="matterEyebrow">Playbook</p>
-            <h3>Accepted redlines</h3>
-          </div>
-          <Button
-            type="button"
-            className="matterObligationClose"
-            onClick={() => onClosePlaybookPanel?.()}
-            aria-label="Close playbook panel"
-            showImage
-            image={<X size={16} />}
-          />
-        </div>
-        {acceptedRedlines.length ? (
-          <div className="matterPlaybookList">
-            {acceptedRedlines.map((item: AcceptedRedline) => (
-              <article className="matterPlaybookItem" key={item.id}>
-                <header>
-                  <div className="matterPlaybookHeaderRow">
-                    <input
-                      className="matterPlaybookTitleInput"
-                      value={item.title || item.clauseHeading}
-                      onChange={(event) =>
-                        activeMatter &&
-                        updateAcceptedRedline(activeMatter.id, item.id, {
-                          title: event.target.value,
-                        })
-                      }
-                      onBlur={() => {
-                        void patchAcceptedRedlineRemote(item.id, {
-                          title: item.title || item.clauseHeading,
-                        });
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      className="matterPlaybookDeleteButton"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            "Delete this accepted redline from playbook?",
-                          )
-                        ) {
-                          void deleteAcceptedRedlineRemote(item.id);
-                        }
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </div>
+            {obligationMapStatus === "loading" ? (
+              <Loader
+                mode="inline"
+                eyebrow="Obligation Mapper"
+                title="Mapping Obligations"
+                fileName={activeMatter?.fileName || "Current matter"}
+                message="Classifying clause summaries and building obligation balance."
+                stage="Analyzing obligation allocation"
+                progress={62}
+                steps={obligationLoaderSteps}
+              />
+            ) : obligationMapStatus === "error" ? (
+              <div className="matterObligationState">
+                <p>{obligationMapError || "Obligation mapping failed."}</p>
+                <Button type="button" onClick={() => void fetchObligationMap()}>
+                  Retry
+                </Button>
+              </div>
+            ) : obligationMapStatus === "ready" && obligationMapResult ? (
+              <>
+                <div
+                  className={`matterObligationScore matterObligationScore-${obligationMapResult.imbalance.level}`}
+                >
+                  <strong>
+                    IPPB: {obligationMapResult.counts.ippb} obligations
+                  </strong>
                   <span>
-                    {item.position} ·{" "}
-                    {item.representedParty === "ippb"
-                      ? "Representing IPPB"
-                      : "Representing Service Provider"}
+                    Service Provider:{" "}
+                    {obligationMapResult.counts.service_provider} obligations
                   </span>
-                </header>
-                <p className="matterPlaybookMeta">
-                  {item.sectionLabel} · Accepted{" "}
-                  {new Date(item.acceptedAt).toLocaleString("en-IN", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: true,
-                    timeZone: "Asia/Kolkata",
-                  })}
-                </p>
-                <div className="matterPlaybookText">
-                  <label>Original</label>
-                  <p>{item.originalText}</p>
-                  <label>Suggested</label>
-                  <textarea
-                    className="matterPlaybookTextArea"
-                    value={item.rewrittenText}
-                    rows={5}
-                    onChange={(event) =>
-                      activeMatter &&
-                      updateAcceptedRedline(activeMatter.id, item.id, {
-                        rewrittenText: event.target.value,
-                      })
-                    }
-                    onBlur={() => {
-                      void patchAcceptedRedlineRemote(item.id, {
-                        rewrittenText: item.rewrittenText,
-                      });
-                    }}
-                  />
                 </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="matterObligationState">
-            No accepted redlines yet. Open a clause and click Accept redline to
-            add it here.
-          </p>
-        )}
-      </aside>
+
+                <div className="matterObligationColumns">
+                  <section>
+                    <h4>IPPB obligations</h4>
+                    {obligationColumns.ippb.length ? (
+                      <ul>
+                        {obligationColumns.ippb.map((item) => {
+                          const source = obligationClauseById.get(
+                            item.clause_id,
+                          );
+                          if (!source) return null;
+                          return (
+                            <li key={`ippb-${item.clause_id}`}>
+                              <Button
+                                type="button"
+                                className="matterObligationLink"
+                                onClick={() =>
+                                  handleJumpToClauseById(item.clause_id)
+                                }
+                              >
+                                {source.display_text}
+                              </Button>
+                              <div className="matterObligationMeta">
+                                <span>{source.heading}</span>
+                                {item.party === "mutual" ? (
+                                  <span className="matterObligationMutual">
+                                    Mutual
+                                  </span>
+                                ) : null}
+                                <Button
+                                  type="button"
+                                  onClick={() =>
+                                    handleJumpToClausePage(item.clause_id, true)
+                                  }
+                                >
+                                  Page {source.source_page || source.page_start}
+                                </Button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="matterObligationEmpty">
+                        No obligations detected.
+                      </p>
+                    )}
+                  </section>
+
+                  <section>
+                    <h4>Service Provider obligations</h4>
+                    {obligationColumns.serviceProvider.length ? (
+                      <ul>
+                        {obligationColumns.serviceProvider.map((item) => {
+                          const source = obligationClauseById.get(
+                            item.clause_id,
+                          );
+                          if (!source) return null;
+                          return (
+                            <li key={`sp-${item.clause_id}`}>
+                              <Button
+                                type="button"
+                                className="matterObligationLink"
+                                onClick={() =>
+                                  handleJumpToClauseById(item.clause_id)
+                                }
+                              >
+                                {source.display_text}
+                              </Button>
+                              <div className="matterObligationMeta">
+                                <span>{source.heading}</span>
+                                {item.party === "mutual" ? (
+                                  <span className="matterObligationMutual">
+                                    Mutual
+                                  </span>
+                                ) : null}
+                                <Button
+                                  type="button"
+                                  onClick={() =>
+                                    handleJumpToClausePage(item.clause_id, true)
+                                  }
+                                >
+                                  Page {source.source_page || source.page_start}
+                                </Button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="matterObligationEmpty">
+                        No obligations detected.
+                      </p>
+                    )}
+                  </section>
+                </div>
+              </>
+            ) : (
+              <p className="matterObligationState">
+                Open the mapper to classify obligations from clause summaries.
+              </p>
+            )}
+          </aside>
+
+          <aside
+            className={`matterObligationPanel matterPlaybookPanel ${
+              isPlaybookPanelOpen ? "isOpen" : "isClosed"
+            }`}
+            role="complementary"
+            aria-hidden={!isPlaybookPanelOpen}
+          >
+            <div className="matterObligationPanelHead">
+              <div>
+                <p className="matterEyebrow">Playbook</p>
+                <h3>Accepted redlines</h3>
+              </div>
+              <Button
+                type="button"
+                className="matterObligationClose"
+                onClick={() => onClosePlaybookPanel?.()}
+                aria-label="Close playbook panel"
+                showImage
+                image={<X size={16} />}
+              />
+            </div>
+            {acceptedRedlines.length ? (
+              <div className="matterPlaybookList">
+                {acceptedRedlines.map((item: AcceptedRedline) => (
+                  <article className="matterPlaybookItem" key={item.id}>
+                    <header>
+                      <div className="matterPlaybookHeaderRow">
+                        <input
+                          className="matterPlaybookTitleInput"
+                          value={item.title || item.clauseHeading}
+                          onChange={(event) =>
+                            activeMatter &&
+                            updateAcceptedRedline(activeMatter.id, item.id, {
+                              title: event.target.value,
+                            })
+                          }
+                          onBlur={() => {
+                            void patchAcceptedRedlineRemote(item.id, {
+                              title: item.title || item.clauseHeading,
+                            });
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          className="matterPlaybookDeleteButton"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                "Delete this accepted redline from playbook?",
+                              )
+                            ) {
+                              void deleteAcceptedRedlineRemote(item.id);
+                            }
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                      <span>
+                        {item.position} ·{" "}
+                        {item.representedParty === "ippb"
+                          ? "Representing IPPB"
+                          : "Representing Service Provider"}
+                      </span>
+                    </header>
+                    <p className="matterPlaybookMeta">
+                      {item.sectionLabel} · Accepted{" "}
+                      {new Date(item.acceptedAt).toLocaleString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: true,
+                        timeZone: "Asia/Kolkata",
+                      })}
+                    </p>
+                    <div className="matterPlaybookText">
+                      <label>Original</label>
+                      <p>{item.originalText}</p>
+                      <label>Suggested</label>
+                      <textarea
+                        className="matterPlaybookTextArea"
+                        value={item.rewrittenText}
+                        rows={5}
+                        onChange={(event) =>
+                          activeMatter &&
+                          updateAcceptedRedline(activeMatter.id, item.id, {
+                            rewrittenText: event.target.value,
+                          })
+                        }
+                        onBlur={() => {
+                          void patchAcceptedRedlineRemote(item.id, {
+                            rewrittenText: item.rewrittenText,
+                          });
+                        }}
+                      />
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="matterObligationState">
+                No accepted redlines yet. Open a clause and click Accept redline
+                to add it here.
+              </p>
+            )}
+          </aside>
         </>
       ) : null}
 
@@ -3843,7 +4052,11 @@ const MatterSection = ({
 
       {sourceViewer ? (
         <div className="matterDialogBackdrop" role="presentation">
-          <section className="matterSourceDialog" role="dialog" aria-modal="true">
+          <section
+            className="matterSourceDialog"
+            role="dialog"
+            aria-modal="true"
+          >
             <header className="matterSourceDialogHead">
               <div>
                 <p className="matterEyebrow">Source File</p>
@@ -3872,7 +4085,8 @@ const MatterSection = ({
             </header>
             <div className="matterSourceFrame">
               {sourceViewer.blocks.map((block) => {
-                const isHighlighted = block.block_id === sourceViewer.highlightBlockId;
+                const isHighlighted =
+                  block.block_id === sourceViewer.highlightBlockId;
                 return (
                   <article
                     className={`matterSourceBlock ${isHighlighted ? "isHighlighted" : ""}`}
@@ -3893,7 +4107,11 @@ const MatterSection = ({
 
       {nextStepModal ? (
         <div className="matterDialogBackdrop" role="presentation">
-          <section className="matterSourceDialog matterNextStepDialog" role="dialog" aria-modal="true">
+          <section
+            className="matterSourceDialog matterNextStepDialog"
+            role="dialog"
+            aria-modal="true"
+          >
             <header className="matterSourceDialogHead">
               <div>
                 <p className="matterEyebrow">Next Step</p>
@@ -3911,7 +4129,8 @@ const MatterSection = ({
             </header>
             <div className="matterNextStepDialogBody">
               <p className="matterNextStepDialogLead">
-                {nextStepModal.step.description || "Review the recommended next action for this ground."}
+                {nextStepModal.step.description ||
+                  "Review the recommended next action for this ground."}
               </p>
               {nextStepModal.step.reason ? (
                 <p>
@@ -3919,7 +4138,8 @@ const MatterSection = ({
                 </p>
               ) : null}
               <p>
-                <strong>Action type:</strong> {nextStepModal.step.actionType.replace(/_/g, " ")}
+                <strong>Action type:</strong>{" "}
+                {nextStepModal.step.actionType.replace(/_/g, " ")}
               </p>
               <p>
                 <strong>Priority:</strong> {nextStepModal.step.priority}
@@ -3932,7 +4152,9 @@ const MatterSection = ({
                   <strong>Required inputs</strong>
                   <ul>
                     {nextStepModal.step.requiredInputs.map((item) => (
-                      <li key={`${nextStepModal.step.stepId}-${item}`}>{item}</li>
+                      <li key={`${nextStepModal.step.stepId}-${item}`}>
+                        {item}
+                      </li>
                     ))}
                   </ul>
                 </div>
