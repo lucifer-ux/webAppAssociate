@@ -28,6 +28,21 @@ export type MatterValidationSummary = {
   };
 };
 
+export type ContextCoreMatterState = {
+  enabled: boolean;
+  status:
+    | "not_requested"
+    | "processing"
+    | "ready"
+    | "failed"
+    | "stale"
+    | string;
+  chunk_count?: number | null;
+  indexed_at?: string | null;
+  overlay_dir?: string | null;
+  error?: string | null;
+};
+
 export type MatterUploadPayload = {
   id: string;
   job_id: string;
@@ -58,6 +73,7 @@ export type MatterUploadPayload = {
     error?: string | null;
     raw_response_excerpt?: string;
   };
+  contextcore?: ContextCoreMatterState;
   document_count?: number;
   intelligence_statuses?: {
     extraction?: string;
@@ -369,6 +385,8 @@ export type MatterProcessedResult = {
   matter_brief?: Record<string, unknown> | null;
   accumulated_brief?: {
     decision?: "generate_brief" | "query_for_user";
+    brief_type?: string;
+    warning?: string;
     accumulated_brief?: string;
     brief_points?: Array<{
       id: string;
@@ -691,10 +709,72 @@ const createInitials = (name: string) => {
 const createPersonId = () =>
   `person_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 
+const extractedRoleRank = (role: string) => {
+  const normalized = String(role || "").trim().toLowerCase();
+  if (normalized === "represented party") return 5;
+  if (normalized === "opposing party") return 4;
+  if (normalized === "counsel for represented party") return 3;
+  if (normalized === "counsel for opposing party") return 2;
+  if (normalized === "party") return 1;
+  return 0;
+};
+
+const extractedConfidenceRank = (confidence: string) => {
+  const normalized = String(confidence || "").trim().toLowerCase();
+  if (normalized === "high") return 3;
+  if (normalized === "medium") return 2;
+  if (normalized === "low") return 1;
+  return 0;
+};
+
+const dedupeExtractedParties = (
+  parties: MatterExtractedFields["parties"],
+): MatterExtractedFields["parties"] => {
+  const byName = new Map<
+    string,
+    { name: string; role: string; confidence: string }
+  >();
+
+  parties.forEach((party) => {
+    const name = String(party?.name || "").trim();
+    if (!name) return;
+
+    const candidate = {
+      name,
+      role: String(party?.role || "Party").trim() || "Party",
+      confidence: String(party?.confidence || "low").trim() || "low",
+    };
+    const key = name.toLowerCase();
+    const current = byName.get(key);
+
+    if (!current) {
+      byName.set(key, candidate);
+      return;
+    }
+
+    const currentRoleRank = extractedRoleRank(current.role);
+    const candidateRoleRank = extractedRoleRank(candidate.role);
+    if (candidateRoleRank > currentRoleRank) {
+      byName.set(key, candidate);
+      return;
+    }
+
+    if (
+      candidateRoleRank === currentRoleRank &&
+      extractedConfidenceRank(candidate.confidence) >
+        extractedConfidenceRank(current.confidence)
+    ) {
+      byName.set(key, candidate);
+    }
+  });
+
+  return [...byName.values()];
+};
+
 const peopleFromExtractedParties = (
   parties: MatterExtractedFields["parties"],
 ): MatterPerson[] =>
-  parties.map((party, index) => ({
+  dedupeExtractedParties(parties).map((party, index) => ({
     id: `extracted_person_${index}_${party.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
     initials: createInitials(party.name),
     name: party.name,

@@ -17,6 +17,7 @@ import {
   FilePenLine,
   FolderOpen,
   Plus,
+  Search,
   X,
 } from "lucide-react";
 import {
@@ -24,6 +25,7 @@ import {
   type AcceptedRedline,
   type ClauseSection,
   type ClauseItem,
+  type ContextCoreMatterState,
   type MatterProcessedResult,
   type MatterSignalSourceRef,
   type ObligationMapResult,
@@ -156,6 +158,22 @@ const DRAFT_ACTION_TYPES = new Set([
 type MatterDocumentEntry = NonNullable<
   MatterProcessedResult["documents"]
 >[number];
+
+type ContextCoreSearchResult = {
+  chunk_id: string;
+  score: number;
+  text: string;
+  metadata: {
+    file_name?: string;
+    document_role?: string;
+    assertion_mode?: string;
+    party_side?: string;
+    page_start?: number | null;
+    page_end?: number | null;
+    clause_id?: string | null;
+    section_id?: string | null;
+  };
+};
 
 class MatterPollingTimeoutError extends Error {
   jobId: string;
@@ -395,6 +413,8 @@ const MatterSection = ({
     setActiveMatterId,
   } = useMatterStore();
   const [isPeopleDialogOpen, setIsPeopleDialogOpen] = useState(false);
+  const [isExtractingPeople, setIsExtractingPeople] = useState(false);
+  const [peopleExtractionMessage, setPeopleExtractionMessage] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingMatter, setIsDeletingMatter] = useState(false);
@@ -434,6 +454,12 @@ const MatterSection = ({
   const [isAcceptingBrief, setIsAcceptingBrief] = useState(false);
   const [briefAcceptError, setBriefAcceptError] = useState("");
   const [isMatterChatOpen, setIsMatterChatOpen] = useState(false);
+  const [matterSearchResults, setMatterSearchResults] = useState<
+    ContextCoreSearchResult[]
+  >([]);
+  const [matterSearchError, setMatterSearchError] = useState("");
+  const [matterSearchInfo, setMatterSearchInfo] = useState("");
+  const [isMatterSearching, setIsMatterSearching] = useState(false);
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(
     null,
   );
@@ -445,6 +471,7 @@ const MatterSection = ({
     Array<{ matterId: string; timeoutId: number }>
   >([]);
   const lastRealMatterIdRef = useRef<string | null>(null);
+  const peopleExtractionAttemptedRef = useRef<Record<string, true>>({});
   const [personName, setPersonName] = useState("");
   const [personRole, setPersonRole] = useState("");
   const [personDescription, setPersonDescription] = useState("");
@@ -480,6 +507,8 @@ const MatterSection = ({
     MATTER_UPLOAD_MAX_FILES - uploadedDocumentCount,
   );
   const isActiveMockMatter = isMockMatterId(activeMatter?.id);
+  const activeMatterContextCore = (activeMatter?.contextcore ||
+    null) as ContextCoreMatterState | null;
   const popupFileLimit =
     uploadPopupMode === "append"
       ? appendRemainingSlots
@@ -696,6 +725,96 @@ const MatterSection = ({
         : [],
     [groundAnalysis?.cards],
   );
+
+  const runPeopleExtraction = async (
+    matterId: string,
+    options?: { markAttempted?: boolean },
+  ) => {
+    if (!matterId || isActiveMockMatter) return;
+
+    if (options?.markAttempted) {
+      peopleExtractionAttemptedRef.current[matterId] = true;
+    }
+
+    setIsExtractingPeople(true);
+    setPeopleExtractionMessage("");
+
+    try {
+      const response = await fetch(
+        buildApiUrl(`/api/matters/${encodeURIComponent(matterId)}/people/extract`),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      const payload = await response.json();
+      if (!response.ok || !payload?.success) {
+        setPeopleExtractionMessage(
+          payload?.error || "Could not extract people from the active matter.",
+        );
+        return;
+      }
+
+      if (payload?.result) {
+        updateMatter(payload.result);
+      }
+
+      if (payload?.needs_categorization) {
+        const unresolved = Array.isArray(payload?.unresolved_candidates)
+          ? payload.unresolved_candidates
+              .map((item: { name?: string }) => item?.name || "")
+              .filter(Boolean)
+          : [];
+        setPeopleExtractionMessage(
+          payload?.categorization_prompt ||
+            (unresolved.length
+              ? `Categorize these participants manually: ${unresolved.join(", ")}.`
+              : "Categorize the unresolved participants manually."),
+        );
+        return;
+      }
+
+      if (payload?.extracted_count > 0) {
+        setPeopleExtractionMessage(
+          `Added ${payload.extracted_count} party and counsel entries from ContextCore.`,
+        );
+        return;
+      }
+
+      setPeopleExtractionMessage(
+        "No people could be extracted from the indexed matter.",
+      );
+    } catch {
+      setPeopleExtractionMessage(
+        "Could not extract people from the active matter.",
+      );
+    } finally {
+      setIsExtractingPeople(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeMatter || isActiveMockMatter) return;
+    if (people.length > 0) {
+      setPeopleExtractionMessage("");
+      return;
+    }
+    if (isExtractingPeople) return;
+    if (activeMatterContextCore?.status !== "ready") return;
+    if (peopleExtractionAttemptedRef.current[activeMatter.id]) return;
+
+    void runPeopleExtraction(activeMatter.id, { markAttempted: true });
+  }, [
+    activeMatter,
+    activeMatterContextCore?.status,
+    isActiveMockMatter,
+    isExtractingPeople,
+    people.length,
+    updateMatter,
+  ]);
   const consolidatedNextSteps = useMemo(() => {
     const steps: ConsolidatedNextStep[] = [];
     const seen = new Set<string>();
@@ -1780,6 +1899,12 @@ const MatterSection = ({
   }, [isMockModeEnabled]);
 
   useEffect(() => {
+    setMatterSearchResults([]);
+    setMatterSearchError("");
+    setMatterSearchInfo("");
+  }, [activeMatter?.id]);
+
+  useEffect(() => {
     if (activeMatter?.id && !isMockMatterId(activeMatter.id)) {
       lastRealMatterIdRef.current = activeMatter.id;
     }
@@ -2141,6 +2266,85 @@ const MatterSection = ({
     throw new MatterPollingTimeoutError(jobId);
   };
 
+  const handleMatterContextSearch = async (query: string) => {
+    if (!activeMatter?.id || isActiveMockMatter) {
+      setMatterSearchResults([]);
+      setMatterSearchError("");
+      setMatterSearchInfo(
+        "ContextCore retrieval is only available for real uploaded matters.",
+      );
+      return;
+    }
+
+    if (activeMatterContextCore?.status !== "ready") {
+      setMatterSearchResults([]);
+      setMatterSearchError("");
+      setMatterSearchInfo(
+        activeMatterContextCore?.status === "not_requested"
+          ? "This matter was not passed through ContextCore."
+          : activeMatterContextCore?.status === "stale"
+            ? "This matter has files that were added without ContextCore re-indexing."
+            : activeMatterContextCore?.error ||
+              "ContextCore retrieval is unavailable for this matter.",
+      );
+      return;
+    }
+
+    setIsMatterSearching(true);
+    setMatterSearchError("");
+    setMatterSearchInfo("");
+
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/contextcore/search`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query,
+            top_k: 8,
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        results?: ContextCoreSearchResult[];
+        error?: string;
+        disabled_reason?: string;
+      };
+
+      if (!response.ok || !payload?.success) {
+        setMatterSearchResults([]);
+        setMatterSearchError(payload?.error || "");
+        setMatterSearchInfo(
+          payload?.disabled_reason || "ContextCore search failed for this matter.",
+        );
+        return;
+      }
+
+      const nextResults = Array.isArray(payload.results) ? payload.results : [];
+      setMatterSearchResults(nextResults);
+      setMatterSearchError("");
+      setMatterSearchInfo(
+        nextResults.length
+          ? ""
+          : "No matching paragraphs were found in this matter's ContextCore index.",
+      );
+    } catch (error) {
+      setMatterSearchResults([]);
+      setMatterSearchError(
+        error instanceof Error ? error.message : "ContextCore search failed.",
+      );
+      setMatterSearchInfo("ContextCore search failed for this matter.");
+    } finally {
+      setIsMatterSearching(false);
+    }
+  };
+
   const handleAddPerson = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!activeMatter || !personName.trim()) return;
@@ -2245,6 +2449,10 @@ const MatterSection = ({
         formData.append("matter", file);
       });
       formData.append("matter_query", queryToUpload);
+      formData.append(
+        "pass_through_contextcore",
+        "true",
+      );
 
       const response = await fetch(buildApiUrl("/api/matters/upload"), {
         method: "POST",
@@ -2344,6 +2552,10 @@ const MatterSection = ({
         formData.append("matter", file);
       });
       formData.append("matter_query", queryToUpload);
+      formData.append(
+        "pass_through_contextcore",
+        "true",
+      );
 
       const response = await fetch(
         buildApiUrl(
@@ -2867,6 +3079,7 @@ const MatterSection = ({
           uploadPopupMode === "append" ? "Upload files" : "Upload matter"
         }
         allowEmptyFiles={isMockModeEnabled && uploadPopupMode === "create"}
+        showContextCoreOption={false}
         onFilesSelected={handlePopupFilesSelected}
         onRemoveFile={handleRemovePendingUploadFile}
         onCancel={() => closeUploadPopup()}
@@ -2990,16 +3203,43 @@ const MatterSection = ({
         <section className="matterPeopleSection">
           <div className="matterPeopleHead">
             <h2>People</h2>
-            <Button
-              type="button"
-              className="matterPeopleAddBtn"
-              disabled={!activeMatter}
-              onClick={() => setIsPeopleDialogOpen(true)}
-              aria-label="Add a person to this matter"
-              showImage
-              image={<Plus size={18} />}
-            />
+            <div className="matterPeopleActions">
+              <Button
+                type="button"
+                className="matterPeopleFetchBtn"
+                disabled={
+                  !activeMatter ||
+                  isActiveMockMatter ||
+                  isExtractingPeople ||
+                  activeMatterContextCore?.status !== "ready"
+                }
+                onClick={() =>
+                  activeMatter &&
+                  void runPeopleExtraction(activeMatter.id, {
+                    markAttempted: true,
+                  })
+                }
+                text={isExtractingPeople ? "Fetching..." : "Fetch from ContextCore"}
+                showImage
+                image={<Search size={16} />}
+              />
+              <Button
+                type="button"
+                className="matterPeopleAddBtn"
+                disabled={!activeMatter}
+                onClick={() => setIsPeopleDialogOpen(true)}
+                aria-label="Add a person to this matter"
+                showImage
+                image={<Plus size={18} />}
+              />
+            </div>
           </div>
+
+          {isExtractingPeople ? (
+            <p className="matterPeopleInfo">Identifying parties and counsel...</p>
+          ) : peopleExtractionMessage ? (
+            <p className="matterPeopleInfo">{peopleExtractionMessage}</p>
+          ) : null}
 
           {people.length ? (
             <div className="matterPeopleGrid">
@@ -3172,6 +3412,11 @@ const MatterSection = ({
                         "Brief generated."}
                     </p>
                   )}
+                  {briefDisplayPayload?.warning ? (
+                    <p className="matterBriefError">
+                      {briefDisplayPayload.warning}
+                    </p>
+                  ) : null}
                   <div className="matterBriefSourceRow">
                     <span>
                       {activeMatter.classification?.classification_name ||
@@ -3914,9 +4159,64 @@ const MatterSection = ({
       <SearchBar
         activeSection="matterLibrary"
         allowTextOnly
-        onActivate={() => setIsMatterChatOpen(true)}
-        placeholderOverride="Write a matter note or question..."
+        enableSubmit
+        isSubmitting={isMatterSearching}
+        onSubmitQuery={handleMatterContextSearch}
+        placeholderOverride="Search this matter through ContextCore..."
       />
+
+      <div className="matterContextCorePanel">
+        {isActiveMockMatter ? (
+          <p className="matterContextCoreMessage">
+            ContextCore retrieval is disabled for mock matters.
+          </p>
+        ) : activeMatter && activeMatterContextCore?.status !== "ready" ? (
+          <p className="matterContextCoreMessage">
+            {activeMatterContextCore?.status === "not_requested"
+              ? "This matter was not passed through ContextCore."
+              : activeMatterContextCore?.status === "stale"
+                ? "This matter has additional files that were uploaded without ContextCore re-indexing."
+                : activeMatterContextCore?.status === "processing"
+                  ? "ContextCore is still indexing this matter."
+                  : activeMatterContextCore?.error ||
+                    "ContextCore retrieval is unavailable for this matter."}
+          </p>
+        ) : null}
+
+        {matterSearchInfo ? (
+          <p className="matterContextCoreMessage">{matterSearchInfo}</p>
+        ) : null}
+
+        {matterSearchError ? (
+          <p className="matterContextCoreError">{matterSearchError}</p>
+        ) : null}
+
+        {matterSearchResults.length ? (
+          <div className="matterContextCoreResults">
+            {matterSearchResults.map((result) => (
+              <article className="matterContextCoreCard" key={result.chunk_id}>
+                <div className="matterContextCoreCardHead">
+                  <strong>{result.metadata?.file_name || "Source"}</strong>
+                  <span>
+                    {[result.metadata?.document_role, result.metadata?.assertion_mode]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </span>
+                </div>
+                <p className="matterContextCoreMeta">
+                  {result.metadata?.page_start
+                    ? `Page ${result.metadata.page_start}`
+                    : "Paragraph match"}
+                  {result.metadata?.party_side
+                    ? ` • ${String(result.metadata.party_side).replace(/_/g, " ")}`
+                    : ""}
+                </p>
+                <p className="matterContextCoreText">{result.text}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       <ChatBoxMatterSection
         open={isMatterChatOpen}

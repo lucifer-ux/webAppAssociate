@@ -36,6 +36,9 @@ type UploadPopUpProps = {
   errorMessage: string;
   submitLabel: string;
   allowEmptyFiles?: boolean;
+  showContextCoreOption?: boolean;
+  contextCoreChecked?: boolean;
+  onContextCoreCheckedChange?: (checked: boolean) => void;
   onFilesSelected: (files: File[]) => void;
   onRemoveFile: (fileName: string) => void;
   onCancel: () => void;
@@ -70,6 +73,9 @@ const UploadPopUp = ({
   errorMessage,
   submitLabel,
   allowEmptyFiles = false,
+  showContextCoreOption = false,
+  contextCoreChecked = false,
+  onContextCoreCheckedChange,
   onFilesSelected,
   onRemoveFile,
   onCancel,
@@ -185,6 +191,25 @@ const UploadPopUp = ({
                 Hint: add the legal issue, desired outcome, and urgency.
               </p>
             </label>
+            {showContextCoreOption ? (
+              <label className="uploadPopupToggle">
+                <input
+                  type="checkbox"
+                  checked={contextCoreChecked}
+                  onChange={(event) =>
+                    onContextCoreCheckedChange?.(event.target.checked)
+                  }
+                  disabled={isSubmitting}
+                />
+                <div>
+                  <strong>Pass through ContextCore</strong>
+                  <p>
+                    Index these uploaded source files for matter-scoped
+                    paragraph retrieval.
+                  </p>
+                </div>
+              </label>
+            ) : null}
           </div>
 
           <div className="uploadPopupFilesPanel">

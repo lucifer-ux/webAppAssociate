@@ -218,6 +218,38 @@
   color: #5f5e5e;
 }
 
+.uploadPopupToggle {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #dbdad5;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.uploadPopupToggle input {
+  margin-top: 2px;
+  accent-color: #700d0d;
+}
+
+.uploadPopupToggle strong {
+  display: block;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4c0003;
+}
+
+.uploadPopupToggle p {
+  margin: 6px 0 0;
+  font-family: "Newsreader", serif;
+  font-size: 17px;
+  line-height: 1.45;
+  color: #5f5e5e;
+}
+
 .uploadPopupFilesPanel {
   display: flex;
   flex-direction: column;
