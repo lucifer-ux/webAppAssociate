@@ -33,6 +33,7 @@ const ActiveResearchPage = () => {
               clarificationAnswer: SavedResearchApiItem["clarificationAnswer"];
             }>;
             initialActiveResearchId?: string | null;
+            startFreshResearch?: boolean;
           }
         | null) || null,
     [location.state],
@@ -46,8 +47,24 @@ const ActiveResearchPage = () => {
       })),
   );
   const [activeResearchId, setActiveResearchId] = useState<string | null>(
-    () => navState?.initialActiveResearchId || navState?.preloadedResearches?.[0]?.id || null,
+    () =>
+      navState?.startFreshResearch
+        ? null
+        : navState?.initialActiveResearchId || navState?.preloadedResearches?.[0]?.id || null,
   );
+  const [isStartingFreshResearch, setIsStartingFreshResearch] = useState(
+    () => Boolean(navState?.startFreshResearch),
+  );
+
+  const handleSelectResearch = (id: string | null) => {
+    setIsStartingFreshResearch(false);
+    setActiveResearchId(id);
+  };
+
+  const handleStartResearch = () => {
+    setIsStartingFreshResearch(true);
+    setActiveResearchId(null);
+  };
 
   return (
     <div className="homeDashPage">
@@ -61,7 +78,8 @@ const ActiveResearchPage = () => {
         activeSection="activeResearch"
         recentResearches={recentResearches}
         activeResearchId={activeResearchId}
-        onSelectResearch={setActiveResearchId}
+        onSelectResearch={handleSelectResearch}
+        onStartResearch={handleStartResearch}
       />
 
       <nav className="rightToolsRail">
@@ -87,8 +105,9 @@ const ActiveResearchPage = () => {
           recentResearches={recentResearches}
           activeResearchId={activeResearchId}
           onRecentResearchesChange={setRecentResearches}
-          onActiveResearchChange={setActiveResearchId}
+          onActiveResearchChange={handleSelectResearch}
           initialResearches={(navState?.preloadedResearches || []) as SavedResearchApiItem[]}
+          isStartingFreshResearch={isStartingFreshResearch}
         />
       </main>
     </div>

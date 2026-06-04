@@ -1,5 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
-import type { MatterRecord } from "../context/MatterStoreContext";
+import type {
+  MatterDraftRecommendation,
+  MatterDraftRecommendations,
+  MatterRecord,
+  MatterProcessedResult,
+} from "../context/MatterStoreContext";
 import { buildApiUrl } from "../lib/apiBase";
 
 export type AccessRole = "viewer" | "editor";
@@ -21,6 +26,28 @@ export type DefinedTerm = {
   definitionText: string;
 };
 
+export type DraftHeaderFooterSlots = {
+  left?: string;
+  center?: string;
+  right?: string;
+};
+
+export type DraftHeaderFooter = {
+  header?: DraftHeaderFooterSlots;
+  footer?: DraftHeaderFooterSlots;
+  differentFirstPage?: boolean;
+};
+
+export type DraftTemplateProvenance = {
+  type?: string;
+  label?: string;
+  source?: string;
+  role?: string;
+  confidence?: string;
+  verification_status?: string;
+  acceptable_sources?: string[];
+};
+
 export type DraftContext = {
   matterId: string | null;
   partyA: string | null;
@@ -28,6 +55,13 @@ export type DraftContext = {
   governingLaw: string | null;
   jurisdiction: string | null;
   definedTerms: DefinedTerm[];
+  headerFooter?: DraftHeaderFooter;
+  templateProvenance?: DraftTemplateProvenance[];
+  templateAuthenticity?: Record<string, unknown>;
+  boilerplateMeta?: Record<string, unknown> | null;
+  source?: string;
+  recommendation?: MatterDraftRecommendation;
+  [key: string]: unknown;
 };
 
 export type DraftSummary = {
@@ -87,6 +121,12 @@ export type DraftReviewJob = {
   updatedAt: string;
 };
 
+export type DraftRecommendationsResponse = {
+  matterId: string;
+  draftRecommendations: MatterDraftRecommendations;
+  result?: MatterProcessedResult;
+};
+
 export type PendingAnnotation = {
   from: number;
   to: number;
@@ -95,9 +135,7 @@ export type PendingAnnotation = {
 };
 
 const buildDraftHeaders = (includeJson = true) => {
-  const headers: Record<string, string> = {
-    "X-User-Id": getDraftUserId(),
-  };
+  const headers: Record<string, string> = {};
   if (includeJson) {
     headers["Content-Type"] = "application/json";
   }
@@ -105,10 +143,22 @@ const buildDraftHeaders = (includeJson = true) => {
 };
 
 const readJson = async <T>(response: Response) => {
-  const payload = (await response.json()) as T & {
+  const raw = await response.text();
+  let payload: T & {
     success?: boolean;
     error?: string;
   };
+  try {
+    payload = JSON.parse(raw || "{}") as T & {
+      success?: boolean;
+      error?: string;
+    };
+  } catch {
+    const contentType = response.headers.get("content-type") || "unknown";
+    throw new Error(
+      `Backend returned ${contentType} instead of JSON for ${response.url}. Restart the backend or verify the API route is mounted.`,
+    );
+  }
   if (!response.ok || payload?.success === false) {
     throw new Error(String(payload?.error || "Draft request failed."));
   }
@@ -116,11 +166,7 @@ const readJson = async <T>(response: Response) => {
 };
 
 export const getDraftUserId = () => {
-  try {
-    return localStorage.getItem("auth_token") || "local-user";
-  } catch {
-    return "local-user";
-  }
+  return "session-user";
 };
 
 export const hashDraftContent = (content: JSONContent) => {
@@ -234,6 +280,74 @@ export const getDraftReview = async (draftId: string) => {
   return payload.review_job;
 };
 
+export const getDraftRecommendations = async (matterId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/matters/${encodeURIComponent(matterId)}/draft-recommendations`),
+    {
+      headers: buildDraftHeaders(false),
+    },
+  );
+  const payload = await readJson<{
+    success: true;
+    matter_id: string;
+    draft_recommendations: MatterDraftRecommendations;
+    result?: MatterProcessedResult;
+  }>(response);
+  return {
+    matterId: payload.matter_id,
+    draftRecommendations: payload.draft_recommendations,
+    result: payload.result,
+  };
+};
+
+export const refreshDraftRecommendations = async (matterId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/matters/${encodeURIComponent(matterId)}/draft-recommendations/refresh`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({}),
+    },
+  );
+  const payload = await readJson<{
+    success: true;
+    matter_id: string;
+    draft_recommendations: MatterDraftRecommendations;
+    result?: MatterProcessedResult;
+  }>(response);
+  return {
+    matterId: payload.matter_id,
+    draftRecommendations: payload.draft_recommendations,
+    result: payload.result,
+  };
+};
+
+export const startDraftRecommendation = async (input: {
+  matterId: string;
+  recommendation: MatterDraftRecommendation;
+  allowIncomplete?: boolean;
+}) => {
+  const response = await fetch(
+    buildApiUrl(
+      `/api/matters/${encodeURIComponent(input.matterId)}/draft-recommendations/${encodeURIComponent(input.recommendation.draft_key)}/start`,
+    ),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({
+        allow_incomplete: Boolean(input.allowIncomplete),
+      }),
+    },
+  );
+  const payload = await readJson<{
+    success: true;
+    draft: DraftDetail;
+    draft_recommendations?: MatterDraftRecommendations;
+    result?: MatterProcessedResult;
+  }>(response);
+  return payload;
+};
+
 export const getNextStepTemplate = async (input: {
   matterId: string;
   groundId: string;
@@ -337,5 +451,18 @@ export const deriveDraftContextFromMatter = (matter: MatterRecord | null): Draft
       verifiedBrief?.governing_law?.value || matter?.extractedFields.governing_law.value || null,
     jurisdiction: deriveJurisdiction(matter),
     definedTerms: definitions,
+    headerFooter: {
+      header: {
+        left: "",
+        center: matter?.title || "Legal Draft",
+        right: "",
+      },
+      footer: {
+        left: "",
+        center: "Page {page}",
+        right: "",
+      },
+      differentFirstPage: false,
+    },
   };
 };

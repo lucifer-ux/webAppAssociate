@@ -1,6 +1,7 @@
 import "../componentStyling/UserProfile.css";
 import { useEffect } from "react";
 import Button from "./Button";
+import { useAuth } from "../context/AuthContext";
 
 type UserProfileProps = {
   isOpen: boolean;
@@ -8,6 +9,7 @@ type UserProfileProps = {
 };
 
 const UserProfile = ({ isOpen, onClose }: UserProfileProps) => {
+  const { user, logout } = useAuth();
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -46,9 +48,9 @@ const UserProfile = ({ isOpen, onClose }: UserProfileProps) => {
         <div className="userProfilePlanChip">Free Plan</div>
 
         <section className="userProfileSection">
-          <h4>Usage</h4>
-          <p>Tokens used: 18,420</p>
-          <p>Tokens left: 81,580</p>
+          <h4>Signed in as</h4>
+          <p>{user?.displayName || user?.fullName || "Associate user"}</p>
+          <p>{user?.email || "No email available"}</p>
         </section>
 
         <section className="userProfileSection">
@@ -69,8 +71,15 @@ const UserProfile = ({ isOpen, onClose }: UserProfileProps) => {
           <p>All users are currently on Free plan.</p>
         </section>
 
-        <Button type="button" className="userProfileUpgradeBtn">
-          Upgrade plan
+        <Button
+          type="button"
+          className="userProfileUpgradeBtn"
+          onClick={() => {
+            void logout();
+            onClose();
+          }}
+        >
+          Sign out
         </Button>
       </div>
     </div>

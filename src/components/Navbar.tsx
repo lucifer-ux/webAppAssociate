@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 const Navbar = () => {
   const navigate = useNavigate();
   const handleClick = () => {
-    console.log("clicked");
     navigate("/login");
   };
 
@@ -27,7 +26,9 @@ const Navbar = () => {
           </li>
         </ul>
         <div className="rightContainerNavbar">
-          <a className="loginButton">Login</a>
+          <button className="loginButton" type="button" onClick={handleClick}>
+            Login
+          </button>
           <Button
             text="Get Started"
             backgroundColor="#700D0D"

@@ -196,6 +196,27 @@
   gap: 14px;
 }
 
+.researchSaveRow {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.deleteResearchButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(112, 13, 13, 0.22);
+  background: #fff6f4;
+  color: #700d0d;
+}
+
+.deleteResearchButton:disabled {
+  opacity: 0.62;
+}
+
 .chatMessage {
   border: 1px solid var(--line);
   background: #faf6f0;

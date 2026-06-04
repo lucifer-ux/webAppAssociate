@@ -1,36 +1,45 @@
 import "../componentStyling/LoginSignUpPage.css";
 import Button from "./Button";
-import { useEffect } from "react";
+import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { buildApiUrl } from "../lib/apiBase";
+import { useAuth } from "../context/AuthContext";
 
 const LoginSignUpPage = () => {
-  const navigate = useNavigate();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { loginWithGoogle, loginWithPassword, signupWithPassword } = useAuth();
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const query = new URLSearchParams(location.search);
+  const authError = query.get("googleAuth") === "error"
+    ? query.get("reason") || "Google sign in failed."
+    : "";
 
-  useEffect(() => {
-    const query = new URLSearchParams(location.search);
-    const googleAuth = query.get("googleAuth");
-    const accessToken = query.get("accessToken");
-
-    if (googleAuth === "success") {
-      if (accessToken) {
-        localStorage.setItem("auth_token", accessToken);
+  const submitPasswordForm = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    setIsSubmitting(true);
+    try {
+      if (mode === "signup") {
+        await signupWithPassword(email, password, displayName);
+      } else {
+        await loginWithPassword(email, password);
       }
       navigate("/dashboard", { replace: true });
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Authentication failed.");
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [location.search, navigate]);
-
-  const handleClick = () => {
-    console.log("click");
   };
 
-  const handleGoogleLogin = () => {
-    window.location.href = buildApiUrl("/auth/google");
-  };
-
-  const handleSsoLogin = () => {
-    navigate("/dashboard");
+  const toggleMode = () => {
+    setMode((current) => (current === "login" ? "signup" : "login"));
+    setFormError("");
   };
 
   return (
@@ -40,34 +49,72 @@ const LoginSignUpPage = () => {
           <img src="/logo.jpeg" alt="Associate logo" className="loginLogo" />
           <p className="loginSubtitle">Secure access to the legal workspace.</p>
 
-          <div className="formField">
-            <label htmlFor="email">Email</label>
-            <input id="email" type="email" placeholder="practitioner@firm.com" />
-          </div>
+          {(authError || formError) && (
+            <p className="loginError">{(formError || authError).replace(/_/g, " ")}</p>
+          )}
 
-          <div className="formField">
-            <div className="passwordHeader">
-              <label htmlFor="password">Password</label>
-              <a href="#" className="forgotPasswordLink">
-                Forgot Password?
-              </a>
+          <form className="loginForm" onSubmit={submitPasswordForm}>
+            {mode === "signup" ? (
+              <div className="formField">
+                <label htmlFor="displayName">Name</label>
+                <input
+                  id="displayName"
+                  autoComplete="name"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  placeholder="Your name"
+                />
+              </div>
+            ) : null}
+
+            <div className="formField">
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                required
+              />
             </div>
-            <input id="password" type="password" />
-          </div>
 
-          <Button className="signInButton" type="button" onClick={handleClick}>
-            Sign In
-          </Button>
+            <div className="formField">
+              <div className="passwordHeader">
+                <label htmlFor="password">Password</label>
+              </div>
+              <input
+                id="password"
+                type="password"
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Minimum 8 characters"
+                minLength={8}
+                required
+              />
+            </div>
 
-          <div className="orDivider">
-            <span>OR</span>
-          </div>
+            <Button className="signInButton" type="submit" disabled={isSubmitting}>
+              {isSubmitting
+                ? "Please wait..."
+                : mode === "signup"
+                  ? "Create account"
+                  : "Sign in"}
+            </Button>
+          </form>
 
-          <Button className="ssoButton" type="button" onClick={handleSsoLogin}>
-            Sign in with firm SSO
-          </Button>
+          <p className="loginModeSwitch">
+            {mode === "signup" ? "Already have an account?" : "Need an account?"}
+            <button type="button" onClick={toggleMode}>
+              {mode === "signup" ? "Sign in" : "Create one"}
+            </button>
+          </p>
 
-          <Button className="googleButton" type="button" onClick={handleGoogleLogin}>
+          <div className="orDivider">OR</div>
+
+          <Button className="googleButton primaryGoogleButton" type="button" onClick={loginWithGoogle}>
             <svg className="googleIcon" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 fill="#EA4335"

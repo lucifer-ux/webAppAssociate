@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Button from "./Button";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Trash2 } from "lucide-react";
 import "../componentStyling/ActiveResearch.css";
 import SearchBar from "./SearchBar";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -190,6 +190,7 @@ type ActiveResearchProps = {
   onRecentResearchesChange: (items: RecentResearchItem[]) => void;
   onActiveResearchChange: (id: string | null) => void;
   initialResearches?: SavedResearchApiItem[];
+  isStartingFreshResearch?: boolean;
 };
 
 const THINKING_MESSAGES = {
@@ -211,6 +212,23 @@ const formatStrength = (value: string) =>
 const formatSourceClass = (value: string) =>
   value.replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
 
+const getResearchWorkspaceTitle = (query: string) => {
+  const normalized = String(query || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "Related matter";
+
+  const firstClause =
+    normalized.split(/[?.!,:;-]/).find((part) => part.trim()) || normalized;
+  const words = firstClause
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const shortTitle = words.slice(0, 6).join(" ");
+  if (!shortTitle) return "Related matter";
+  return shortTitle.length > 56 ? `${shortTitle.slice(0, 53)}...` : shortTitle;
+};
+
 const isIndianKanoonUrl = (url: string) => {
   try {
     const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
@@ -227,6 +245,7 @@ const ActiveResearch = ({
   onRecentResearchesChange,
   onActiveResearchChange,
   initialResearches = [],
+  isStartingFreshResearch = false,
 }: ActiveResearchProps) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -249,6 +268,7 @@ const ActiveResearch = ({
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
   const [isSavingResearch, setIsSavingResearch] = useState(false);
+  const [isDeletingResearch, setIsDeletingResearch] = useState(false);
   const [runningStepIndex, setRunningStepIndex] = useState(0);
 
   const thinkingMessages =
@@ -303,7 +323,7 @@ const ActiveResearch = ({
           createdAt: item.createdAt,
         }));
         onRecentResearchesChange(nextRecent);
-        if (!activeResearchId && nextRuns.length > 0) {
+        if (!activeResearchId && nextRuns.length > 0 && !isStartingFreshResearch) {
           onActiveResearchChange(nextRuns[0].id);
         }
       } catch {
@@ -314,7 +334,13 @@ const ActiveResearch = ({
     return () => {
       cancelled = true;
     };
-  }, [activeResearchId, initialResearches, onActiveResearchChange, onRecentResearchesChange]);
+  }, [
+    activeResearchId,
+    initialResearches,
+    isStartingFreshResearch,
+    onActiveResearchChange,
+    onRecentResearchesChange,
+  ]);
 
   const activeResearch = useMemo(
     () => researchRuns.find((item) => item.id === activeResearchId) || null,
@@ -328,6 +354,20 @@ const ActiveResearch = ({
     setResearchRuns((prev) =>
       prev.map((item) => (item.id === id ? updater(item) : item)),
     );
+  };
+
+  const removeResearchRecord = (id: string) => {
+    setResearchRuns((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      const nextRecent = next.map((item) => ({
+        id: item.id,
+        query: item.query,
+        createdAt: item.createdAt,
+      }));
+      onRecentResearchesChange(nextRecent);
+      onActiveResearchChange(activeResearchId === id ? next[0]?.id || null : activeResearchId);
+      return next;
+    });
   };
 
   const runDeepResearch = async (
@@ -524,6 +564,41 @@ const ActiveResearch = ({
     }
   };
 
+  const handleDeleteResearch = async () => {
+    if (!activeResearch || isDeletingResearch) return;
+    const confirmed = window.confirm(
+      `Delete saved research "${activeResearch.query}"?`,
+    );
+    if (!confirmed) return;
+
+    setSaveError("");
+    setSaveSuccess("");
+    setIsDeletingResearch(true);
+    try {
+      const response = await fetch(
+        buildApiUrl(`/api/researches/${encodeURIComponent(activeResearch.id)}`),
+        {
+          method: "DELETE",
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        details?: string;
+      };
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || payload.details || "Failed to delete research.");
+      }
+      removeResearchRecord(activeResearch.id);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to delete research.",
+      );
+    } finally {
+      setIsDeletingResearch(false);
+    }
+  };
+
   const intake = activeResearch?.intakePayload || null;
   const agent1 = intake?.agent_1_output;
   const agent2 = intake?.agent_2_output;
@@ -539,12 +614,13 @@ const ActiveResearch = ({
       (lane) => lane.lane_id === activeResearch?.selectedLaneId,
     ) || null;
   const canShowContinueResearchButton = Boolean(activeResearch && !isLoading);
+  const workspaceTitle = getResearchWorkspaceTitle(activeResearch?.query || "");
 
   return (
     <>
       <section className="researchWorkspace enhancedResearchWorkspace searchOnlyWorkspace">
         <div className="researchHead">
-          <h1>Active Research</h1>
+          <h1 title={activeResearch?.query || workspaceTitle}>{workspaceTitle}</h1>
           <p>Discovery, Pathway Selection, and Targeted Research</p>
           <div className="researchSaveRow">
             <Button
@@ -556,6 +632,17 @@ const ActiveResearch = ({
               disabled={!activeResearch || isSavingResearch}
             >
               {isSavingResearch ? "Saving..." : "Save research"}
+            </Button>
+            <Button
+              type="button"
+              className="deleteResearchButton"
+              onClick={() => {
+                void handleDeleteResearch();
+              }}
+              disabled={!activeResearch || isDeletingResearch}
+            >
+              <Trash2 size={16} />
+              <span>{isDeletingResearch ? "Deleting..." : "Delete research"}</span>
             </Button>
             {saveSuccess ? (
               <small className="researchSaveSuccess">{saveSuccess}</small>

@@ -9,6 +9,16 @@ export default defineConfig({
     babel({ presets: [reactCompilerPreset()] })
   ],
   server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+      "/auth": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
+    },
     allowedHosts: [
       "multilobed-scoriaceous-zayden.ngrok-free.dev"
     ]

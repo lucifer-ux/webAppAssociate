@@ -2,7 +2,6 @@ import "../componentStyling/HomeDashboardStyling.css";
 import Button from "./Button";
 import { useEffect, useMemo, useState } from "react";
 import SideBar from "./SideBar";
-import { Cable } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import { useNavigate } from "react-router-dom";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
@@ -10,22 +9,24 @@ import type { SavedResearchApiItem } from "./ActiveResearch";
 import { buildApiUrl } from "../lib/apiBase";
 import Loader from "./Loader";
 import SearchBar from "./SearchBar";
+import { useAuth } from "../context/AuthContext";
+import { useMatterStore } from "../context/MatterStoreContext";
 
-type GmailTopEmailsResponse = {
-  success: boolean;
-  count: number;
-  emails: Array<{
-    id: string;
-    threadId: string | null;
-    from: string;
-    subject: string;
-    date: string;
-    snippet: string;
-  }>;
-};
+const getUserTimeZone = () =>
+  Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
 
-type GmailErrorResponse = {
-  error: string;
+const getGreeting = (date: Date, timeZone: string) => {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      hour: "2-digit",
+      hour12: false,
+      timeZone,
+    }).format(date),
+  );
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  if (hour < 21) return "Good evening";
+  return "Good pre morning";
 };
 
 const HomeDashboard = () => {
@@ -33,21 +34,35 @@ const HomeDashboard = () => {
   const [isWarmingBackend, setIsWarmingBackend] = useState(true);
   const [warmupProgress, setWarmupProgress] = useState(0);
   const [warmupStage, setWarmupStage] = useState("Waking backend service");
-  const [isFetchingEmails, setIsFetchingEmails] = useState(false);
-  const [emails, setEmails] = useState<GmailTopEmailsResponse["emails"]>([]);
-  const [emailError, setEmailError] = useState<string>("");
-  const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
-  const [savedResearches, setSavedResearches] = useState<SavedResearchApiItem[]>([]);
+  const [savedResearches, setSavedResearches] = useState<
+    SavedResearchApiItem[]
+  >([]);
+  const { user, updateDisplayName } = useAuth();
+  const { matters, setActiveMatterId, isSavedMattersLoading } =
+    useMatterStore();
+  const userTimeZone = getUserTimeZone();
+  const [nameDraft, setNameDraft] = useState(
+    user?.displayName || user?.fullName || "",
+  );
   const [currentTime, setCurrentTime] = useState(() =>
     new Date().toLocaleTimeString("en-IN", {
       hour: "2-digit",
       minute: "2-digit",
-      timeZone: "Asia/Kolkata",
+      timeZone: userTimeZone,
       timeZoneName: "short",
     }),
   );
+  const [greeting, setGreeting] = useState(() =>
+    getGreeting(new Date(), userTimeZone),
+  );
+
+  useEffect(() => {
+    setNameDraft(
+      user?.displayName || user?.fullName || user?.email?.split("@")[0] || "",
+    );
+  }, [user?.displayName, user?.email, user?.fullName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,15 +121,16 @@ const HomeDashboard = () => {
         new Date().toLocaleTimeString("en-IN", {
           hour: "2-digit",
           minute: "2-digit",
-          timeZone: "Asia/Kolkata",
+          timeZone: userTimeZone,
           timeZoneName: "short",
         }),
       );
+    setGreeting(getGreeting(new Date(), userTimeZone));
 
     tick();
     const timer = window.setInterval(tick, 60_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [userTimeZone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,7 +141,11 @@ const HomeDashboard = () => {
           success?: boolean;
           researches?: SavedResearchApiItem[];
         };
-        if (!response.ok || !payload?.success || !Array.isArray(payload.researches)) {
+        if (
+          !response.ok ||
+          !payload?.success ||
+          !Array.isArray(payload.researches)
+        ) {
           return;
         }
         if (cancelled) return;
@@ -139,7 +159,7 @@ const HomeDashboard = () => {
     };
   }, []);
 
-  const latestEmails = useMemo(() => emails.slice(0, 2), [emails]);
+  const activeMatterCards = useMemo(() => matters.slice(0, 4), [matters]);
 
   const handleQuickResearchSubmit = (query: string) => {
     const trimmedQuery = query.trim();
@@ -152,55 +172,14 @@ const HomeDashboard = () => {
     });
   };
 
-  const handleAnalyzeEmails = async () => {
-    const token = localStorage.getItem("auth_token");
-
-    if (!token) {
-      setEmails([]);
-      setEmailError("Missing authentication token. Please sign in again.");
+  const saveDisplayName = async () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed || trimmed === user?.displayName || trimmed === user?.fullName)
       return;
-    }
-
-    setIsFetchingEmails(true);
-    setEmailError("");
-
     try {
-      const res = await fetch(buildApiUrl("/api/gmail/emails"), {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-      });
-
-      const payload = (await res.json()) as
-        | GmailTopEmailsResponse
-        | GmailErrorResponse;
-
-      if ("error" in payload) {
-        setEmails([]);
-        setEmailError(payload.error);
-        return;
-      }
-
-      if (!res.ok || !payload.success || !Array.isArray(payload.emails)) {
-        setEmails([]);
-        setEmailError("Unable to load emails right now. Please try again.");
-        return;
-      }
-
-      setEmails(payload.emails);
-      setExpandedEmailId(null);
-
-      if (payload.emails.length === 0) {
-        setEmailError("No emails were returned.");
-      }
+      await updateDisplayName(trimmed);
     } catch {
-      setEmails([]);
-      setEmailError("Failed to connect to Gmail endpoint.");
-    } finally {
-      setIsFetchingEmails(false);
+      setNameDraft(user?.displayName || user?.fullName || "");
     }
   };
 
@@ -236,7 +215,21 @@ const HomeDashboard = () => {
         <>
           <section className="welcomeBlock">
             <div className="welcomeHeadingRow">
-              <h1 className="welcomeHeadingTitle">Good morning, Counsellor</h1>
+              <h1 className="welcomeHeadingTitle">
+                {greeting},{" "}
+                <input
+                  className="welcomeNameInput"
+                  value={nameDraft}
+                  onChange={(event) => setNameDraft(event.target.value)}
+                  onBlur={() => void saveDisplayName()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  aria-label="Display name"
+                />
+              </h1>
               <time className="welcomeCurrentTime" aria-live="polite">
                 {currentTime}
               </time>
@@ -259,67 +252,32 @@ const HomeDashboard = () => {
             <span className="researchNudgeArrow">→</span>
           </Button>
 
-          <section className="connectBanner">
-            <div className="connectAccent" />
-            <div className="connectCopy">
-              <div className="connectIcon">
-                <Cable size={22} />
-              </div>
-              <Button
-                type="button"
-                className="authorizeBtn"
-                onClick={handleAnalyzeEmails}
-                disabled={isFetchingEmails}
-              >
-                <Cable size={16} />
-                <span>
-                  {isFetchingEmails ? "Analyzing..." : "Analyze Emails"}
-                </span>
-              </Button>
-            </div>
-          </section>
-
           <section className="activeMattersSection" aria-live="polite">
-            {isFetchingEmails && (
-              <p className="matterStatus">Loading latest emails...</p>
-            )}
-            {!isFetchingEmails && emailError && (
-              <p className="matterStatus">{emailError}</p>
-            )}
-            {latestEmails.length > 0 && (
-              <div className="emailResults">
-                {latestEmails.map((email, index) => {
-                  const isExpanded = expandedEmailId === email.id;
-                  return (
-                    <article
-                      key={email.id}
-                      className={`emailCard ${isExpanded ? "expanded" : ""}`}
-                    >
-                      <Button
-                        type="button"
-                        className="emailCardTrigger"
-                        onClick={() =>
-                          setExpandedEmailId(isExpanded ? null : email.id)
-                        }
-                      >
-                        <span className="matterIndex">Matter {index + 1}</span>
-                        <h3>{email.subject || "(No Subject)"}</h3>
-                      </Button>
-                      {isExpanded && (
-                        <div className="emailMetaPanel">
-                          <p className="emailFrom">
-                            {email.from || "Unknown sender"}
-                          </p>
-                          <p className="emailSnippet">
-                            {email.snippet || "No snippet available."}
-                          </p>
-                          <time>{email.date || "Unknown date"}</time>
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
+            <div className="activeMattersHead">
+              <h2>Active Matters</h2>
+            </div>
+            {isSavedMattersLoading ? (
+              <p className="matterStatus">Loading active matters...</p>
+            ) : activeMatterCards.length > 0 ? (
+              <div className="emailResults activeMatterCards">
+                {activeMatterCards.map((matter, index) => (
+                  <Button
+                    key={matter.id}
+                    type="button"
+                    className="emailCard activeMatterCard"
+                    onClick={() => {
+                      setActiveMatterId(matter.id);
+                      navigate("/matter");
+                    }}
+                  >
+                    <span className="matterIndex">Matter {index + 1}</span>
+                    <h3>{matter.title}</h3>
+                    <p>{matter.fileName}</p>
+                  </Button>
+                ))}
               </div>
+            ) : (
+              <p className="matterStatus">No active matters yet.</p>
             )}
           </section>
 
@@ -344,8 +302,8 @@ const HomeDashboard = () => {
                 >
                   <h3>{research.query}</h3>
                   <p>
-                    Open this saved research in Active Research and continue from
-                    where you left.
+                    Open this saved research in Active Research and continue
+                    from where you left.
                   </p>
                 </Button>
               ))}
@@ -356,6 +314,7 @@ const HomeDashboard = () => {
                   navigate("/dashboard/active-research", {
                     state: {
                       preloadedResearches: savedResearches,
+                      startFreshResearch: true,
                     },
                   })
                 }

@@ -7,7 +7,7 @@ import {
   type PropsWithChildren,
 } from "react";
 import { buildApiUrl } from "../lib/apiBase";
-import { loadMockMatterResults } from "../utils/mockMatterIngestion";
+import { useAuth } from "./AuthContext";
 
 const MATTER_JOB_TTL_MS = 60 * 60 * 1000;
 
@@ -72,6 +72,7 @@ export type MatterUploadPayload = {
     model?: string | null;
     error?: string | null;
     raw_response_excerpt?: string;
+    user_defined_tags?: string[];
   };
   contextcore?: ContextCoreMatterState;
   document_count?: number;
@@ -319,10 +320,12 @@ export type MatterRecord = MatterUploadPayload & {
   accumulatedBriefReadiness?: MatterProcessedResult["accumulated_brief_readiness"];
   accumulatedBriefMeta?: MatterProcessedResult["accumulated_brief_meta"];
   acceptedBrief?: MatterProcessedResult["accepted_brief"];
+  secondaryAnalysis?: MatterProcessedResult["secondary_analysis"];
   briefUserAnswers?: MatterProcessedResult["brief_user_answers"];
   verifiedBrief?: MatterProcessedResult["verified_brief"];
   briefVerification?: MatterProcessedResult["brief_verification"];
   nextStepPlan?: MatterProcessedResult["next_step_plan"];
+  draftRecommendations?: MatterProcessedResult["draft_recommendations"];
   draftingContext?: MatterProcessedResult["drafting_context"];
   latestDraftReview?: MatterProcessedResult["latest_draft_review"];
   groundAnalysis?: MatterProcessedResult["ground_analysis"];
@@ -343,6 +346,67 @@ export type MatterSignalSourceRef = {
   clause_id?: string | null;
   quote?: string | null;
   fact?: string | null;
+};
+
+export type MatterDraftRecommendationInput = {
+  input_key: string;
+  label?: string;
+  input_label?: string;
+  required?: boolean;
+  source_type?: string;
+  source_id?: string;
+  source_label?: string;
+};
+
+export type MatterDraftRecommendation = {
+  recommendation_id?: string;
+  draft_key: string;
+  title: string;
+  purpose?: string;
+  status?: string;
+  can_generate_now: boolean;
+  readiness_score: number;
+  priority?: string;
+  risk_level?: string;
+  missing_inputs?: MatterDraftRecommendationInput[];
+  satisfied_inputs?: MatterDraftRecommendationInput[];
+  recommended_uploads?: string[];
+  matched_documents?: string[];
+  matched_facts?: string[];
+  source_fact_ids?: string[];
+  template_key?: string;
+  template_source?: string;
+  reason?: string;
+  existing_draft_count?: number;
+};
+
+export type MatterDraftRecommendations = {
+  version?: number;
+  matter_id?: string;
+  generated_at?: string;
+  status?: string;
+  meta?: {
+    catalogue_version?: string;
+    deterministic?: boolean;
+    template_count?: number;
+  };
+  profile?: {
+    matter_types?: string[];
+    forum?: string;
+    stage?: string;
+    client_posture?: string;
+  };
+  counts?: {
+    ready?: number;
+    needs_more_inputs?: number;
+    total?: number;
+  };
+  groups?: {
+    ready_to_draft?: string[];
+    needs_more_inputs?: string[];
+    more_options?: string[];
+  };
+  recommendations?: MatterDraftRecommendation[];
 };
 
 export type MatterProcessedResult = {
@@ -387,6 +451,11 @@ export type MatterProcessedResult = {
     decision?: "generate_brief" | "query_for_user";
     brief_type?: string;
     warning?: string;
+    matter_orientation?: {
+      short_title?: string;
+      document_set_summary?: string;
+      likely_matter_nature?: string;
+    };
     accumulated_brief?: string;
     brief_points?: Array<{
       id: string;
@@ -395,7 +464,23 @@ export type MatterProcessedResult = {
       tone?: "neutral" | "warning" | "positive" | string;
       source_document?: string;
       reason?: string;
+      point_type?: string;
+      source_posture?: string;
+      certainty?: "high" | "medium" | "low" | string;
+      source_refs?: Array<{
+        chunk_id?: string;
+        file_name?: string | null;
+        document_role?: string | null;
+        assertion_mode?: string | null;
+        party_side?: string | null;
+        page_start?: number | null;
+        page_end?: number | null;
+        verbatim_basis?: string;
+      }>;
+      why_it_matters?: string;
     }>;
+    open_questions?: unknown[];
+    coverage?: Record<string, "covered" | "partial" | "missing" | string>;
     questions?: string[];
     covered_information?: Record<string, boolean>;
     missing_information?: unknown[];
@@ -408,6 +493,16 @@ export type MatterProcessedResult = {
     brief?: MatterProcessedResult["accumulated_brief"];
   } | null;
   accepted_brief_version_fingerprint?: string | null;
+  secondary_analysis?: {
+    version?: number;
+    status?: string;
+    classification?: Record<string, unknown> | null;
+    fact_checklist?: unknown[];
+    extracted_facts?: unknown[];
+    fact_gaps?: unknown[];
+    quarantine?: unknown[];
+    meta?: Record<string, unknown>;
+  } | null;
   brief_user_answers?: Array<{ question: string; answer: string }>;
   verified_brief?: Record<string, unknown> | null;
   brief_verification?: Record<string, unknown> | null;
@@ -463,6 +558,7 @@ export type MatterProcessedResult = {
       error?: string | null;
     } | null;
   } | null;
+  draft_recommendations?: MatterDraftRecommendations | null;
   drafting_context?: Record<string, unknown> | null;
   latest_draft_review?: Record<string, unknown> | null;
   document_signal_payloads?: Array<{
@@ -551,6 +647,19 @@ export type MatterProcessedResult = {
         source_type: string;
         date: string;
       }>;
+      verified_citations?: Array<Record<string, unknown>>;
+      law_bindings?: Array<Record<string, unknown>>;
+      law_card?: {
+        law_binding_id?: string;
+        title?: string;
+        source_url?: string;
+        source_domain?: string;
+        authority_type?: string;
+        binding_strength?: string;
+        binding_explanation?: string;
+        application?: string;
+        verification_status?: string;
+      } | null;
       law_verification_status?: string;
       law_verification_issues?: Array<{
         type: string;
@@ -727,6 +836,24 @@ const extractedConfidenceRank = (confidence: string) => {
   return 0;
 };
 
+const canonicalPersonToken = (value: string) => {
+  const lettersOnly = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+  if (!lettersOnly) return "";
+  if (lettersOnly.length <= 3) return lettersOnly;
+  return `${lettersOnly[0]}${lettersOnly.slice(1).replace(/[aeiou]/g, "")}`;
+};
+
+const canonicalPersonNameKey = (value: string) =>
+  String(value || "")
+    .trim()
+    .split(/\s+/)
+    .map(canonicalPersonToken)
+    .filter(Boolean)
+    .join(" ");
+
 const dedupeExtractedParties = (
   parties: MatterExtractedFields["parties"],
 ): MatterExtractedFields["parties"] => {
@@ -744,7 +871,7 @@ const dedupeExtractedParties = (
       role: String(party?.role || "Party").trim() || "Party",
       confidence: String(party?.confidence || "low").trim() || "low",
     };
-    const key = name.toLowerCase();
+    const key = canonicalPersonNameKey(name) || name.toLowerCase();
     const current = byName.get(key);
 
     if (!current) {
@@ -897,10 +1024,12 @@ const buildMatterRecord = (
     acceptedBrief: result.accepted_brief || undefined,
     acceptedBriefVersionFingerprint:
       result.accepted_brief_version_fingerprint ?? undefined,
+    secondaryAnalysis: result.secondary_analysis || undefined,
     briefUserAnswers: result.brief_user_answers || undefined,
     verifiedBrief: result.verified_brief || undefined,
     briefVerification: result.brief_verification || undefined,
     nextStepPlan: result.next_step_plan || undefined,
+    draftRecommendations: result.draft_recommendations || undefined,
     draftingContext: result.drafting_context || undefined,
     latestDraftReview: result.latest_draft_review || undefined,
     groundAnalysis: result.ground_analysis || undefined,
@@ -914,6 +1043,7 @@ const buildMatterRecord = (
 };
 
 export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
+  const { status: authStatus, isAuthenticated } = useAuth();
   const [matters, setMatters] = useState<MatterRecord[]>([]);
   const [activeMatterId, setActiveMatterId] = useState<string | null>(null);
   const [isSavedMattersLoading, setIsSavedMattersLoading] = useState(true);
@@ -928,6 +1058,14 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
   >({});
 
   useEffect(() => {
+    if (authStatus === "loading") return;
+    if (!isAuthenticated) {
+      setMatters([]);
+      setActiveMatterId(null);
+      setIsSavedMattersLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     const loadStoredMatters = async () => {
@@ -945,10 +1083,11 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
           Array.isArray(payload.matters) ? payload.matters : [],
         );
       } catch {
-        // Ignore hydration failures; uploads still work.
+        if (!cancelled) {
+          setMattersFromServer([]);
+        }
       } finally {
         if (!cancelled) {
-          setMattersFromServer(loadMockMatterResults());
           setIsSavedMattersLoading(false);
         }
       }
@@ -958,7 +1097,7 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authStatus, isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addMatter = useCallback((result: MatterProcessedResult) => {
     let createdRecord: MatterRecord | null = null;

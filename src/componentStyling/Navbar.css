@@ -38,6 +38,10 @@
 
 .loginButton {
   padding: 16px;
+  border: 0;
+  background: transparent;
+  color: #1b1c19;
+  font: inherit;
   cursor: pointer;
 }
 

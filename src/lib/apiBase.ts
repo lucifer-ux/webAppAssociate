@@ -1,17 +1,45 @@
-const DEFAULT_API_BASE_URL = "http://localhost:4000";
-
 const normalizeBaseUrl = (value: string) =>
   String(value || "")
     .trim()
     .replace(/\/+$/, "");
 
 export const apiBaseUrl = normalizeBaseUrl(
-  (import.meta.env.VITE_API_BASE_URL as string) || DEFAULT_API_BASE_URL,
+  (import.meta.env.VITE_API_BASE_URL as string) || "",
 );
 
 export const buildApiUrl = (path: string) => {
   const normalizedPath = String(path || "").startsWith("/")
     ? String(path)
     : `/${String(path || "")}`;
-  return `${apiBaseUrl}${normalizedPath}`;
+  return apiBaseUrl ? `${apiBaseUrl}${normalizedPath}` : normalizedPath;
 };
+
+declare global {
+  interface Window {
+    __associateApiFetchPatched?: boolean;
+  }
+}
+
+if (typeof window !== "undefined" && !window.__associateApiFetchPatched) {
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const requestUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+    const isRelativeAppRequest = /^\/(api|auth)(\/|$)/.test(String(requestUrl || ""));
+    const isAbsoluteApiRequest = apiBaseUrl
+      ? String(requestUrl || "").startsWith(apiBaseUrl)
+      : false;
+    if (isRelativeAppRequest || isAbsoluteApiRequest) {
+      return nativeFetch(input, {
+        ...init,
+        credentials: init?.credentials || "include",
+      });
+    }
+    return nativeFetch(input, init);
+  };
+  window.__associateApiFetchPatched = true;
+}

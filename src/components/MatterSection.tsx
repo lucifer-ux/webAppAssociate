@@ -2,6 +2,7 @@ import "../componentStyling/MatterSection.css";
 import Button from "./Button";
 import {
   useEffect,
+  Fragment,
   useMemo,
   useRef,
   useState,
@@ -26,6 +27,8 @@ import {
   type ClauseSection,
   type ClauseItem,
   type ContextCoreMatterState,
+  type MatterDraftRecommendation,
+  type MatterDraftRecommendations,
   type MatterProcessedResult,
   type MatterSignalSourceRef,
   type ObligationMapResult,
@@ -36,6 +39,11 @@ import Loader from "./Loader";
 import UploadPopUp, { type UploadPopupValidationItem } from "./UploadPopUp";
 import SearchBar from "./SearchBar";
 import ChatBoxMatterSection from "./ChatBoxMatterSection";
+import {
+  getDraftRecommendations,
+  refreshDraftRecommendations,
+  startDraftRecommendation,
+} from "./draftingApi";
 import { buildApiUrl } from "../lib/apiBase";
 import {
   createMockMatterScenario,
@@ -97,6 +105,7 @@ const MATTER_UPLOAD_SESSION_KEY = "open_matter_uploader";
 const MATTER_UPLOAD_MAX_FILES = 5;
 const MATTER_UPLOAD_MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MATTER_UPLOAD_MAX_PAGES = 20;
+const GROUND_ANALYSIS_INITIAL_FACT_COUNT = 3;
 
 type SourceViewerState = {
   fileName: string;
@@ -107,23 +116,21 @@ type SourceViewerState = {
   matterId: string;
 };
 
-type GroundNextStep = {
-  stepId: string;
-  title: string;
-  description: string;
-  actionType: string;
-  priority: string;
-  status: string;
-  reason: string;
-  requiredBeforeDrafting: boolean;
-  draftType: string | null;
-  templateKey: string | null;
-  requiredInputs: string[];
-};
-
 type GroundNextStepsState = {
   status: string;
-  recommendedSteps: GroundNextStep[];
+  recommendedSteps: Array<{
+    stepId: string;
+    title: string;
+    description: string;
+    actionType: string;
+    priority: string;
+    status: string;
+    reason: string;
+    requiredBeforeDrafting: boolean;
+    draftType: string | null;
+    templateKey: string | null;
+    requiredInputs: string[];
+  }>;
   primaryDraftingAction: {
     label: string;
     draftType: string | null;
@@ -133,27 +140,53 @@ type GroundNextStepsState = {
   metaError: string | null;
 };
 
-type ConsolidatedNextStep = {
-  cardId: string;
-  cardTitle: string;
-  step: GroundNextStep;
+type GroundAnalysisRawStep = Record<string, unknown> & {
+  required_inputs?: unknown[];
 };
 
-type NextStepModalState = {
-  cardId: string;
-  cardTitle: string;
-  step: GroundNextStep;
+type GroundAnalysisRawCard = Record<string, unknown> & {
+  card_id?: unknown;
+  title?: unknown;
+  status?: unknown;
+  confidence_percent?: unknown;
+  support_score?: unknown;
+  fact_text?: unknown;
+  law_text?: unknown;
+  inference_text?: unknown;
+  inference_card?: { display_status?: unknown } | null;
+  inference_meta?: { error?: unknown } | null;
+  next_steps_status?: unknown;
+  next_steps?: {
+    recommended_next_steps?: GroundAnalysisRawStep[];
+    primary_drafting_action?: {
+      label?: unknown;
+      draft_type?: unknown;
+      template_key?: unknown;
+      cta?: unknown;
+    } | null;
+  } | null;
+  next_steps_meta?: { error?: unknown } | null;
+  law_sources?: unknown[];
+  verified_citations?: unknown[];
+  law_bindings?: unknown[];
+  law_card?: {
+    law_binding_id?: unknown;
+    title?: unknown;
+    source_url?: unknown;
+    source_domain?: unknown;
+    authority_type?: unknown;
+    binding_strength?: unknown;
+    binding_explanation?: unknown;
+    application?: unknown;
+    verification_status?: unknown;
+  } | null;
+  legal_rules?: unknown[];
+  contrary_or_limiting_points?: unknown[];
+  research_gaps?: unknown[];
+  law_verification_status?: unknown;
+  source_files?: unknown[];
+  source_refs?: MatterSignalSourceRef[];
 };
-
-const DRAFT_ACTION_TYPES = new Set([
-  "draft_notice",
-  "draft_reply",
-  "draft_application",
-  "draft_clause_redline",
-  "draft_note",
-  "prepare_argument",
-  "prepare_evidence",
-]);
 
 type MatterDocumentEntry = NonNullable<
   MatterProcessedResult["documents"]
@@ -253,6 +286,23 @@ const splitSourceNames = (value: string) =>
     .split(/[,;]|\s+\+\s+|\s+and\s+/i)
     .map((item) => item.trim())
     .filter(Boolean);
+
+const formatBriefTaxonomyLabel = (value: string) =>
+  String(value || "")
+    .trim()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const getBriefPointSourceNames = (point: {
+  sourceDocument: string;
+  sourceRefs?: Array<{ fileName: string }>;
+}) => {
+  const fromRefs = Array.isArray(point.sourceRefs)
+    ? point.sourceRefs.map((sourceRef) => sourceRef.fileName).filter(Boolean)
+    : [];
+  const names = fromRefs.length ? fromRefs : splitSourceNames(point.sourceDocument);
+  return names.filter((name, index, list) => list.indexOf(name) === index);
+};
 
 const sourceNameKey = (value: string) =>
   normalizeSourceName(value)
@@ -414,6 +464,7 @@ const MatterSection = ({
   } = useMatterStore();
   const [isPeopleDialogOpen, setIsPeopleDialogOpen] = useState(false);
   const [isExtractingPeople, setIsExtractingPeople] = useState(false);
+  const [isContinuingContextCore, setIsContinuingContextCore] = useState(false);
   const [peopleExtractionMessage, setPeopleExtractionMessage] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
@@ -452,7 +503,14 @@ const MatterSection = ({
     useState(false);
   const [briefAnswerError, setBriefAnswerError] = useState("");
   const [isAcceptingBrief, setIsAcceptingBrief] = useState(false);
+  const [isConfirmingSecondaryClassification, setIsConfirmingSecondaryClassification] =
+    useState(false);
+  const [classificationTagInput, setClassificationTagInput] = useState("");
+  const [isSavingClassificationTag, setIsSavingClassificationTag] =
+    useState(false);
   const [briefAcceptError, setBriefAcceptError] = useState("");
+  const [isGroundAnalysisExpanded, setIsGroundAnalysisExpanded] =
+    useState(false);
   const [isMatterChatOpen, setIsMatterChatOpen] = useState(false);
   const [matterSearchResults, setMatterSearchResults] = useState<
     ContextCoreSearchResult[]
@@ -463,9 +521,13 @@ const MatterSection = ({
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(
     null,
   );
-  const [nextStepModal, setNextStepModal] = useState<NextStepModalState | null>(
-    null,
-  );
+  const [draftRecommendations, setDraftRecommendations] =
+    useState<MatterDraftRecommendations | null>(null);
+  const [isLoadingDraftRecommendations, setIsLoadingDraftRecommendations] =
+    useState(false);
+  const [draftRecommendationError, setDraftRecommendationError] =
+    useState("");
+  const [startingDraftKey, setStartingDraftKey] = useState<string | null>(null);
   const sourceBlockRefs = useRef<Record<string, HTMLElement | null>>({});
   const mockPipelineTimeoutsRef = useRef<
     Array<{ matterId: string; timeoutId: number }>
@@ -544,21 +606,126 @@ const MatterSection = ({
     () =>
       Array.isArray(briefDisplayPayload?.brief_points)
         ? briefDisplayPayload.brief_points
-            .map((point) => ({
-              id: String(point?.id || ""),
-              heading: String(point?.heading || "").trim(),
-              detail: String(point?.detail || "").trim(),
-              tone: String(point?.tone || "neutral")
+            .map((point) => {
+              const pointRecord = point as Record<string, unknown> & {
+                source_refs?: Array<Record<string, unknown>>;
+              };
+              return {
+              id: String(pointRecord?.id || ""),
+              heading: String(pointRecord?.heading || "").trim(),
+              detail: String(pointRecord?.detail || "").trim(),
+              tone: String(pointRecord?.tone || "neutral")
                 .trim()
                 .toLowerCase(),
-              sourceDocument: String(point?.source_document || "").trim(),
-              reason: String(point?.reason || "").trim(),
-            }))
+              sourceDocument: String(pointRecord?.source_document || "").trim(),
+              reason: String(pointRecord?.reason || "").trim(),
+              pointType: String(pointRecord?.point_type || "").trim(),
+              sourcePosture: String(pointRecord?.source_posture || "").trim(),
+              certainty: String(pointRecord?.certainty || pointRecord?.confidence || "")
+                .trim()
+                .toLowerCase(),
+              sourceRefs: Array.isArray(pointRecord?.source_refs)
+                ? pointRecord.source_refs
+                    .map((sourceRef) => ({
+                      chunkId: String(sourceRef?.chunk_id || "").trim(),
+                      fileName: String(sourceRef?.file_name || "").trim(),
+                      pageStart:
+                        sourceRef?.page_start == null
+                          ? null
+                          : Number(sourceRef.page_start),
+                      pageEnd:
+                        sourceRef?.page_end == null
+                          ? null
+                          : Number(sourceRef.page_end),
+                      verbatimBasis: String(
+                        sourceRef?.verbatim_basis || "",
+                      ).trim(),
+                    }))
+                    .filter((sourceRef) => sourceRef.chunkId)
+                : [],
+              };
+            })
             .filter((point) => point.id && point.heading && point.detail)
             .slice(0, 6)
         : [],
     [briefDisplayPayload?.brief_points],
   );
+  const secondaryAnalysis = activeMatter?.secondaryAnalysis || null;
+  const secondaryClassification =
+    secondaryAnalysis?.classification &&
+    typeof secondaryAnalysis.classification === "object"
+      ? secondaryAnalysis.classification
+      : null;
+  const secondaryDocumentProfiles = Array.isArray(
+    secondaryClassification?.document_profile,
+  )
+    ? secondaryClassification.document_profile
+        .map((profile) => ({
+          fileName: String(
+            (profile as { file_name?: unknown }).file_name || "",
+          ).trim(),
+          documentType: String(
+            (profile as { document_type?: unknown }).document_type ||
+              "unknown",
+          ).trim(),
+          confidence:
+            (profile as { confidence?: unknown }).confidence == null
+              ? null
+              : Number((profile as { confidence?: unknown }).confidence),
+        }))
+        .filter((profile) => profile.fileName || profile.documentType)
+        .slice(0, 8)
+    : [];
+  const secondaryDocumentTypes = Array.isArray(
+    secondaryClassification?.document_types,
+  )
+    ? secondaryClassification.document_types
+        .map((documentType) => String(documentType || "").trim())
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+  const secondaryStatus = String(secondaryAnalysis?.status || "").trim();
+  const secondaryFactChecklistCount = Array.isArray(
+    secondaryAnalysis?.fact_checklist,
+  )
+    ? secondaryAnalysis.fact_checklist.length
+    : 0;
+  const secondaryVerifiedFactCount = Array.isArray(
+    secondaryAnalysis?.extracted_facts,
+  )
+    ? secondaryAnalysis.extracted_facts.length
+    : 0;
+  const secondaryGapCount = Array.isArray(secondaryAnalysis?.fact_gaps)
+    ? secondaryAnalysis.fact_gaps.filter((gap) => {
+        if (!gap || typeof gap !== "object") return false;
+        return String((gap as { status?: string }).status || "") === "absent";
+      }).length
+    : 0;
+  const secondaryClassificationMarkers = Array.isArray(
+    secondaryClassification?.classification_markers,
+  )
+    ? secondaryClassification.classification_markers
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 12)
+    : [];
+  const secondaryUserDefinedTags = Array.isArray(
+    (secondaryClassification as { user_defined_tags?: unknown[] } | null)
+      ?.user_defined_tags,
+  )
+    ? (
+        (secondaryClassification as { user_defined_tags?: unknown[] })
+          .user_defined_tags || []
+      )
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 12)
+    : Array.isArray(activeMatter?.classification_meta?.user_defined_tags)
+      ? activeMatter.classification_meta.user_defined_tags
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+          .slice(0, 12)
+      : [];
   const groundAnalysis = activeMatter?.groundAnalysis || null;
   const groundAnalysisStatus = useMemo(() => {
     const statuses = [
@@ -585,10 +752,66 @@ const MatterSection = ({
     activeMatter?.intelligence_statuses?.debrief_generation,
   ]);
   const groundAnalysisCards = useMemo(
-    () =>
-      Array.isArray(groundAnalysis?.cards)
-        ? groundAnalysis.cards
-            .map((card) => ({
+    () => {
+      const rawGroundCards = Array.isArray(groundAnalysis?.cards)
+        ? (groundAnalysis.cards as GroundAnalysisRawCard[])
+        : [];
+      const fallbackFactCards =
+        rawGroundCards.length || !Array.isArray(secondaryAnalysis?.extracted_facts)
+          ? []
+          : secondaryAnalysis.extracted_facts.map((fact, index) => {
+              const factRecord = fact as {
+                fact_id?: string;
+                assertion?: string;
+                fact_type?: string;
+                source_posture?: string;
+                source_refs?: Array<Record<string, unknown>>;
+                verification?: { similarity?: number };
+              };
+              const sourceRefs = Array.isArray(factRecord.source_refs)
+                ? (factRecord.source_refs as MatterSignalSourceRef[])
+                : [];
+              const sourceFiles = Array.from(
+                new Set(
+                  sourceRefs
+                    .map((ref) => String(ref?.file_name || "").trim())
+                    .filter(Boolean),
+                ),
+              );
+              const supportScore = Math.max(
+                0,
+                Math.min(
+                  1,
+                  Number(factRecord.verification?.similarity || 0.9),
+                ),
+              );
+              const title = formatBriefTaxonomyLabel(
+                String(factRecord.fact_type || "ContextCore fact"),
+              );
+              return {
+                card_id: `secondary_fact_${factRecord.fact_id || index}`,
+                title,
+                status: "ready",
+                confidence_percent: Math.round(supportScore * 100),
+                support_score: supportScore,
+                fact_text: String(factRecord.assertion || "").trim(),
+                law_text: null,
+                inference_text: null,
+                inference_card: { display_status: "review" },
+                law_verification_status: "not_started",
+                source_files: sourceFiles,
+                source_refs: sourceRefs,
+                law_sources: [],
+                legal_rules: [],
+                contrary_or_limiting_points: [],
+                research_gaps: [],
+              };
+            });
+      const displayCards: GroundAnalysisRawCard[] = rawGroundCards.length
+        ? rawGroundCards
+        : fallbackFactCards;
+      return displayCards
+            .map((card: GroundAnalysisRawCard) => ({
               id: String(card?.card_id || ""),
               title: String(card?.title || "").trim(),
               status:
@@ -630,7 +853,7 @@ const MatterSection = ({
                 recommendedSteps: Array.isArray(
                   card?.next_steps?.recommended_next_steps,
                 )
-                  ? card.next_steps.recommended_next_steps.map((step) => ({
+                  ? card.next_steps.recommended_next_steps.map((step: GroundAnalysisRawStep) => ({
                       stepId: String(step?.step_id || ""),
                       title: String(step?.title || "").trim(),
                       description: String(step?.description || "").trim(),
@@ -657,7 +880,7 @@ const MatterSection = ({
                           : String(step.template_key || "").trim() || null,
                       requiredInputs: Array.isArray(step?.required_inputs)
                         ? step.required_inputs
-                            .map((item) => String(item || "").trim())
+                            .map((item: unknown) => String(item || "").trim())
                             .filter(Boolean)
                         : [],
                     }))
@@ -696,8 +919,38 @@ const MatterSection = ({
                     : String(card.next_steps_meta?.error || "").trim() || null,
               } satisfies GroundNextStepsState,
               lawSources: Array.isArray(card?.law_sources)
-                ? card.law_sources
+                ? (card.law_sources as Array<Record<string, unknown>>)
                 : [],
+              lawCard: (() => {
+                if (card?.law_card && typeof card.law_card === "object") {
+                  return {
+                      lawBindingId: String(
+                        card.law_card.law_binding_id || "",
+                      ).trim(),
+                      title: String(card.law_card.title || "").trim(),
+                      sourceUrl: String(card.law_card.source_url || "").trim(),
+                      sourceDomain: String(
+                        card.law_card.source_domain || "",
+                      ).trim(),
+                      authorityType: String(
+                        card.law_card.authority_type || "",
+                      ).trim(),
+                      bindingStrength: String(
+                        card.law_card.binding_strength || "",
+                      ).trim(),
+                      bindingExplanation: String(
+                        card.law_card.binding_explanation || "",
+                      ).trim(),
+                      application: String(
+                        card.law_card.application || "",
+                      ).trim(),
+                      verificationStatus: String(
+                        card.law_card.verification_status || "",
+                      ).trim(),
+                    };
+                }
+                return null;
+              })(),
               legalRules: Array.isArray(card?.legal_rules)
                 ? card.legal_rules
                 : [],
@@ -722,9 +975,36 @@ const MatterSection = ({
                 : [],
             }))
             .filter((card) => card.id && card.title && card.factText)
-        : [],
-    [groundAnalysis?.cards],
+    },
+    [groundAnalysis?.cards, secondaryAnalysis?.extracted_facts],
   );
+  const hasHiddenGroundAnalysisCards =
+    groundAnalysisCards.length > GROUND_ANALYSIS_INITIAL_FACT_COUNT;
+  const visibleGroundAnalysisCards = isGroundAnalysisExpanded
+    ? groundAnalysisCards
+    : groundAnalysisCards.slice(0, GROUND_ANALYSIS_INITIAL_FACT_COUNT);
+  const hiddenGroundAnalysisCardCount = Math.max(
+    0,
+    groundAnalysisCards.length - visibleGroundAnalysisCards.length,
+  );
+
+  useEffect(() => {
+    setIsGroundAnalysisExpanded(false);
+  }, [activeMatter?.id]);
+
+  useEffect(() => {
+    setClassificationTagInput("");
+  }, [activeMatter?.id]);
+
+  useEffect(() => {
+    setDraftRecommendations(activeMatter?.draftRecommendations || null);
+    setDraftRecommendationError("");
+    setStartingDraftKey(null);
+  }, [
+    activeMatter?.id,
+    activeMatter?.draftRecommendations?.generated_at,
+    activeMatter?.draftRecommendations?.counts?.total,
+  ]);
 
   const runPeopleExtraction = async (
     matterId: string,
@@ -797,63 +1077,78 @@ const MatterSection = ({
   };
 
   useEffect(() => {
-    if (!activeMatter || isActiveMockMatter) return;
     if (people.length > 0) {
       setPeopleExtractionMessage("");
+    }
+  }, [people.length]);
+
+  const handleContinueContextCore = async () => {
+    if (!activeMatter || isActiveMockMatter || isContinuingContextCore) {
       return;
     }
-    if (isExtractingPeople) return;
-    if (activeMatterContextCore?.status !== "ready") return;
-    if (peopleExtractionAttemptedRef.current[activeMatter.id]) return;
 
-    void runPeopleExtraction(activeMatter.id, { markAttempted: true });
-  }, [
-    activeMatter,
-    activeMatterContextCore?.status,
-    isActiveMockMatter,
-    isExtractingPeople,
-    people.length,
-    updateMatter,
-  ]);
-  const consolidatedNextSteps = useMemo(() => {
-    const steps: ConsolidatedNextStep[] = [];
-    const seen = new Set<string>();
-    const priorityRank = (value: string) => {
-      if (value === "high") return 0;
-      if (value === "medium") return 1;
-      return 2;
-    };
+    setIsContinuingContextCore(true);
+    setBriefAnswerError("");
+    setPeopleExtractionMessage("");
 
-    groundAnalysisCards.forEach((card) => {
-      card.nextSteps.recommendedSteps.forEach((step) => {
-        if (!step.stepId || !step.title) return;
-        const key = `${step.actionType}|${step.title.trim().toLowerCase()}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        steps.push({
-          cardId: card.id,
-          cardTitle: card.title,
-          step,
-        });
-      });
-    });
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/contextcore/continue`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        result?: MatterProcessedResult;
+        error?: string;
+        people?: {
+          extracted_count?: number;
+          needs_categorization?: boolean;
+          unresolved_candidates?: Array<{ name?: string }>;
+        };
+      };
 
-    steps.sort((a, b) => {
-      const byPriority =
-        priorityRank(a.step.priority) - priorityRank(b.step.priority);
-      if (byPriority !== 0) return byPriority;
-      if (a.step.requiredBeforeDrafting !== b.step.requiredBeforeDrafting) {
-        return a.step.requiredBeforeDrafting ? -1 : 1;
+      if (!response.ok || !payload?.success || !payload.result) {
+        throw new Error(
+          payload?.error || "Failed to continue ContextCore processing.",
+        );
       }
-      if (a.step.stepId && b.step.stepId) {
-        const byStepId = a.step.stepId.localeCompare(b.step.stepId);
-        if (byStepId !== 0) return byStepId;
-      }
-      return a.step.title.localeCompare(b.step.title);
-    });
 
-    return steps.slice(0, 3);
-  }, [groundAnalysisCards]);
+      updateMatter(payload.result);
+
+      if (payload.people?.needs_categorization) {
+        const unresolved = Array.isArray(payload.people.unresolved_candidates)
+          ? payload.people.unresolved_candidates
+              .map((item) => item?.name || "")
+              .filter(Boolean)
+          : [];
+        setPeopleExtractionMessage(
+          unresolved.length
+            ? `Categorize these participants manually: ${unresolved.join(", ")}.`
+            : "Categorize the unresolved participants manually.",
+        );
+      } else if ((payload.people?.extracted_count || 0) > 0) {
+        setPeopleExtractionMessage(
+          `Added ${payload.people?.extracted_count} party and counsel entries from ContextCore.`,
+        );
+      }
+    } catch (error) {
+      setBriefAnswerError(
+        error instanceof Error
+          ? error.message
+          : "Failed to continue ContextCore processing.",
+      );
+    } finally {
+      setIsContinuingContextCore(false);
+    }
+  };
+
   const shouldShowGroundAnalysis =
     Boolean(activeMatter?.acceptedBrief?.accepted_at) ||
     Boolean(groundAnalysis) ||
@@ -907,7 +1202,45 @@ const MatterSection = ({
     3,
     groundAnalysisCards.length || 0,
   );
-
+  const activeDraftRecommendations =
+    draftRecommendations || activeMatter?.draftRecommendations || null;
+  const draftRecommendationItems = useMemo(
+    () =>
+      Array.isArray(activeDraftRecommendations?.recommendations)
+        ? activeDraftRecommendations.recommendations
+        : [],
+    [activeDraftRecommendations?.recommendations],
+  );
+  const readyDraftRecommendations = useMemo(
+    () =>
+      draftRecommendationItems
+        .filter((item) => item.can_generate_now)
+        .slice(0, 6),
+    [draftRecommendationItems],
+  );
+  const lockedDraftRecommendations = useMemo(
+    () =>
+      draftRecommendationItems
+        .filter((item) => !item.can_generate_now)
+        .slice(0, 6),
+    [draftRecommendationItems],
+  );
+  const hasDraftRecommendationFacts =
+    groundAnalysisCards.length > 0 || secondaryVerifiedFactCount > 0;
+  const canLoadDraftRecommendations =
+    Boolean(activeMatter?.id) &&
+    !isActiveMockMatter &&
+    hasDraftRecommendationFacts &&
+    !isGroundAnalysisProcessing;
+  const shouldShowDraftRecommendations =
+    Boolean(activeMatter?.id) &&
+    (draftRecommendationItems.length > 0 ||
+      isLoadingDraftRecommendations ||
+      canLoadDraftRecommendations ||
+      isGroundAnalysisProcessing);
+  const draftRecommendationsPending =
+    !draftRecommendationItems.length &&
+    (isLoadingDraftRecommendations || isGroundAnalysisProcessing);
   const findDocumentBySource = (
     sourceName: string,
     sourceRef?: MatterSignalSourceRef | null,
@@ -986,49 +1319,6 @@ const MatterSection = ({
       : blocks[0]?.block_id || null;
   };
 
-  const isDraftCapableStep = (step: GroundNextStep) =>
-    DRAFT_ACTION_TYPES.has(step.actionType) ||
-    Boolean(step.draftType || step.templateKey);
-
-  const openNextStepModal = (
-    cardId: string,
-    cardTitle: string,
-    step: GroundNextStep,
-  ) => {
-    if (isActiveMockMatter && isDraftCapableStep(step)) {
-      openNextStepDraft({
-        cardId,
-        step,
-        mode: "template",
-      });
-      return;
-    }
-    setNextStepModal({
-      cardId,
-      cardTitle,
-      step,
-    });
-  };
-
-  const openNextStepDraft = ({
-    cardId,
-    step,
-    mode,
-  }: {
-    cardId: string;
-    step: GroundNextStep;
-    mode: "scratch" | "template";
-  }) => {
-    if (!activeMatter?.id) return;
-    const params = new URLSearchParams();
-    params.set("matter", activeMatter.id);
-    params.set("plannerGround", cardId);
-    params.set("plannerStep", step.stepId);
-    params.set("draftMode", mode);
-    navigate(`/draft?${params.toString()}`);
-    setNextStepModal(null);
-  };
-
   const openSourceViewer = ({
     sourceName,
     sourceRef = null,
@@ -1054,6 +1344,43 @@ const MatterSection = ({
       blocks,
       highlightBlockId: resolveHighlightBlock(blocks, sourceRef, highlightText),
       highlightText,
+    });
+  };
+
+  const sourceViewerPages = useMemo(() => {
+    if (!sourceViewer) return [];
+    const grouped = new Map<number, PageAwareBlock[]>();
+    sourceViewer.blocks.forEach((block) => {
+      const pageNumber = Number(block.page || 1);
+      const pageBlocks = grouped.get(pageNumber) || [];
+      pageBlocks.push(block);
+      grouped.set(pageNumber, pageBlocks);
+    });
+    return [...grouped.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([pageNumber, blocks]) => ({
+        pageNumber,
+        blocks,
+        firstBlockId: blocks[0]?.block_id || "",
+        label: `Page ${pageNumber}`,
+      }));
+  }, [sourceViewer]);
+
+  const highlightedSourcePage = useMemo(() => {
+    if (!sourceViewer?.highlightBlockId) return null;
+    const matchedPage = sourceViewerPages.find((page) =>
+      page.blocks.some(
+        (block) => block.block_id === sourceViewer.highlightBlockId,
+      ),
+    );
+    return matchedPage?.pageNumber || null;
+  }, [sourceViewer?.highlightBlockId, sourceViewerPages]);
+
+  const scrollToSourcePage = (firstBlockId: string) => {
+    if (!firstBlockId) return;
+    sourceBlockRefs.current[firstBlockId]?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
     });
   };
 
@@ -1475,6 +1802,13 @@ const MatterSection = ({
       activeMatter?.intelligence_statuses?.brief_generation === "processing" ||
       activeMatter?.intelligence_statuses?.brief_verification ===
         "processing" ||
+      activeMatter?.intelligence_statuses?.law_generation === "processing" ||
+      activeMatter?.intelligence_statuses?.law_verification ===
+        "processing" ||
+      activeMatter?.intelligence_statuses?.inference_generation ===
+        "processing" ||
+      activeMatter?.intelligence_statuses?.inference_verification ===
+        "processing" ||
       activeMatter?.intelligence_statuses?.next_step_planner === "processing";
     if (
       !activeMatter?.job_id ||
@@ -1518,6 +1852,14 @@ const MatterSection = ({
             "processing" ||
           nextResult?.matter?.intelligence_statuses?.brief_verification ===
             "processing" ||
+          nextResult?.matter?.intelligence_statuses?.law_generation ===
+            "processing" ||
+          nextResult?.matter?.intelligence_statuses?.law_verification ===
+            "processing" ||
+          nextResult?.matter?.intelligence_statuses?.inference_generation ===
+            "processing" ||
+          nextResult?.matter?.intelligence_statuses?.inference_verification ===
+            "processing" ||
           nextResult?.matter?.intelligence_statuses?.next_step_planner ===
             "processing";
 
@@ -1541,6 +1883,10 @@ const MatterSection = ({
     activeMatter?.job_id,
     activeMatter?.intelligence_statuses?.brief_generation,
     activeMatter?.intelligence_statuses?.brief_verification,
+    activeMatter?.intelligence_statuses?.law_generation,
+    activeMatter?.intelligence_statuses?.law_verification,
+    activeMatter?.intelligence_statuses?.inference_generation,
+    activeMatter?.intelligence_statuses?.inference_verification,
     activeMatter?.intelligence_statuses?.next_step_planner,
     activeMatter?.id,
     markMatterJobExpired,
@@ -1642,6 +1988,49 @@ const MatterSection = ({
     activeMatter?.intelligence_statuses?.inference_generation,
     activeMatter?.intelligence_statuses?.inference_verification,
     activeMatter?.intelligence_statuses?.next_step_planner,
+    updateMatter,
+  ]);
+
+  useEffect(() => {
+    if (!activeMatter?.id || !canLoadDraftRecommendations) return;
+    if (draftRecommendationItems.length > 0) return;
+
+    let cancelled = false;
+    setIsLoadingDraftRecommendations(true);
+    setDraftRecommendationError("");
+
+    const loadRecommendations = async () => {
+      try {
+        const payload = await getDraftRecommendations(activeMatter.id);
+        if (cancelled) return;
+        setDraftRecommendations(payload.draftRecommendations || null);
+        if (payload.result) {
+          updateMatter(payload.result);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDraftRecommendationError(
+            error instanceof Error
+              ? error.message
+              : "Could not load draft recommendations.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingDraftRecommendations(false);
+        }
+      }
+    };
+
+    void loadRecommendations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeMatter?.id,
+    canLoadDraftRecommendations,
+    draftRecommendationItems.length,
     updateMatter,
   ]);
 
@@ -2730,6 +3119,149 @@ const MatterSection = ({
     }
   };
 
+  const handleConfirmSecondaryClassification = async () => {
+    if (!activeMatter || isConfirmingSecondaryClassification) return;
+    setIsConfirmingSecondaryClassification(true);
+    setBriefAcceptError("");
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(
+            activeMatter.id,
+          )}/secondary/classification/confirm`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ confirmed_by: "user" }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        result?: MatterProcessedResult;
+        error?: string;
+      };
+      if (!response.ok || !payload?.success || !payload.result) {
+        throw new Error(
+          payload?.error || "Failed to confirm matter classification.",
+        );
+      }
+      updateMatter(payload.result);
+    } catch (error) {
+      setBriefAcceptError(
+        error instanceof Error
+          ? error.message
+          : "Failed to confirm matter classification.",
+      );
+    } finally {
+      setIsConfirmingSecondaryClassification(false);
+    }
+  };
+
+  const handleAddClassificationTag = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!activeMatter || isActiveMockMatter || isSavingClassificationTag) return;
+    const tag = classificationTagInput.trim();
+    if (!tag) return;
+
+    setIsSavingClassificationTag(true);
+    setBriefAcceptError("");
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/classification/tags`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ tag }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        result?: MatterProcessedResult;
+        error?: string;
+      };
+      if (!response.ok || !payload?.success || !payload.result) {
+        throw new Error(
+          payload?.error || "Failed to save the classification tag.",
+        );
+      }
+      updateMatter(payload.result);
+      setClassificationTagInput("");
+    } catch (error) {
+      setBriefAcceptError(
+        error instanceof Error
+          ? error.message
+          : "Failed to save the classification tag.",
+      );
+    } finally {
+      setIsSavingClassificationTag(false);
+    }
+  };
+
+  const handleRefreshDraftRecommendations = async () => {
+    if (!activeMatter?.id || isActiveMockMatter || isLoadingDraftRecommendations) {
+      return;
+    }
+    setIsLoadingDraftRecommendations(true);
+    setDraftRecommendationError("");
+    try {
+      const payload = await refreshDraftRecommendations(activeMatter.id);
+      setDraftRecommendations(payload.draftRecommendations || null);
+      if (payload.result) {
+        updateMatter(payload.result);
+      }
+    } catch (error) {
+      setDraftRecommendationError(
+        error instanceof Error
+          ? error.message
+          : "Could not refresh draft recommendations.",
+      );
+    } finally {
+      setIsLoadingDraftRecommendations(false);
+    }
+  };
+
+  const handleStartDraftRecommendation = async (
+    recommendation: MatterDraftRecommendation,
+  ) => {
+    if (!activeMatter?.id || isActiveMockMatter || startingDraftKey) return;
+    if (!recommendation.can_generate_now) return;
+
+    setStartingDraftKey(recommendation.draft_key);
+    setDraftRecommendationError("");
+    try {
+      const payload = await startDraftRecommendation({
+        matterId: activeMatter.id,
+        recommendation,
+      });
+      if (payload.draft_recommendations) {
+        setDraftRecommendations(payload.draft_recommendations);
+      }
+      if (payload.result) {
+        updateMatter(payload.result);
+      }
+      if (payload.draft?.id) {
+        navigate(
+          `/drafting?draft=${encodeURIComponent(payload.draft.id)}&matter=${encodeURIComponent(activeMatter.id)}&mode=edit`,
+        );
+      }
+    } catch (error) {
+      setDraftRecommendationError(
+        error instanceof Error
+          ? error.message
+          : "Could not start the selected draft.",
+      );
+    } finally {
+      setStartingDraftKey(null);
+    }
+  };
+
   const handleClauseSelect = (clause: ClauseItem) => {
     if (!activeMatter) return;
     setIsClauseJumpPanelVisible(false);
@@ -3327,7 +3859,29 @@ const MatterSection = ({
                 </span>
               </div>
 
-              {isBriefQueryRequired ? (
+              {activeMatter.intelligence_statuses?.brief_generation ===
+                "not_started" &&
+              activeMatterContextCore?.status === "ready" ? (
+                <div className="matterBriefQuestionBox">
+                  <p>
+                    Context extraction is complete. Continue to generate the
+                    grounded matter brief and extract people from the indexed
+                    documents.
+                  </p>
+                  {briefAnswerError ? (
+                    <p className="matterBriefError">{briefAnswerError}</p>
+                  ) : null}
+                  <div className="matterBriefActions">
+                    <Button
+                      type="button"
+                      disabled={isContinuingContextCore}
+                      onClick={() => void handleContinueContextCore()}
+                    >
+                      {isContinuingContextCore ? "Continuing..." : "Continue"}
+                    </Button>
+                  </div>
+                </div>
+              ) : isBriefQueryRequired ? (
                 <div className="matterBriefQuestionBox">
                   <p>
                     The agent does not yet have enough grounded information to
@@ -3371,25 +3925,41 @@ const MatterSection = ({
                                 <span className="matterBriefPointHeadingMetaLabel">
                                   Source file:
                                 </span>
-                                {splitSourceNames(point.sourceDocument)
-                                  .length ? (
+                                {getBriefPointSourceNames(point).length ? (
                                   <span className="matterSourceFileList">
-                                    {splitSourceNames(point.sourceDocument).map(
-                                      (sourceName) => (
-                                        <Button
-                                          type="button"
-                                          className="matterSourceFileButton"
-                                          key={`${point.id}-${sourceName}`}
-                                          onClick={() =>
-                                            openSourceViewer({
-                                              sourceName,
-                                              fallbackText: `${point.heading} ${point.detail}`,
-                                            })
-                                          }
+                                    {getBriefPointSourceNames(point).map(
+                                      (sourceName) => {
+                                        const sourceRef = point.sourceRefs.find(
+                                          (ref) => ref.fileName === sourceName,
+                                        );
+                                        const pageLabel =
+                                          sourceRef?.pageStart &&
+                                          Number.isFinite(sourceRef.pageStart)
+                                            ? ` p.${sourceRef.pageStart}${
+                                                sourceRef.pageEnd &&
+                                                sourceRef.pageEnd !==
+                                                  sourceRef.pageStart
+                                                  ? `-${sourceRef.pageEnd}`
+                                                  : ""
+                                              }`
+                                            : "";
+                                        return (
+                                          <Button
+                                            type="button"
+                                            className="matterSourceFileButton"
+                                            key={`${point.id}-${sourceName}`}
+                                            onClick={() =>
+                                              openSourceViewer({
+                                                sourceName,
+                                                fallbackText: `${point.heading} ${point.detail}`,
+                                              })
+                                            }
                                         >
-                                          {sourceName}
-                                        </Button>
-                                      ),
+                                            {sourceName}
+                                            {pageLabel}
+                                          </Button>
+                                        );
+                                      },
                                     )}
                                   </span>
                                 ) : (
@@ -3398,11 +3968,48 @@ const MatterSection = ({
                                   </span>
                                 )}
                               </span>
+                              {point.pointType ? (
+                                <span className="matterBriefPointHeadingMetaItem">
+                                  <span className="matterBriefPointHeadingMetaLabel">
+                                    Type:
+                                  </span>
+                                  <span className="matterBriefPointHeadingMetaValue">
+                                    {formatBriefTaxonomyLabel(point.pointType)}
+                                  </span>
+                                </span>
+                              ) : null}
+                              {point.sourcePosture ? (
+                                <span className="matterBriefPointHeadingMetaItem">
+                                  <span className="matterBriefPointHeadingMetaLabel">
+                                    Posture:
+                                  </span>
+                                  <span className="matterBriefPointHeadingMetaValue">
+                                    {formatBriefTaxonomyLabel(
+                                      point.sourcePosture,
+                                    )}
+                                  </span>
+                                </span>
+                              ) : null}
+                              {point.certainty ? (
+                                <span className="matterBriefPointHeadingMetaItem">
+                                  <span className="matterBriefPointHeadingMetaLabel">
+                                    Certainty:
+                                  </span>
+                                  <span className="matterBriefPointHeadingMetaValue">
+                                    {formatBriefTaxonomyLabel(point.certainty)}
+                                  </span>
+                                </span>
+                              ) : null}
                             </span>
                           </div>
                           <p className="matterBriefPointDetail">
                             {point.detail}
                           </p>
+                          {point.reason ? (
+                            <p className="matterBriefPointReason">
+                              {point.reason}
+                            </p>
+                          ) : null}
                         </article>
                       ))}
                     </div>
@@ -3445,6 +4052,167 @@ const MatterSection = ({
                       {formatUploadedAt(activeMatter.acceptedBrief.accepted_at)}
                     </p>
                   ) : null}
+                  {activeMatter?.acceptedBrief?.accepted_at &&
+                  secondaryClassification ? (
+                    <div className="matterSecondaryClassificationBox">
+                      <p className="matterBriefPointHeadingText">
+                        {secondaryStatus ===
+                        "classification_pending_confirmation"
+                          ? "Confirm matter classification"
+                          : "Matter classification confirmed"}
+                      </p>
+                      <p className="matterBriefPointDetail">
+                        {formatBriefTaxonomyLabel(
+                          String(
+                            secondaryClassification.primary_domain || "unknown",
+                          ),
+                        )}{" "}
+                        /{" "}
+                        {formatBriefTaxonomyLabel(
+                          String(
+                            secondaryClassification.primary_subdomain ||
+                              "unknown",
+                          ),
+                        )}{" "}
+                        before{" "}
+                        {formatBriefTaxonomyLabel(
+                          String(
+                            (secondaryClassification.forum as {
+                              court?: string;
+                            })?.court || "unknown",
+                          ),
+                        )}
+                        . Stage:{" "}
+                        {formatBriefTaxonomyLabel(
+                          String(
+                            secondaryClassification.procedural_stage ||
+                              "unknown",
+                          ),
+                        )}
+                        . Client posture:{" "}
+                        {formatBriefTaxonomyLabel(
+                          String(
+                            secondaryClassification.client_posture ||
+                              "unknown",
+                          ),
+                        )}
+                        .
+                      </p>
+                      {secondaryClassificationMarkers.length ? (
+                        <div className="matterSecondaryTagSection">
+                          <div className="matterSecondaryTagList">
+                            {secondaryClassificationMarkers.map((marker) => (
+                              <span
+                                key={marker}
+                                className={`matterSecondaryTag ${
+                                  secondaryUserDefinedTags.some(
+                                    (tag) =>
+                                      tag.toLowerCase() ===
+                                      marker.toLowerCase(),
+                                  )
+                                    ? "isUserTag"
+                                    : ""
+                                }`}
+                              >
+                                {marker}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {!isActiveMockMatter && secondaryClassification ? (
+                        <form
+                          className="matterSecondaryTagForm"
+                          onSubmit={(event) =>
+                            void handleAddClassificationTag(event)
+                          }
+                        >
+                          <input
+                            type="text"
+                            value={classificationTagInput}
+                            onChange={(event) =>
+                              setClassificationTagInput(event.target.value)
+                            }
+                            placeholder="Add classification tag"
+                            maxLength={80}
+                          />
+                          <Button
+                            type="submit"
+                            disabled={
+                              isSavingClassificationTag ||
+                              !classificationTagInput.trim()
+                            }
+                          >
+                            {isSavingClassificationTag ? "Saving..." : "Add tag"}
+                          </Button>
+                        </form>
+                      ) : null}
+                      {String(
+                        secondaryClassification.document_set_summary || "",
+                      ).trim() ? (
+                        <p className="matterBriefPointReason">
+                          {String(
+                            secondaryClassification.document_set_summary || "",
+                          ).trim()}
+                        </p>
+                      ) : secondaryDocumentTypes.length ? (
+                        <p className="matterBriefPointReason">
+                          Documents:{" "}
+                          {secondaryDocumentTypes
+                            .map((documentType) =>
+                              formatBriefTaxonomyLabel(documentType),
+                            )
+                            .join(", ")}
+                        </p>
+                      ) : null}
+                      {secondaryDocumentProfiles.length ? (
+                        <div className="matterSecondaryDocumentProfileGrid">
+                          {secondaryDocumentProfiles.map((profile, index) => (
+                            <div
+                              className="matterSecondaryDocumentProfile"
+                              key={`${profile.fileName}-${index}`}
+                            >
+                              <span>
+                                {formatBriefTaxonomyLabel(
+                                  profile.documentType || "unknown",
+                                )}
+                              </span>
+                              <strong>
+                                {profile.fileName || `Document ${index + 1}`}
+                              </strong>
+                              {profile.confidence != null ? (
+                                <small>
+                                  {Math.round(profile.confidence * 100)}%
+                                </small>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {secondaryStatus ===
+                      "classification_pending_confirmation" ? (
+                        <div className="matterBriefActions">
+                          <Button
+                            type="button"
+                            disabled={isConfirmingSecondaryClassification}
+                            onClick={() =>
+                              void handleConfirmSecondaryClassification()
+                            }
+                          >
+                            {isConfirmingSecondaryClassification
+                              ? "Confirming..."
+                              : "Confirm classification"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="matterBriefPointReason">
+                          {secondaryFactChecklistCount} fact slots,{" "}
+                          {secondaryVerifiedFactCount} verified facts,{" "}
+                          {secondaryGapCount} gaps.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                   {briefAcceptError ? (
                     <p className="matterBriefError">{briefAcceptError}</p>
                   ) : null}
@@ -3467,11 +4235,13 @@ const MatterSection = ({
                       ? "· Degraded"
                       : "· Facts / Law / Inference separated"}
                   </p>
-                  <span
-                    className={`matterBriefStatus is-${groundAnalysisStatus}`}
-                  >
-                    {groundAnalysisStatus || "not started"}
-                  </span>
+                  <div className="matterDebriefHeadActions">
+                    <span
+                      className={`matterBriefStatus is-${groundAnalysisStatus}`}
+                    >
+                      {groundAnalysisStatus || "not started"}
+                    </span>
+                  </div>
                 </div>
 
                 {isGroundAnalysisProcessing && !groundAnalysisCards.length ? (
@@ -3611,16 +4381,20 @@ const MatterSection = ({
                   </p>
                 ) : groundAnalysisCards.length ? (
                   <div className="matterDebriefCards">
-                    {groundAnalysisCards.map((card) => (
-                      <article className="matterDebriefCard" key={card.id}>
+                    {visibleGroundAnalysisCards.map((card) => (
+                      <Fragment key={card.id}>
+                      <article className="matterDebriefCard">
                         <div className="matterDebriefCardTop">
                           <h3>{card.title}</h3>
-                          <strong>
-                            {typeof card.supportScore === "number"
-                              ? Math.round(card.supportScore * 100)
-                              : card.confidencePercent}
-                            %
-                          </strong>
+                          <div className="matterDebriefScore">
+                            <span>Source match</span>
+                            <strong>
+                              {typeof card.supportScore === "number"
+                                ? Math.round(card.supportScore * 100)
+                                : card.confidencePercent}
+                              %
+                            </strong>
+                          </div>
                         </div>
                         <div
                           className="matterDebriefBarTrack"
@@ -3643,38 +4417,41 @@ const MatterSection = ({
                             <p>{card.factText}</p>
                           </div>
                           <div className="matterDebriefFactBlock matterDebriefLawBlock">
-                            <span>Law</span>
+                            <span>Law Status</span>
                             {card.lawText ? (
                               <p>{card.lawText}</p>
-                            ) : isGroundAnalysisProcessing ? (
+                            ) : card.lawVerificationStatus === "failed" ||
+                              activeMatter?.intelligence_statuses
+                                ?.law_generation === "failed" ||
+                              activeMatter?.intelligence_statuses
+                                ?.law_verification === "failed" ? (
+                              <p>No supported legal rule extracted yet.</p>
+                            ) : groundAnalysisCards.length > 0 ? (
                               <div className="matterShimmerParagraph matterDebriefInlineShimmer">
                                 <div className="matterShimmerLine" />
                                 <div className="matterShimmerLine matterShimmerLineShort" />
                               </div>
                             ) : (
-                              <p>
-                                {card.lawVerificationStatus === "failed"
-                                  ? "No supported legal rule extracted yet."
-                                  : "Law research in progress."}
-                              </p>
+                              <p>Verified law citation will appear below when available.</p>
                             )}
                           </div>
                           <div className="matterDebriefFactBlock matterDebriefInferenceBlock">
                             <span>Inference</span>
                             {card.inferenceText ? (
                               <p>{card.inferenceText}</p>
-                            ) : isGroundAnalysisProcessing ? (
+                            ) : card.inferenceMetaError ||
+                              activeMatter?.intelligence_statuses
+                                ?.inference_generation === "failed" ||
+                              activeMatter?.intelligence_statuses
+                                ?.inference_verification === "failed" ? (
+                              <p>Inference generated with review required.</p>
+                            ) : groundAnalysisCards.length > 0 ? (
                               <div className="matterShimmerParagraph matterDebriefInlineShimmer">
                                 <div className="matterShimmerLine" />
                                 <div className="matterShimmerLine matterShimmerLineShort" />
                               </div>
                             ) : (
-                              <p>
-                                {card.inferenceDisplayStatus ===
-                                  "needs_review" || card.inferenceMetaError
-                                  ? "Inference generated with review required."
-                                  : "Inference pipeline pending."}
-                              </p>
+                              <p>Inference pipeline pending.</p>
                             )}
                           </div>
                         </div>
@@ -3741,48 +4518,297 @@ const MatterSection = ({
                           ) : null}
                         </div>
                       </article>
+                      {card.lawCard ? (
+                        <article className="matterDebriefCard matterDebriefVerifiedLawCard">
+                          <div className="matterDebriefCardTop">
+                            <h3>{card.lawCard.title || "Verified law citation"}</h3>
+                            <div className="matterDebriefScore">
+                              <span>Binding</span>
+                              <strong>
+                                {card.lawCard.bindingStrength || "verified"}
+                              </strong>
+                            </div>
+                          </div>
+                          <div className="matterDebriefFactGrid">
+                            <div className="matterDebriefFactBlock matterDebriefLawBlock">
+                              <span>Verified Law</span>
+                              <p>{card.lawCard.bindingExplanation}</p>
+                            </div>
+                            {card.lawCard.application ? (
+                              <div className="matterDebriefFactBlock matterDebriefInferenceBlock">
+                                <span>Application</span>
+                                <p>{card.lawCard.application}</p>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="matterDebriefMeta">
+                            <p>
+                              <strong>Source:</strong>{" "}
+                              {card.lawCard.sourceUrl ? (
+                                <a
+                                  href={card.lawCard.sourceUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="matterDebriefLawSourceLink"
+                                >
+                                  {card.lawCard.sourceDomain ||
+                                    card.lawCard.sourceUrl}
+                                </a>
+                              ) : (
+                                card.lawCard.sourceDomain || "Verified source"
+                              )}
+                            </p>
+                            <p>
+                              <strong>Verification:</strong>{" "}
+                              {card.lawCard.verificationStatus || "verified"}
+                            </p>
+                          </div>
+                        </article>
+                      ) : null}
+                      </Fragment>
                     ))}
+                    {hasHiddenGroundAnalysisCards ? (
+                      <Button
+                        type="button"
+                        className="matterDebriefShowMore"
+                        onClick={() =>
+                          setIsGroundAnalysisExpanded((current) => !current)
+                        }
+                        aria-expanded={isGroundAnalysisExpanded}
+                      >
+                        {isGroundAnalysisExpanded
+                          ? "Show fewer facts"
+                          : `Show ${hiddenGroundAnalysisCardCount} more fact${
+                              hiddenGroundAnalysisCardCount === 1 ? "" : "s"
+                            }`}
+                      </Button>
+                    ) : null}
                   </div>
                 ) : null}
                 {groundAnalysisCards.length ? (
                   <section className="matterDebriefFactBlock matterDebriefNextStepsBlock matterDebriefGlobalNextSteps">
                     <span>Next Steps</span>
-                    {consolidatedNextSteps.length ? (
-                      <div className="matterNextStepsList">
-                        {consolidatedNextSteps.map(
-                          ({ cardId, cardTitle, step }) => (
-                            <Button
-                              key={`${cardId}-${step.stepId}`}
-                              type="button"
-                              className={`matterNextStepCard matterNextStepPriority-${step.priority}`}
-                              onClick={() =>
-                                openNextStepModal(cardId, cardTitle, step)
-                              }
-                            >
-                              <strong>{step.title}</strong>
-                              <span>
-                                {step.description ||
-                                  step.reason ||
-                                  "Open next step details."}
+                    {shouldShowDraftRecommendations ? (
+                      <div className="matterNextStepDraftGroup">
+                        <div className="matterDraftRecommendationsHead">
+                          <div>
+                            <p className="matterEyebrow">Next Steps · Drafts</p>
+                            <h2>Recommended Drafts</h2>
+                          </div>
+                          <div className="matterDraftRecommendationsActions">
+                            {activeDraftRecommendations?.counts ? (
+                              <span className="matterBriefStatus is-ready">
+                                {activeDraftRecommendations.counts.ready || 0} ready ·{" "}
+                                {activeDraftRecommendations.counts
+                                  .needs_more_inputs || 0}{" "}
+                                need inputs
                               </span>
-                              <small>
-                                {step.actionType.replace(/_/g, " ")} ·{" "}
-                                {step.priority} · {cardTitle}
-                              </small>
-                            </Button>
-                          ),
+                            ) : null}
+                            {!isActiveMockMatter ? (
+                              <Button
+                                type="button"
+                                className="matterDraftRefreshBtn"
+                                onClick={() =>
+                                  void handleRefreshDraftRecommendations()
+                                }
+                                disabled={isLoadingDraftRecommendations}
+                              >
+                                {isLoadingDraftRecommendations
+                                  ? "Refreshing..."
+                                  : "Refresh"}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        {draftRecommendationError ? (
+                          <p className="matterBriefError">
+                            {draftRecommendationError}
+                          </p>
+                        ) : draftRecommendationsPending ? (
+                          <div className="matterDraftRecommendationGrid">
+                            {Array.from({ length: 3 }).map((_, index) => (
+                              <article
+                                className="matterDraftRecommendationCard isShimmer"
+                                key={`draft-rec-next-shimmer-${index}`}
+                              >
+                                <div className="matterShimmerLine matterShimmerLineTitle" />
+                                <div className="matterShimmerParagraph">
+                                  <div className="matterShimmerLine" />
+                                  <div className="matterShimmerLine matterShimmerLineShort" />
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        ) : draftRecommendationItems.length ? (
+                          <>
+                            {readyDraftRecommendations.length ? (
+                              <section className="matterDraftRecommendationGroup">
+                                <div className="matterDraftRecommendationGroupHead">
+                                  <span>Ready to draft</span>
+                                  <small>
+                                    Catalogue rules matched the required inputs.
+                                  </small>
+                                </div>
+                                <div className="matterDraftRecommendationGrid">
+                                  {readyDraftRecommendations.map(
+                                    (recommendation) => (
+                                      <article
+                                        className="matterDraftRecommendationCard isReady"
+                                        key={recommendation.draft_key}
+                                      >
+                                        <div className="matterDraftRecommendationTop">
+                                          <h3>{recommendation.title}</h3>
+                                          <span>
+                                            {Math.round(
+                                              Number(
+                                                recommendation.readiness_score ||
+                                                  0,
+                                              ) * 100,
+                                            )}
+                                            %
+                                          </span>
+                                        </div>
+                                        <p>
+                                          {recommendation.reason ||
+                                            recommendation.purpose}
+                                        </p>
+                                        {recommendation.matched_documents
+                                          ?.length ? (
+                                          <small>
+                                            Sources:{" "}
+                                            {recommendation.matched_documents
+                                              .slice(0, 3)
+                                              .join(", ")}
+                                          </small>
+                                        ) : recommendation.matched_facts
+                                            ?.length ? (
+                                          <small>
+                                            Facts:{" "}
+                                            {recommendation.matched_facts
+                                              .slice(0, 3)
+                                              .join(", ")}
+                                          </small>
+                                        ) : null}
+                                        <div className="matterDraftRecommendationFooter">
+                                          <span>
+                                            {recommendation.priority ||
+                                              "medium"}{" "}
+                                            ·{" "}
+                                            {recommendation.risk_level ||
+                                              "medium"}{" "}
+                                            risk
+                                          </span>
+                                          <Button
+                                            type="button"
+                                            className="matterStartDraftingBtn"
+                                            onClick={() =>
+                                              void handleStartDraftRecommendation(
+                                                recommendation,
+                                              )
+                                            }
+                                            disabled={
+                                              startingDraftKey ===
+                                              recommendation.draft_key
+                                            }
+                                          >
+                                            {startingDraftKey ===
+                                            recommendation.draft_key
+                                              ? "Starting..."
+                                              : recommendation.existing_draft_count
+                                                ? "Open new copy"
+                                                : "Start Draft"}
+                                          </Button>
+                                        </div>
+                                      </article>
+                                    ),
+                                  )}
+                                </div>
+                              </section>
+                            ) : null}
+
+                            {lockedDraftRecommendations.length ? (
+                              <section className="matterDraftRecommendationGroup">
+                                <div className="matterDraftRecommendationGroupHead">
+                                  <span>
+                                    Upload these to unlock more drafts
+                                  </span>
+                                  <small>
+                                    Required inputs are missing from the current
+                                    matter set.
+                                  </small>
+                                </div>
+                                <div className="matterDraftRecommendationGrid">
+                                  {lockedDraftRecommendations.map(
+                                    (recommendation) => (
+                                      <article
+                                        className="matterDraftRecommendationCard isLocked"
+                                        key={recommendation.draft_key}
+                                      >
+                                        <div className="matterDraftRecommendationTop">
+                                          <h3>{recommendation.title}</h3>
+                                          <span>
+                                            {Math.round(
+                                              Number(
+                                                recommendation.readiness_score ||
+                                                  0,
+                                              ) * 100,
+                                            )}
+                                            %
+                                          </span>
+                                        </div>
+                                        <p>
+                                          {recommendation.reason ||
+                                            recommendation.purpose}
+                                        </p>
+                                        {recommendation.missing_inputs
+                                          ?.length ? (
+                                          <div className="matterDraftMissingList">
+                                            {recommendation.missing_inputs
+                                              .slice(0, 4)
+                                              .map((input) => (
+                                                <span
+                                                  key={`${recommendation.draft_key}-${input.input_key}`}
+                                                >
+                                                  {input.label ||
+                                                    input.input_label ||
+                                                    input.input_key.replace(
+                                                      /_/g,
+                                                      " ",
+                                                    )}
+                                                </span>
+                                              ))}
+                                          </div>
+                                        ) : null}
+                                        {recommendation.recommended_uploads
+                                          ?.length ? (
+                                          <small>
+                                            Upload:{" "}
+                                            {recommendation.recommended_uploads
+                                              .slice(0, 3)
+                                              .join(", ")}
+                                          </small>
+                                        ) : null}
+                                      </article>
+                                    ),
+                                  )}
+                                </div>
+                              </section>
+                            ) : null}
+                          </>
+                        ) : canLoadDraftRecommendations ? (
+                          <p className="matterDebriefEmpty">
+                            No catalogue-backed draft option matched this matter
+                            yet.
+                          </p>
+                        ) : (
+                          <p className="matterDebriefEmpty">
+                            Recommended drafts will appear after fact extraction
+                            and legal inference finish.
+                          </p>
                         )}
                       </div>
-                    ) : activeMatter?.intelligence_statuses
-                        ?.next_step_planner === "processing" ? (
-                      <div className="matterShimmerParagraph matterDebriefInlineShimmer">
-                        <div className="matterShimmerLine" />
-                        <div className="matterShimmerLine" />
-                        <div className="matterShimmerLine matterShimmerLineShort" />
-                      </div>
-                    ) : (
-                      <p>No next-step recommendation generated yet.</p>
-                    )}
+                    ) : null}
                   </section>
                 ) : (
                   <p className="matterDebriefEmpty">
@@ -4383,116 +5409,73 @@ const MatterSection = ({
                 />
               </div>
             </header>
-            <div className="matterSourceFrame">
-              {sourceViewer.blocks.map((block) => {
-                const isHighlighted =
-                  block.block_id === sourceViewer.highlightBlockId;
-                return (
-                  <article
-                    className={`matterSourceBlock ${isHighlighted ? "isHighlighted" : ""}`}
-                    key={block.block_id}
-                    ref={(node) => {
-                      sourceBlockRefs.current[block.block_id] = node;
-                    }}
+            <div className="matterSourceWorkspace">
+              <aside className="matterSourcePageRail">
+                <span>Pages</span>
+                {sourceViewerPages.map((page) => (
+                  <Button
+                    type="button"
+                    className={`matterSourcePageLink ${
+                      highlightedSourcePage === page.pageNumber
+                        ? "isActive"
+                        : ""
+                    }`}
+                    key={`source-page-${page.pageNumber}`}
+                    onClick={() => scrollToSourcePage(page.firstBlockId)}
                   >
-                    <span>Page {block.page}</span>
-                    <p>{block.text}</p>
-                  </article>
-                );
-              })}
+                    <strong>{page.pageNumber}</strong>
+                    <small>
+                      {page.blocks.length} block
+                      {page.blocks.length === 1 ? "" : "s"}
+                    </small>
+                  </Button>
+                ))}
+              </aside>
+              <div className="matterSourceFrame">
+                {sourceViewerPages.map((page) => (
+                  <section
+                    className="matterSourcePageSheet"
+                    key={`source-sheet-${page.pageNumber}`}
+                  >
+                    <div className="matterSourcePageHeader">
+                      <span>Page {page.pageNumber}</span>
+                      <small>{page.label}</small>
+                    </div>
+                    {page.blocks.map((block) => {
+                      const isHighlighted =
+                        block.block_id === sourceViewer.highlightBlockId;
+                      return (
+                        <article
+                          className={`matterSourceBlock ${isHighlighted ? "isHighlighted" : ""}`}
+                          key={block.block_id}
+                          ref={(node) => {
+                            sourceBlockRefs.current[block.block_id] = node;
+                          }}
+                        >
+                          <span>Block {block.page_block_index + 1}</span>
+                          <p>{block.text}</p>
+                        </article>
+                      );
+                    })}
+                  </section>
+                ))}
+              </div>
+              <aside className="matterSourceContextRail">
+                <span>Selected signal</span>
+                <p>
+                  {sourceViewer.highlightText ||
+                    "Open a source from a fact card to see the matched text here."}
+                </p>
+                <small>
+                  {sourceViewer.blocks.length} extracted block
+                  {sourceViewer.blocks.length === 1 ? "" : "s"} in this source.
+                </small>
+              </aside>
             </div>
           </section>
         </div>
       ) : null}
 
-      {nextStepModal ? (
-        <div className="matterDialogBackdrop" role="presentation">
-          <section
-            className="matterSourceDialog matterNextStepDialog"
-            role="dialog"
-            aria-modal="true"
-          >
-            <header className="matterSourceDialogHead">
-              <div>
-                <p className="matterEyebrow">Next Step</p>
-                <h2>{nextStepModal.step.title}</h2>
-              </div>
-              <div className="matterSourceDialogActions">
-                <Button
-                  type="button"
-                  aria-label="Close next step"
-                  onClick={() => setNextStepModal(null)}
-                  showImage
-                  image={<X size={18} />}
-                />
-              </div>
-            </header>
-            <div className="matterNextStepDialogBody">
-              <p className="matterNextStepDialogLead">
-                {nextStepModal.step.description ||
-                  "Review the recommended next action for this ground."}
-              </p>
-              {nextStepModal.step.reason ? (
-                <p>
-                  <strong>Reason:</strong> {nextStepModal.step.reason}
-                </p>
-              ) : null}
-              <p>
-                <strong>Action type:</strong>{" "}
-                {nextStepModal.step.actionType.replace(/_/g, " ")}
-              </p>
-              <p>
-                <strong>Priority:</strong> {nextStepModal.step.priority}
-              </p>
-              <p>
-                <strong>Status:</strong> {nextStepModal.step.status}
-              </p>
-              {nextStepModal.step.requiredInputs.length ? (
-                <div className="matterNextStepInputs">
-                  <strong>Required inputs</strong>
-                  <ul>
-                    {nextStepModal.step.requiredInputs.map((item) => (
-                      <li key={`${nextStepModal.step.stepId}-${item}`}>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {isDraftCapableStep(nextStepModal.step) ? (
-                <div className="matterNextStepDraftActions">
-                  <Button
-                    type="button"
-                    className="matterStartDraftingBtn"
-                    onClick={() =>
-                      openNextStepDraft({
-                        cardId: nextStepModal.cardId,
-                        step: nextStepModal.step,
-                        mode: "scratch",
-                      })
-                    }
-                  >
-                    Draft from scratch
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() =>
-                      openNextStepDraft({
-                        cardId: nextStepModal.cardId,
-                        step: nextStepModal.step,
-                        mode: "template",
-                      })
-                    }
-                    disabled={!nextStepModal.step.templateKey}
-                  >
-                    Use template
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </section>
-        </div>
-      ) : null}
     </section>
   );
 };

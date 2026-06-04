@@ -633,6 +633,14 @@ const ProductNavbar = ({
             )
           }
         />
+        <Button
+          type="button"
+          className="iconBtn topBarHomeBtn"
+          aria-label="Go to dashboard home"
+          onClick={() => navigate("/dashboard")}
+          showImage
+          image={<Home size={18} />}
+        />
       </div>
 
       <div className="topBarRight">

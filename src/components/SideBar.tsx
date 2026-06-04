@@ -21,12 +21,37 @@ type SideBarProps = {
   activeResearchId?: string | null;
   onSelectMatter?: (id: string) => void;
   onSelectResearch?: (id: string) => void;
+  onStartResearch?: () => void;
 };
 
 const getCollapsedMatterLabel = (title: string) => {
   const normalized = title.replace(/\s+/g, " ").trim();
   if (!normalized) return "MAT";
   return normalized.slice(0, 3);
+};
+
+const getResearchSectionTitle = (query: string) => {
+  const normalized = String(query || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "Related matter";
+
+  const firstClause =
+    normalized.split(/[?.!,:;-]/).find((part) => part.trim()) || normalized;
+  const words = firstClause
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const shortTitle = words.slice(0, 4).join(" ");
+  if (!shortTitle) return "Related matter";
+  return shortTitle.length > 32 ? `${shortTitle.slice(0, 29)}...` : shortTitle;
+};
+
+const getCollapsedResearchLabel = (query: string) => {
+  const title = getResearchSectionTitle(query);
+  const compact = title.replace(/[^a-zA-Z0-9]/g, "");
+  if (!compact) return "RES";
+  return compact.slice(0, 4).toUpperCase();
 };
 
 const SideBar = ({
@@ -37,6 +62,7 @@ const SideBar = ({
   activeResearchId = null,
   onSelectMatter,
   onSelectResearch,
+  onStartResearch,
 }: SideBarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -61,6 +87,13 @@ const SideBar = ({
   const [draftTabs, setDraftTabs] = useState<DraftSummary[]>([]);
 
   const hasRecentResearches = recentResearches.length > 0;
+  const activeResearchItem =
+    recentResearches.find((item) => item.id === activeResearchId) ||
+    recentResearches[0] ||
+    null;
+  const researchSectionTitle = getResearchSectionTitle(
+    activeResearchItem?.query || "",
+  );
   const visibleMatters = [
     ...matters.map((matter) => ({
       id: matter.id,
@@ -101,6 +134,11 @@ const SideBar = ({
     navigate("/matter");
   };
 
+  const startNewResearch = () => {
+    onStartResearch?.();
+    navigate("/dashboard/active-research");
+  };
+
   return (
     <nav
       className={`leftRail ${isCollapsed ? "collapsed" : ""} ${isDraftingRoute ? "draftingRoute" : ""}`}
@@ -108,40 +146,45 @@ const SideBar = ({
       {showResearchSection && (
         <div className="recentSectionBlock">
           <div className="recentSectionHead">
-            <h3>Recent researches</h3>
-            <Button
-              type="button"
-              className="recentMatterAddBtn"
-              aria-label={
-                hasRecentResearches
-                  ? "Toggle recent researches"
-                  : "Open research"
-              }
-              onClick={() => {
-                if (hasRecentResearches) {
-                  setIsRecentResearchesOpen((prev) => !prev);
-                } else {
-                  navigate("/dashboard/active-research");
+            <h3 title={activeResearchItem?.query || researchSectionTitle}>
+              {researchSectionTitle}
+            </h3>
+            <div className="recentSectionActions">
+              <Button
+                type="button"
+                className="recentMatterAddBtn"
+                aria-label="Toggle recent researches"
+                onClick={() => {
+                  if (hasRecentResearches) {
+                    setIsRecentResearchesOpen((prev) => !prev);
+                  }
+                }}
+                disabled={!hasRecentResearches}
+                showImage={hasRecentResearches}
+                image={
+                  isRecentResearchesOpen ? (
+                    <ChevronDown size={14} />
+                  ) : (
+                    <ChevronRight size={14} />
+                  )
                 }
-              }}
-              showImage={hasRecentResearches}
-              image={
-                isRecentResearchesOpen ? (
-                  <ChevronDown size={14} />
-                ) : (
-                  <ChevronRight size={14} />
-                )
-              }
-            >
-              {hasRecentResearches ? null : "+"}
-            </Button>
+              />
+              <Button
+                type="button"
+                className="recentMatterAddBtn"
+                aria-label="Start a new research"
+                onClick={startNewResearch}
+              >
+                +
+              </Button>
+            </div>
           </div>
 
           {!hasRecentResearches && (
             <Button
               type="button"
               className="recentMatterItem isEmpty"
-              onClick={() => navigate("/dashboard/active-research")}
+              onClick={startNewResearch}
             >
               No research yet.
             </Button>
@@ -154,9 +197,33 @@ const SideBar = ({
                   key={research.id}
                   type="button"
                   className={`recentMatterItem ${research.id === activeResearchId ? "active" : ""}`}
-                  onClick={() => onSelectResearch?.(research.id)}
+                  onClick={() => {
+                    onSelectResearch?.(research.id);
+                    if (location.pathname !== "/dashboard/active-research") {
+                      navigate("/dashboard/active-research");
+                    }
+                  }}
                 >
                   <span className="recentItemTitle">{research.query}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+
+          {isCollapsed && hasRecentResearches && (
+            <div className="collapsedActiveMatterList" aria-label="Active researches">
+              {recentResearches.slice(0, 4).map((research) => (
+                <Button
+                  key={research.id}
+                  type="button"
+                  className="collapsedActiveMatterWord"
+                  title={research.query}
+                  onClick={() => {
+                    onSelectResearch?.(research.id);
+                    navigate("/dashboard/active-research");
+                  }}
+                >
+                  {getCollapsedResearchLabel(research.query)}
                 </Button>
               ))}
             </div>
@@ -165,7 +232,7 @@ const SideBar = ({
           <Button
             type="button"
             className="researchStartTile"
-            onClick={() => navigate("/dashboard/active-research")}
+            onClick={startNewResearch}
           >
             <span className="researchStartPlus">+</span>
             <span className="researchStartLabel">Start a new research</span>

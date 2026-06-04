@@ -105,6 +105,13 @@
   margin-bottom: 6px;
 }
 
+.recentSectionActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .recentSectionHead h3 {
   margin: 0;
   font-family: "Newsreader", serif;
@@ -130,6 +137,11 @@
 .recentMatterAddBtn:hover {
   color: var(--brand-soft);
   background: #f1ece5;
+}
+
+.recentMatterAddBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .recentItemsList {
@@ -351,6 +363,34 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #4a302c;
+}
+
+.collapsedActiveMatterList {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.collapsedActiveMatterWord {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #4a302c;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.collapsedActiveMatterWord:hover {
+  border-color: #e0d0c3;
+  background: #f1ece5;
+  color: #700d0d;
+  cursor: pointer;
 }
 
 .leftRail.collapsed .railItem {

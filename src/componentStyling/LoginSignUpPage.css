@@ -40,6 +40,10 @@
   margin-top: 24px;
 }
 
+.loginForm {
+  margin-top: 4px;
+}
+
 .formField label {
   display: block;
   margin-bottom: 10px;
@@ -92,6 +96,12 @@
   cursor: pointer;
 }
 
+.signInButton:disabled,
+.googleButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
 .orDivider {
   margin-top: 18px;
   margin-bottom: 14px;
@@ -131,6 +141,40 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+
+.primaryGoogleButton {
+  margin-top: 0;
+  background: #fffaf5;
+}
+
+.loginModeSwitch {
+  margin: 14px 0 0;
+  color: #6a625c;
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.loginModeSwitch button {
+  margin-left: 6px;
+  border: 0;
+  background: transparent;
+  color: #760c0c;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.loginError {
+  margin: 20px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #d9b9b4;
+  background: #fff3ef;
+  color: #700d0d;
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .googleIcon {

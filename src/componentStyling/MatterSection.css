@@ -2324,6 +2324,111 @@
   color: #2a201c;
 }
 
+.matterBriefPointReason {
+  margin: 6px 0 0 4px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6a5a4d;
+}
+
+.matterSecondaryClassificationBox {
+  margin-top: 12px;
+  border: 1px solid #e5d5c4;
+  border-radius: 8px;
+  background: #fffaf3;
+  padding: 12px;
+}
+
+.matterSecondaryDocumentProfileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.matterSecondaryTagSection {
+  margin-top: 10px;
+}
+
+.matterSecondaryTagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.matterSecondaryTag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #ddcfbf;
+  border-radius: 999px;
+  background: #fffdf8;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: #6b4f43;
+}
+
+.matterSecondaryTag.isUserTag {
+  border-color: #b98d5a;
+  background: #fff3df;
+  color: #6b4215;
+}
+
+.matterSecondaryTagForm {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.matterSecondaryTagForm input {
+  flex: 1 1 240px;
+  min-height: 38px;
+  border: 1px solid #ddcfbf;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0 12px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  color: #2f241f;
+}
+
+.matterSecondaryDocumentProfile {
+  min-width: 0;
+  border: 1px solid #ead9c7;
+  border-radius: 6px;
+  background: #fffdf8;
+  padding: 8px;
+}
+
+.matterSecondaryDocumentProfile span,
+.matterSecondaryDocumentProfile small {
+  display: block;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #8a4f3c;
+}
+
+.matterSecondaryDocumentProfile strong {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 3px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #2a201c;
+}
+
+.matterSecondaryDocumentProfile small {
+  margin-top: 4px;
+  color: #6a5a4d;
+}
+
 .matterBriefAcceptedMeta {
   margin: 8px 0 0;
   font-family: "Work Sans", sans-serif;
@@ -2347,6 +2452,27 @@
   margin-bottom: 12px;
 }
 
+.matterDebriefHeadActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.matterDebriefContinueButton {
+  border: 1px solid #b8a07f;
+  border-radius: 10px;
+  background: #fffaf4;
+  padding: 8px 12px;
+  color: #714828;
+}
+
+.matterDebriefContinueButton:hover:not(:disabled) {
+  border-color: #8f6511;
+  background: #fff4e6;
+}
+
 .matterDebriefCards {
   display: flex;
   flex-direction: column;
@@ -2358,6 +2484,18 @@
   border-radius: 14px;
   background: #fffaf4;
   padding: 14px 14px 16px;
+}
+
+.matterDebriefVerifiedLawCard {
+  margin-top: -6px;
+  border-color: #bfd1df;
+  background: #f6fbff;
+}
+
+.matterDebriefVerifiedLawCard .matterDebriefCardTop h3 {
+  font-family: "Work Sans", sans-serif;
+  font-size: 18px;
+  line-height: 1.25;
 }
 
 .matterDebriefCardTop {
@@ -2380,6 +2518,29 @@
   font-family: "Work Sans", sans-serif;
   font-size: 16px;
   color: #8f6511;
+}
+
+.matterDebriefScore {
+  flex-shrink: 0;
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  font-family: "Work Sans", sans-serif;
+  color: #8f6511;
+}
+
+.matterDebriefScore span {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6f6559;
+}
+
+.matterDebriefScore strong {
+  font-size: 16px;
+  line-height: 1.2;
 }
 
 .matterDebriefBarTrack {
@@ -2449,69 +2610,194 @@
   margin-top: 14px;
 }
 
-.matterNextStepsList {
+.matterNextStepDraftGroup {
+  margin-top: 16px;
+  border-top: 1px solid #cfdcc7;
+  padding-top: 16px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
-.matterNextStepCard {
-  width: 100%;
-  border: 1px solid #d4dfcd;
+.matterDebriefShowMore {
+  align-self: flex-start;
+  border: 1px solid #cdb89d;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.8);
-  padding: 10px 12px;
-  text-align: left;
-  display: grid;
-  gap: 6px;
-  transition:
-    border-color 0.2s ease,
-    background-color 0.2s ease,
-    transform 0.2s ease;
+  background: #fffaf4;
+  padding: 9px 12px;
+  color: #714828;
 }
 
-.matterNextStepCard:hover {
-  border-color: #88a07f;
-  background: #fffefb;
-  transform: translateY(-1px);
+.matterDebriefShowMore:hover {
+  border-color: #9f6f49;
+  background: #fff4e6;
 }
 
-.matterNextStepCard strong,
-.matterNextStepCard span,
-.matterNextStepCard small {
-  display: block;
+.matterDraftRecommendationsHead,
+.matterDraftRecommendationsActions,
+.matterDraftRecommendationTop,
+.matterDraftRecommendationFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.matterNextStepCard strong {
+.matterDraftRecommendationsHead h2 {
+  margin: 4px 0 0;
+  font-family: "Newsreader", serif;
+  font-size: 26px;
+  font-weight: 500;
+  color: #261b16;
+}
+
+.matterDraftRecommendationsActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.matterDraftRefreshBtn,
+.matterDraftLockedBtn {
+  border: 1px solid #cdb89d;
+  border-radius: 8px;
+  background: #fffdf9;
+  min-height: 36px;
+  padding: 0 12px;
   font-family: "Work Sans", sans-serif;
-  font-size: 14px;
-  color: #263222;
+  font-size: 12px;
+  font-weight: 700;
+  color: #5c4634;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.matterNextStepCard span {
+.matterDraftLockedBtn:disabled {
+  color: #897b70;
+  background: #f0e7dc;
+  cursor: not-allowed;
+}
+
+.matterDraftRecommendationGroup {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.matterDraftRecommendationGroupHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.matterDraftRecommendationGroupHead span {
   font-family: "Work Sans", sans-serif;
   font-size: 13px;
-  line-height: 1.45;
-  color: #4f5c49;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #3a3129;
 }
 
-.matterNextStepCard small {
+.matterDraftRecommendationGroupHead small {
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  color: #6b5b50;
+}
+
+.matterDraftRecommendationGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.matterDraftRecommendationCard {
+  border: 1px solid #ddd0c0;
+  border-radius: 8px;
+  background: #fffdf9;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  min-height: 190px;
+}
+
+.matterDraftRecommendationCard.isReady {
+  border-color: #b8d0bd;
+  background: #fbfffb;
+}
+
+.matterDraftRecommendationCard.isLocked {
+  border-color: #d6d2cc;
+  background: #faf8f4;
+}
+
+.matterDraftRecommendationCard.isShimmer {
+  overflow: hidden;
+}
+
+.matterDraftRecommendationTop h3 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: #261b16;
+}
+
+.matterDraftRecommendationTop span {
+  border: 1px solid #c7d8c5;
+  border-radius: 999px;
+  background: #edf7eb;
+  padding: 4px 8px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  color: #34563c;
+}
+
+.matterDraftRecommendationCard.isLocked .matterDraftRecommendationTop span {
+  border-color: #d6c7b7;
+  background: #f3ece4;
+  color: #6c5849;
+}
+
+.matterDraftRecommendationCard p,
+.matterDraftRecommendationCard small,
+.matterDraftRecommendationFooter span {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  line-height: 1.45;
+}
+
+.matterDraftRecommendationCard p {
+  font-size: 14px;
+  color: #3a3029;
+}
+
+.matterDraftRecommendationCard small,
+.matterDraftRecommendationFooter span {
+  font-size: 12px;
+  color: #6b5b50;
+}
+
+.matterDraftRecommendationFooter {
+  align-self: end;
+  flex-wrap: wrap;
+}
+
+.matterDraftMissingList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.matterDraftMissingList span {
+  border: 1px solid #decbb8;
+  border-radius: 999px;
+  background: #fff3e7;
+  padding: 4px 8px;
   font-family: "Work Sans", sans-serif;
   font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #687563;
-}
-
-.matterNextStepPriority-high {
-  border-color: #d0a789;
-}
-
-.matterNextStepPriority-medium {
-  border-color: #d4dfcd;
-}
-
-.matterNextStepPriority-low {
-  border-color: #cad4dd;
+  color: #6f4e34;
 }
 
 .matterDebriefLawSources {
@@ -2678,7 +2964,7 @@
 }
 
 .matterSourceDialog {
-  width: min(980px, 92vw);
+  width: min(1180px, 94vw);
   max-height: 86vh;
   border: 1px solid #d7c8b8;
   border-radius: 16px;
@@ -2715,25 +3001,139 @@
   flex-shrink: 0;
 }
 
+.matterSourceWorkspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 240px;
+  background: #eef1f4;
+  overflow: hidden;
+}
+
+.matterSourcePageRail,
+.matterSourceContextRail {
+  padding: 16px 14px;
+  background: #fbf4ea;
+  overflow: auto;
+}
+
+.matterSourcePageRail {
+  border-right: 1px solid #ded4c7;
+}
+
+.matterSourceContextRail {
+  border-left: 1px solid #ded4c7;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.matterSourcePageRail > span,
+.matterSourceContextRail > span {
+  display: block;
+  margin-bottom: 10px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b5b50;
+}
+
+.matterSourcePageLink {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #3a3029;
+  text-align: left;
+}
+
+.matterSourcePageLink:hover,
+.matterSourcePageLink.isActive {
+  border-color: #c7d4e4;
+  background: #eef5ff;
+}
+
+.matterSourcePageLink strong,
+.matterSourcePageLink small {
+  font-family: "Work Sans", sans-serif;
+}
+
+.matterSourcePageLink strong {
+  font-size: 14px;
+  color: #263241;
+}
+
+.matterSourcePageLink small {
+  font-size: 11px;
+  color: #667181;
+}
+
 .matterSourceFrame {
   overflow: auto;
-  padding: 18px 20px 22px;
+  padding: 24px 24px 40px;
   display: grid;
+  gap: 22px;
+  background: #eef1f4;
+}
+
+.matterSourcePageSheet {
+  width: min(760px, 100%);
+  min-height: 640px;
+  margin: 0 auto;
+  border: 1px solid #d9dee5;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(33, 45, 58, 0.12);
+  padding: 44px 56px;
+  display: grid;
+  align-content: start;
   gap: 10px;
-  background: #fffdf9;
+}
+
+.matterSourcePageHeader {
+  margin-bottom: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #edf0f3;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.matterSourcePageHeader span,
+.matterSourcePageHeader small {
+  font-family: "Work Sans", sans-serif;
+}
+
+.matterSourcePageHeader span {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #425166;
+}
+
+.matterSourcePageHeader small {
+  font-size: 12px;
+  color: #778294;
 }
 
 .matterSourceBlock {
   border-left: 3px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 10px 12px;
-  background: #fffaf4;
+  background: #ffffff;
 }
 
 .matterSourceBlock.isHighlighted {
-  border-left-color: #9b3f2d;
-  background: #fff0d6;
-  box-shadow: inset 0 0 0 1px #e0bd85;
+  border-left-color: #2f6fed;
+  background: #eef5ff;
+  box-shadow: inset 0 0 0 1px #bcd4fb;
 }
 
 .matterSourceBlock span {
@@ -2756,52 +3156,25 @@
   color: #241b17;
 }
 
-.matterNextStepDialog {
-  width: min(760px, 92vw);
-}
-
-.matterNextStepDialogBody {
-  padding: 18px 20px 22px;
-  display: grid;
-  gap: 12px;
-  overflow: auto;
-}
-
-.matterNextStepDialogLead,
-.matterNextStepDialogBody p,
-.matterNextStepInputs li {
+.matterSourceContextRail p,
+.matterSourceContextRail small {
   margin: 0;
   font-family: "Work Sans", sans-serif;
-  font-size: 15px;
   line-height: 1.5;
-  color: #2b211c;
 }
 
-.matterNextStepInputs {
-  display: grid;
-  gap: 6px;
+.matterSourceContextRail p {
+  border: 1px solid #d5e0ec;
+  border-radius: 8px;
+  background: #f7fbff;
+  padding: 10px;
+  font-size: 13px;
+  color: #2e3b4d;
 }
 
-.matterNextStepInputs strong {
-  font-family: "Work Sans", sans-serif;
+.matterSourceContextRail small {
   font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #6a5a50;
-}
-
-.matterNextStepInputs ul {
-  margin: 0;
-  padding-left: 18px;
-  display: grid;
-  gap: 6px;
-}
-
-.matterNextStepDraftActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding-top: 4px;
+  color: #70645a;
 }
 
 @media (max-width: 900px) {
@@ -2847,6 +3220,56 @@
   .matterHealthBody,
   .matterPeopleGrid {
     grid-template-columns: 1fr;
+  }
+
+  .matterDraftRecommendationsHead,
+  .matterDraftRecommendationGroupHead,
+  .matterDraftRecommendationTop,
+  .matterDraftRecommendationFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .matterDraftRecommendationsActions {
+    justify-content: flex-start;
+  }
+
+  .matterSourceDialog {
+    width: 96vw;
+    max-height: 90vh;
+  }
+
+  .matterSourceWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .matterSourcePageRail {
+    border-right: 0;
+    border-bottom: 1px solid #ded4c7;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+  }
+
+  .matterSourcePageRail > span {
+    align-self: center;
+    margin: 0;
+    flex: 0 0 auto;
+  }
+
+  .matterSourcePageLink {
+    width: auto;
+    min-width: 96px;
+    flex: 0 0 auto;
+  }
+
+  .matterSourceContextRail {
+    display: none;
+  }
+
+  .matterSourcePageSheet {
+    min-height: 520px;
+    padding: 28px 24px;
   }
 
   .matterClauseJumpPanel {

@@ -18,6 +18,7 @@ import { buildDraftingExtensions } from "./draftingExtensions";
 import type {
   AccessRole,
   DraftComment,
+  DraftContext,
   DraftDetail,
   PendingAnnotation,
   ParagraphStyle,
@@ -80,6 +81,7 @@ type DraftingDocumentProps = {
   pendingAnnotation: PendingAnnotation | null;
   commentDraft: string;
   onDocumentChange: (contentJson: JSONContent) => void;
+  onDraftContextChange: (context: DraftContext) => void;
   onToolbarStateChange: (state: DraftingToolbarState) => void;
   onCommentDraftChange: (value: string) => void;
   onStartAnnotation: (annotation: PendingAnnotation) => void;
@@ -103,6 +105,12 @@ type FindReplaceMatch = {
 };
 
 const roleCanEdit = (role: AccessRole) => role === "editor";
+
+const emptyHeaderFooter = {
+  header: { left: "", center: "", right: "" },
+  footer: { left: "", center: "Page {page}", right: "" },
+  differentFirstPage: false,
+};
 
 const findReplacePluginKey = new PluginKey("draftFindReplacePlugin");
 
@@ -259,6 +267,7 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       pendingAnnotation,
       commentDraft,
       onDocumentChange,
+      onDraftContextChange,
       onToolbarStateChange,
       onCommentDraftChange,
       onStartAnnotation,
@@ -308,6 +317,53 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       wholeWord,
       activeIndex: activeFindIndex,
     };
+
+    const headerFooter = useMemo(
+      () => ({
+        header: {
+          ...emptyHeaderFooter.header,
+          ...(draft.context.headerFooter?.header || {}),
+        },
+        footer: {
+          ...emptyHeaderFooter.footer,
+          ...(draft.context.headerFooter?.footer || {}),
+        },
+        differentFirstPage:
+          draft.context.headerFooter?.differentFirstPage ??
+          emptyHeaderFooter.differentFirstPage,
+      }),
+      [draft.context.headerFooter],
+    );
+
+    const templateProvenance = useMemo(
+      () =>
+        Array.isArray(draft.context.templateProvenance)
+          ? draft.context.templateProvenance.slice(0, 5)
+          : [],
+      [draft.context.templateProvenance],
+    );
+
+    const updateHeaderFooterSlot = useCallback(
+      (
+        region: "header" | "footer",
+        slot: "left" | "center" | "right",
+        value: string,
+      ) => {
+        onDraftContextChange({
+          ...draft.context,
+          headerFooter: {
+            header: { ...headerFooter.header },
+            footer: { ...headerFooter.footer },
+            differentFirstPage: headerFooter.differentFirstPage,
+            [region]: {
+              ...headerFooter[region],
+              [slot]: value,
+            },
+          },
+        });
+      },
+      [draft.context, headerFooter, onDraftContextChange],
+    );
 
     const findReplacePlugin = useMemo(
       () => createFindReplacePlugin(() => findReplaceStateRef.current),
@@ -761,13 +817,57 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                 )}
               </div>
             </div>
+            {templateProvenance.length > 0 && (
+              <div className="draftNavigatorCard templateBasisCard">
+                <p className="draftTemplateEyebrow">Template Basis</p>
+                <div className="templateBasisList">
+                  {templateProvenance.map((item, index) => (
+                    <div
+                      key={`${item.type || "basis"}-${index}`}
+                      className="templateBasisItem"
+                    >
+                      <strong>{item.label || item.type || "Source policy"}</strong>
+                      <span>{item.source || item.role || "Declared source policy"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </aside>
 
           <div
             ref={sheetRef}
             className={`draftPaperSheet compact zoom-${zoomLevel.replace("%", "")}`}
           >
+            <div className="draftHeaderZone" aria-label="Document header">
+              {(["left", "center", "right"] as const).map((slot) => (
+                <input
+                  key={`header-${slot}`}
+                  value={headerFooter.header[slot] || ""}
+                  onChange={(event) =>
+                    updateHeaderFooterSlot("header", slot, event.target.value)
+                  }
+                  placeholder={slot === "center" ? "Header" : ""}
+                  aria-label={`Header ${slot}`}
+                  disabled={!roleCanEdit(currentRole)}
+                />
+              ))}
+            </div>
             <EditorContent editor={editor} />
+            <div className="draftFooterZone" aria-label="Document footer">
+              {(["left", "center", "right"] as const).map((slot) => (
+                <input
+                  key={`footer-${slot}`}
+                  value={headerFooter.footer[slot] || ""}
+                  onChange={(event) =>
+                    updateHeaderFooterSlot("footer", slot, event.target.value)
+                  }
+                  placeholder={slot === "center" ? "Page {page}" : ""}
+                  aria-label={`Footer ${slot}`}
+                  disabled={!roleCanEdit(currentRole)}
+                />
+              ))}
+            </div>
 
             {selectionMenuTop !== null && (
               <div className="draftSelectionBubble" style={{ top: `${selectionMenuTop}px` }}>
