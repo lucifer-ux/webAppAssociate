@@ -1,5 +1,5 @@
 import "../componentStyling/ChatBoxMatterSection.css";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Bot, Sparkles, X } from "lucide-react";
 import Button from "./Button";
 import SearchBar from "./SearchBar";
@@ -50,12 +50,6 @@ const ChatBoxMatterSection = ({
   const [typingMessage, setTypingMessage] = useState("");
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
   const hasClarificationQuestions = clarificationQuestions.length > 0;
-
-  useEffect(() => {
-    if (open) return;
-    setTypingMessage("");
-    setIsAssistantTyping(false);
-  }, [open]);
 
   const openingMessage = useMemo(() => {
     if (hasClarificationQuestions) {
@@ -110,6 +104,12 @@ const ChatBoxMatterSection = ({
     void handleSubmit(prompt);
   };
 
+  const handleClose = () => {
+    setTypingMessage("");
+    setIsAssistantTyping(false);
+    onClose();
+  };
+
   const handleSkip = async () => {
     if (isAssistantTyping) return;
 
@@ -130,7 +130,7 @@ const ChatBoxMatterSection = ({
       window.setTimeout(resolve, TYPEWRITER_CLOSE_DELAY_MS),
     );
     setIsAssistantTyping(false);
-    onClose();
+    handleClose();
   };
 
   return (
@@ -146,7 +146,7 @@ const ChatBoxMatterSection = ({
           <Button
             type="button"
             className="matterChatClose"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close matter chat"
             disabled={isAssistantTyping}
             showImage

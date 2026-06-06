@@ -1,0 +1,181 @@
+.pricingModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(22, 16, 15, 0.46);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.pricingModalPanel {
+  width: min(1120px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: #fbf9f4;
+  border: 1px solid #dfbfbc;
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(31, 22, 21, 0.18);
+  padding: 24px;
+}
+
+.pricingModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.pricingModalEyebrow {
+  margin: 0 0 6px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #700d0d;
+}
+
+.pricingModalHeader h2 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: clamp(28px, 3vw, 40px);
+  color: #2a201f;
+}
+
+.pricingModalClose {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: #6b5f59;
+}
+
+.pricingModalClose:hover {
+  background: #f0ebe4;
+}
+
+.pricingPlanGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.pricingPlanCard {
+  border: 1px solid #dfbfbc;
+  border-radius: 8px;
+  background: #fffdfa;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+}
+
+.pricingPlanCard.highlight {
+  border-color: #700d0d;
+  box-shadow: inset 0 0 0 1px rgba(112, 13, 13, 0.12);
+}
+
+.pricingPlanHead {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pricingPlanHead h3 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: 24px;
+  color: #2c2220;
+}
+
+.pricingPlanHead span {
+  display: inline-flex;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f7e8e6;
+  color: #700d0d;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pricingPlanPrice {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: #4c0003;
+}
+
+.pricingPlanDescription {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4a403c;
+}
+
+.pricingPlanFeatures {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #3f3532;
+}
+
+.pricingPlanCta {
+  width: 100%;
+  min-height: 40px;
+  margin-top: auto;
+  border: 1px solid #700d0d;
+  background: transparent;
+  color: #700d0d;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pricingPlanCta.primary {
+  background: #700d0d;
+  color: #fff;
+}
+
+.pricingPlanCta:hover {
+  background: #f7e9e8;
+}
+
+.pricingPlanCta.primary:hover {
+  background: #560003;
+}
+
+@media (max-width: 1100px) {
+  .pricingPlanGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .pricingModalBackdrop {
+    padding: 12px;
+  }
+
+  .pricingModalPanel {
+    padding: 18px;
+  }
+
+  .pricingPlanGrid {
+    grid-template-columns: 1fr;
+  }
+}

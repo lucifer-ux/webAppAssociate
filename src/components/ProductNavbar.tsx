@@ -1,5 +1,6 @@
 import "../componentStyling/productNavbar.css";
 import Button from "./Button";
+import PricingModal from "./PricingModal";
 import { useState, type MouseEvent } from "react";
 import UserProfile from "./UserProfile";
 import {
@@ -107,6 +108,7 @@ const ProductNavbar = ({
   draftingChrome,
 }: ProductNavbarProps) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const sectionLinks = [
@@ -133,7 +135,8 @@ const ProductNavbar = ({
       draftingChrome.currentRole === "editor" ? "Editor access" : "View access";
 
     return (
-      <header className="homeDashTopBar draftingChromeBar">
+      <>
+        <header className="homeDashTopBar draftingChromeBar">
         <div className="draftChromePrimaryRow">
           <div className="topBarLeft">
             <Button
@@ -190,6 +193,13 @@ const ProductNavbar = ({
                   {item.label}
                 </Button>
               ))}
+              <Button
+                type="button"
+                className="sectionRouteBtn"
+                onClick={() => setIsPricingOpen(true)}
+              >
+                Pricing
+              </Button>
             </div>
             <span className="draftRoleChip">{roleLabel}</span>
             {draftingChrome.currentRole === "viewer" && (
@@ -610,66 +620,86 @@ const ProductNavbar = ({
             />
           </div>
         </div>
-      </header>
+        </header>
+        <PricingModal
+          isOpen={isPricingOpen}
+          onClose={() => setIsPricingOpen(false)}
+          isAuthenticated
+        />
+      </>
     );
   }
 
   return (
-    <header className="homeDashTopBar">
-      <div className="topBarLeft">
-        <Button
-          className="iconBtn sidebarToggleBtn"
-          type="button"
-          aria-label={
-            isSideBarCollapsed ? "Expand sidebar" : "Collapse sidebar"
-          }
-          onClick={onToggleSidebar}
-          showImage
-          image={
-            isSideBarCollapsed ? (
-              <PanelLeftOpen size={18} />
-            ) : (
-              <PanelLeftClose size={18} />
-            )
-          }
-        />
-        <Button
-          type="button"
-          className="iconBtn topBarHomeBtn"
-          aria-label="Go to dashboard home"
-          onClick={() => navigate("/dashboard")}
-          showImage
-          image={<Home size={18} />}
-        />
-      </div>
-
-      <div className="topBarRight">
-        <div className="sectionRouteNav">
-          {sectionLinks.map((item) => (
-            <Button
-              key={item.path}
-              type="button"
-              className={`sectionRouteBtn ${pathname === item.path ? "active" : ""}`}
-              onClick={() => navigate(item.path)}
-            >
-              {item.label}
-            </Button>
-          ))}
+    <>
+      <header className="homeDashTopBar">
+        <div className="topBarLeft">
+          <Button
+            className="iconBtn sidebarToggleBtn"
+            type="button"
+            aria-label={
+              isSideBarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
+            onClick={onToggleSidebar}
+            showImage
+            image={
+              isSideBarCollapsed ? (
+                <PanelLeftOpen size={18} />
+              ) : (
+                <PanelLeftClose size={18} />
+              )
+            }
+          />
+          <Button
+            type="button"
+            className="iconBtn topBarHomeBtn"
+            aria-label="Go to dashboard home"
+            onClick={() => navigate("/dashboard")}
+            showImage
+            image={<Home size={18} />}
+          />
         </div>
-        <Button
-          className="avatarBtn"
-          type="button"
-          aria-label="Profile"
-          onClick={() => setIsProfileMenuOpen(true)}
-          showImage
-          image={<User size={16} />}
+
+        <div className="topBarRight">
+          <div className="sectionRouteNav">
+            {sectionLinks.map((item) => (
+              <Button
+                key={item.path}
+                type="button"
+                className={`sectionRouteBtn ${pathname === item.path ? "active" : ""}`}
+                onClick={() => navigate(item.path)}
+              >
+                {item.label}
+              </Button>
+            ))}
+            <Button
+              type="button"
+              className="sectionRouteBtn"
+              onClick={() => setIsPricingOpen(true)}
+            >
+              Pricing
+            </Button>
+          </div>
+          <Button
+            className="avatarBtn"
+            type="button"
+            aria-label="Profile"
+            onClick={() => setIsProfileMenuOpen(true)}
+            showImage
+            image={<User size={16} />}
+          />
+        </div>
+        <UserProfile
+          isOpen={isProfileMenuOpen}
+          onClose={() => setIsProfileMenuOpen(false)}
         />
-      </div>
-      <UserProfile
-        isOpen={isProfileMenuOpen}
-        onClose={() => setIsProfileMenuOpen(false)}
+      </header>
+      <PricingModal
+        isOpen={isPricingOpen}
+        onClose={() => setIsPricingOpen(false)}
+        isAuthenticated
       />
-    </header>
+    </>
   );
 };
 

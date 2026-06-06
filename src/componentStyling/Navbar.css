@@ -56,10 +56,21 @@
   color: black;
   transition: color 0.3s;
 }
+
+.navLinkButton {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: black;
+  font: inherit;
+  cursor: pointer;
+}
+
 .navBarList a.active {
   color: #700d0d;
 }
 
-.navBarList a:hover {
+.navBarList a:hover,
+.navLinkButton:hover {
   color: #232323;
 }

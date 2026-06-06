@@ -1,9 +1,12 @@
 import "../componentStyling/Navbar.css";
 import Button from "../components/Button.tsx";
+import PricingModal from "./PricingModal";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const Navbar = () => {
   const navigate = useNavigate();
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
   const handleClick = () => {
     navigate("/login");
   };
@@ -22,7 +25,13 @@ const Navbar = () => {
             <a href="#"> Solutions</a>
           </li>
           <li>
-            <a href="#"> Pricing</a>
+            <button
+              type="button"
+              className="navLinkButton"
+              onClick={() => setIsPricingOpen(true)}
+            >
+              Pricing
+            </button>
           </li>
         </ul>
         <div className="rightContainerNavbar">
@@ -39,6 +48,10 @@ const Navbar = () => {
           />
         </div>
       </nav>
+      <PricingModal
+        isOpen={isPricingOpen}
+        onClose={() => setIsPricingOpen(false)}
+      />
     </>
   );
 };

@@ -43,9 +43,9 @@ const HomeDashboard = () => {
   const { matters, setActiveMatterId, isSavedMattersLoading } =
     useMatterStore();
   const userTimeZone = getUserTimeZone();
-  const [nameDraft, setNameDraft] = useState(
-    user?.displayName || user?.fullName || "",
-  );
+  const currentDisplayName =
+    user?.displayName || user?.fullName || user?.email?.split("@")[0] || "";
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() =>
     new Date().toLocaleTimeString("en-IN", {
       hour: "2-digit",
@@ -54,15 +54,10 @@ const HomeDashboard = () => {
       timeZoneName: "short",
     }),
   );
-  const [greeting, setGreeting] = useState(() =>
-    getGreeting(new Date(), userTimeZone),
+  const greeting = useMemo(
+    () => getGreeting(new Date(), userTimeZone),
+    [currentTime, userTimeZone],
   );
-
-  useEffect(() => {
-    setNameDraft(
-      user?.displayName || user?.fullName || user?.email?.split("@")[0] || "",
-    );
-  }, [user?.displayName, user?.email, user?.fullName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,7 +120,6 @@ const HomeDashboard = () => {
           timeZoneName: "short",
         }),
       );
-    setGreeting(getGreeting(new Date(), userTimeZone));
 
     tick();
     const timer = window.setInterval(tick, 60_000);
@@ -160,6 +154,7 @@ const HomeDashboard = () => {
   }, []);
 
   const activeMatterCards = useMemo(() => matters.slice(0, 4), [matters]);
+  const displayNameValue = nameDraft ?? currentDisplayName;
 
   const handleQuickResearchSubmit = (query: string) => {
     const trimmedQuery = query.trim();
@@ -173,13 +168,18 @@ const HomeDashboard = () => {
   };
 
   const saveDisplayName = async () => {
-    const trimmed = nameDraft.trim();
-    if (!trimmed || trimmed === user?.displayName || trimmed === user?.fullName)
+    const trimmed = displayNameValue.trim();
+    if (
+      !trimmed ||
+      trimmed === user?.displayName ||
+      trimmed === user?.fullName
+    )
       return;
     try {
       await updateDisplayName(trimmed);
+      setNameDraft(null);
     } catch {
-      setNameDraft(user?.displayName || user?.fullName || "");
+      setNameDraft(null);
     }
   };
 
@@ -219,7 +219,7 @@ const HomeDashboard = () => {
                 {greeting},{" "}
                 <input
                   className="welcomeNameInput"
-                  value={nameDraft}
+                  value={displayNameValue}
                   onChange={(event) => setNameDraft(event.target.value)}
                   onBlur={() => void saveDisplayName()}
                   onKeyDown={(event) => {
