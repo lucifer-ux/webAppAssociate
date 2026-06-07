@@ -1,0 +1,240 @@
+.adminPage {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, #f7f4ee 0%, #f1ece4 100%);
+  color: #221f1b;
+  font-family: "Inter", sans-serif;
+}
+
+.adminShell {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 36px 0 56px;
+}
+
+.adminHero,
+.adminPanelHeader,
+.adminSessionCard,
+.adminLoginPanel,
+.adminGrid {
+  display: flex;
+}
+
+.adminHero {
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #d7cdc0;
+}
+
+.adminEyebrow {
+  margin: 0 0 8px;
+  color: #7d1111;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.adminHero h1,
+.adminPanel h2,
+.adminLoginPanel h2 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-weight: 500;
+  color: #241b18;
+}
+
+.adminHero h1 {
+  font-size: 42px;
+  line-height: 1.05;
+}
+
+.adminPanel h2,
+.adminLoginPanel h2 {
+  font-size: 28px;
+}
+
+.adminSubtitle {
+  max-width: 640px;
+  margin: 10px 0 0;
+  color: #645b55;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.adminSessionCard,
+.adminLoginPanel,
+.adminPanel {
+  border: 1px solid #d8cdc0;
+  background: #fffaf4;
+}
+
+.adminSessionCard {
+  min-width: 240px;
+  padding: 14px 16px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adminSessionCard span {
+  color: #7d1111;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.adminSessionCard strong {
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.adminStatus {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #d9b9b4;
+  background: #fff3ef;
+  color: #700d0d;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.adminLoginPanel {
+  width: min(520px, 100%);
+  margin-top: 24px;
+  padding: 24px;
+  flex-direction: column;
+}
+
+.adminLoginForm,
+.adminPanel {
+  display: grid;
+}
+
+.adminLoginForm {
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.adminGrid {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.adminPanel {
+  gap: 14px;
+  padding: 18px;
+}
+
+.adminPanelWide {
+  grid-column: 1 / -1;
+}
+
+.adminPanelHeader {
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.adminPanel label,
+.adminLoginForm label {
+  color: #312a26;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.adminPanel input,
+.adminPanel textarea,
+.adminLoginForm input {
+  width: 100%;
+  border: 1px solid #d7ccc1;
+  background: #fff;
+  color: #221f1b;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 11px;
+}
+
+.adminPanel textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.adminCodePreview,
+.adminMonoCell {
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.adminCodePreview {
+  border: 1px solid #d7ccc1;
+  background: #fff;
+  padding: 14px;
+  color: #5d100e;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.adminPrimaryButton,
+.adminGhostButton {
+  min-height: 40px;
+}
+
+.adminPrimaryButton {
+  border: 1px solid #760c0c;
+  background: #760c0c;
+  color: #fff;
+}
+
+.adminGhostButton {
+  border: 1px solid #bcae9f;
+  background: transparent;
+  color: #5a1d1a;
+}
+
+.adminTableWrap {
+  overflow: auto;
+  border: 1px solid #ded3c7;
+  background: #fff;
+}
+
+.adminTable {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.adminTable th,
+.adminTable td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #e7ddd2;
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+
+.adminTable th {
+  background: #f4eee5;
+  color: #574d45;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 900px) {
+  .adminHero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .adminGrid {
+    grid-template-columns: 1fr;
+  }
+}

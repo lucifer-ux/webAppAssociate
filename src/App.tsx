@@ -7,6 +7,7 @@ import HomeDashboard from "./components/HomeDashboard.tsx";
 import ActiveResearchPage from "./components/ActiveResearchPage.tsx";
 import DraftingPage from "./components/DraftingPage.tsx";
 import MatterPage from "./components/MatterPage.tsx";
+import AdministrationPage from "./components/AdministrationPage.tsx";
 import Home from "./Home.tsx";
 import { MatterStoreProvider } from "./context/MatterStoreContext.tsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.tsx";
@@ -42,6 +43,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<PublicLoginRoute />} />
             <Route path="/Login" element={<PublicLoginRoute />} />
+            <Route path="/administration" element={<AdministrationPage />} />
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<ProtectedRoute><HomeDashboard /></ProtectedRoute>} />
             <Route

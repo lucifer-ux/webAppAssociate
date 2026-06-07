@@ -113,8 +113,8 @@ const LoginSignUpPage = () => {
                   autoComplete="one-time-code"
                   value={inviteCode}
                   onChange={(event) => setInviteCode(event.target.value)}
-                  placeholder="22-character code"
-                  maxLength={22}
+                  placeholder="50-character code"
+                  maxLength={50}
                   required
                 />
               </div>
@@ -190,8 +190,8 @@ const LoginSignUpPage = () => {
                   autoComplete="one-time-code"
                   value={inviteCode}
                   onChange={(event) => setInviteCode(event.target.value)}
-                  placeholder="22-character code"
-                  maxLength={22}
+                  placeholder="50-character code"
+                  maxLength={50}
                   required
                 />
               </div>
