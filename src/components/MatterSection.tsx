@@ -44,7 +44,7 @@ import {
   refreshDraftRecommendations,
   startDraftRecommendation,
 } from "./draftingApi";
-import { buildApiUrl } from "../lib/apiBase";
+import { buildApiUrl, contextCoreDomain } from "../lib/apiBase";
 import {
   createMockMatterScenario,
   deleteMockMatterResult,
@@ -1027,6 +1027,9 @@ const MatterSection = ({
           headers: {
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            contextcore_domain: contextCoreDomain,
+          }),
         },
       );
 
@@ -2694,6 +2697,7 @@ const MatterSection = ({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            contextcore_domain: contextCoreDomain,
             query,
             top_k: 8,
           }),
@@ -2842,6 +2846,9 @@ const MatterSection = ({
         "pass_through_contextcore",
         "true",
       );
+      if (contextCoreDomain) {
+        formData.append("contextcore_domain", contextCoreDomain);
+      }
 
       const response = await fetch(buildApiUrl("/api/matters/upload"), {
         method: "POST",
@@ -2945,6 +2952,9 @@ const MatterSection = ({
         "pass_through_contextcore",
         "true",
       );
+      if (contextCoreDomain) {
+        formData.append("contextcore_domain", contextCoreDomain);
+      }
 
       const response = await fetch(
         buildApiUrl(

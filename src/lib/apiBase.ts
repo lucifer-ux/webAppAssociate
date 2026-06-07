@@ -3,8 +3,14 @@ const normalizeBaseUrl = (value: string) =>
     .trim()
     .replace(/\/+$/, "");
 
+const frontendEnv = import.meta.env as Record<string, string | undefined>;
+
 export const apiBaseUrl = normalizeBaseUrl(
-  (import.meta.env.VITE_API_BASE_URL as string) || "",
+  frontendEnv.VITE_API_BASE_URL || "",
+);
+
+export const contextCoreDomain = normalizeBaseUrl(
+  frontendEnv.CONTEXTCORE_DOMAIN || "",
 );
 
 export const buildApiUrl = (path: string) => {
