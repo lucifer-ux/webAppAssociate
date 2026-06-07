@@ -1,0 +1,592 @@
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&family=Work+Sans:wght@400;500;600;700&display=swap");
+
+:root {
+  --landing-paper: #f7f3ec;
+  --landing-paper-deep: #f2ede4;
+  --landing-line: #ddd3c5;
+  --landing-ink: #251f1c;
+  --landing-copy: #5f5750;
+  --landing-accent: #8f2f29;
+  --landing-topline: #233420;
+}
+
+body {
+  background: var(--landing-paper);
+  color: var(--landing-ink);
+}
+
+.landingRoot {
+  min-height: 100vh;
+  background: var(--landing-paper);
+  font-family: "Work Sans", sans-serif;
+  color: var(--landing-ink);
+}
+
+.landingTopStrip {
+  height: 4px;
+  background: var(--landing-topline);
+}
+
+.landingNav,
+.landingNavLinks,
+.landingProblemHeader,
+.landingLogoTrack,
+.landingSecurityBadges {
+  display: flex;
+  align-items: center;
+}
+
+.landingNav {
+  width: min(1660px, calc(100% - 72px));
+  margin: 0 auto;
+  justify-content: space-between;
+  padding: 14px 0 0;
+}
+
+.landingWordmark {
+  border: 0;
+  background: transparent;
+  color: var(--landing-ink);
+  font-family: "Newsreader", serif;
+  font-size: 56px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.landingNavLinks {
+  gap: 38px;
+}
+
+.landingNavLinks a,
+.landingNavLinks button {
+  border: 0;
+  background: transparent;
+  color: #49433e;
+  text-decoration: none;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+
+.landingSignupButton,
+.landingCtaButton {
+  border: 1px solid #8d302b;
+  background: #8f312c;
+  color: #fff;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.landingSignupButton {
+  min-width: 122px;
+  min-height: 48px;
+  padding: 0 18px;
+}
+
+.landingMain {
+  width: min(1660px, calc(100% - 72px));
+  margin: 0 auto;
+}
+
+.landingHero {
+  min-height: 920px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 0 120px;
+}
+
+.landingHero h1,
+.landingSection h2,
+.landingProblemCard h3,
+.landingActCopy h3,
+.landingClosingCard h2 {
+  font-family: "Newsreader", serif;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.landingHero h1 {
+  max-width: 1020px;
+  font-size: clamp(72px, 6vw, 112px);
+  line-height: 0.98;
+}
+
+.landingHero p {
+  margin-top: 28px;
+  max-width: 1100px;
+  color: #5f5046;
+  font-family: "Newsreader", serif;
+  font-size: clamp(34px, 2.9vw, 54px);
+  line-height: 1.08;
+}
+
+.landingCtaButton {
+  min-width: 202px;
+  min-height: 52px;
+  margin-top: 34px;
+  padding: 0 22px;
+}
+
+.landingHero span {
+  margin-top: 34px;
+  color: #33445a;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.landingSection {
+  padding: 0 0 48px;
+}
+
+.landingEyebrow {
+  margin: 0 0 14px;
+  color: #92352e;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.landingProblemSection h2,
+.landingLogoPanel h2,
+.landingHowSection h2,
+.landingSecurityCard h2,
+.landingClosingCard h2 {
+  font-size: clamp(54px, 4.6vw, 86px);
+  line-height: 0.98;
+}
+
+.landingSectionLead,
+.landingHowLead,
+.landingSecurityCard p,
+.landingClosingCard p {
+  margin-top: 18px;
+  color: #58627a;
+  font-size: 19px;
+  line-height: 1.6;
+}
+
+.landingProblemGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 36px;
+}
+
+.landingProblemCard,
+.landingLogoPanel,
+.landingSecurityCard,
+.landingClosingCard {
+  border: 1px solid var(--landing-line);
+  background: #f5f0e8;
+}
+
+.landingProblemCard {
+  min-height: 338px;
+  padding: 54px 44px 40px;
+}
+
+.landingProblemHeader {
+  gap: 16px;
+  color: var(--landing-accent);
+}
+
+.landingProblemCard h3 {
+  color: var(--landing-ink);
+  font-size: clamp(32px, 2.7vw, 62px);
+  line-height: 1.02;
+}
+
+.landingProblemCard p {
+  margin-top: 36px;
+  color: #5d667b;
+  font-size: 20px;
+  line-height: 1.85;
+}
+
+.landingLogoBand {
+  padding-top: 22px;
+}
+
+.landingLogoPanel {
+  padding: 58px 30px 46px;
+}
+
+.landingLogoViewport {
+  position: relative;
+  overflow: hidden;
+  margin-top: 34px;
+}
+
+.landingLogoTrack {
+  width: max-content;
+  gap: 18px;
+  animation: landing-logo-marquee 28s linear infinite;
+  will-change: transform;
+}
+
+.landingLogoViewport:hover .landingLogoTrack,
+.landingLogoTrack:hover {
+  animation-play-state: paused;
+}
+
+.landingLogoPill {
+  flex: 0 0 auto;
+  width: 126px;
+  height: 126px;
+  border: 1px solid #e1d7ca;
+  border-radius: 999px;
+  background: #fffdf9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  text-align: center;
+}
+
+.landingLogoPill img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 999px;
+}
+
+@keyframes landing-logo-marquee {
+  from {
+    transform: translateX(-50%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+.landingHowSection {
+  padding-top: 82px;
+}
+
+.landingHowSection h2 {
+  font-size: clamp(56px, 4.8vw, 86px);
+}
+
+.landingHowLead {
+  margin-top: 12px;
+  padding-bottom: 42px;
+  border-bottom: 1px solid var(--landing-line);
+  font-size: 28px;
+  line-height: 1.3;
+}
+
+.landingActs {
+  display: grid;
+}
+
+.landingAct {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.92fr);
+  gap: 26px;
+  align-items: center;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--landing-line);
+}
+
+.landingAct.reverse {
+  grid-template-columns: minmax(420px, 0.92fr) minmax(0, 1fr);
+}
+
+.landingAct.reverse .landingActCopy {
+  order: 2;
+}
+
+.landingAct.reverse .landingActMediaWrap {
+  order: 1;
+}
+
+.landingActCopy {
+  max-width: 600px;
+}
+
+.landingActCopy h3 {
+  font-size: 62px;
+  line-height: 1.02;
+}
+
+.landingActCopy strong {
+  display: block;
+  margin-top: 16px;
+  color: #2d2b29;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.landingActCopy p {
+  margin-top: 22px;
+  color: #655f57;
+  font-size: 18px;
+  line-height: 1.72;
+}
+
+.landingActMediaWrap {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.landingAct.reverse .landingActMediaWrap {
+  justify-content: flex-start;
+}
+
+.landingActMedia {
+  width: min(100%, 606px);
+  border: 1px solid #d6cbbf;
+  background: #eee7db;
+}
+
+.landingActMedia.video {
+  aspect-ratio: 606 / 290;
+}
+
+.landingActMedia.image {
+  aspect-ratio: 606 / 360;
+}
+
+.landingActMediaFrame {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(180deg, rgba(64, 57, 50, 0.08), rgba(64, 57, 50, 0.02)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.65), transparent 36%);
+  color: #685d53;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  padding: 20px;
+}
+
+.landingActVideo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #e9e2d7;
+}
+
+.landingSecurityCard,
+.landingClosingCard {
+  max-width: 1240px;
+  margin: 34px auto 0;
+  padding: 44px 40px;
+  text-align: center;
+}
+
+.landingSecurityCard svg {
+  color: var(--landing-accent);
+}
+
+.landingSecurityCard h2 {
+  font-size: clamp(46px, 4vw, 72px);
+  margin-top: 12px;
+}
+
+.landingSecurityCard p {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.landingSecurityBadges {
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.landingSecurityBadges span {
+  border: 1px solid #d8cdbf;
+  background: #fff9f1;
+  color: #7a6d5f;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.landingClosingCard h2 {
+  font-size: clamp(44px, 3.8vw, 70px);
+}
+
+.landingClosingCard p {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.landingClosingCard .landingCtaButton {
+  margin-top: 22px;
+}
+
+.landingFooter {
+  width: min(1660px, calc(100% - 72px));
+  margin: 4px auto 0;
+  padding: 24px 0 44px;
+  border-top: 1px solid var(--landing-line);
+  text-align: center;
+  color: #766e66;
+}
+
+.landingFooter strong {
+  display: block;
+  color: #2c2825;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.landingFooter p,
+.landingFooter span {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+@media (max-width: 1120px) {
+  .landingNav,
+  .landingMain,
+  .landingFooter {
+    width: min(100%, calc(100% - 40px));
+  }
+
+  .landingHero {
+    min-height: 760px;
+  }
+
+  .landingProblemGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .landingAct,
+  .landingAct.reverse {
+    grid-template-columns: 1fr;
+  }
+
+  .landingAct.reverse .landingActCopy,
+  .landingAct.reverse .landingActMediaWrap {
+    order: initial;
+  }
+
+  .landingActMediaWrap,
+  .landingAct.reverse .landingActMediaWrap {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .landingNav {
+    width: calc(100% - 28px);
+    flex-wrap: wrap;
+    gap: 14px;
+    padding-top: 10px;
+  }
+
+  .landingWordmark {
+    font-size: 42px;
+  }
+
+  .landingNavLinks {
+    width: 100%;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .landingSignupButton {
+    min-width: 112px;
+    min-height: 44px;
+    margin-left: auto;
+  }
+
+  .landingMain,
+  .landingFooter {
+    width: calc(100% - 28px);
+  }
+
+  .landingHero {
+    min-height: 620px;
+    padding-bottom: 70px;
+  }
+
+  .landingHero h1 {
+    font-size: 58px;
+    line-height: 1.02;
+  }
+
+  .landingHero p {
+    font-size: 30px;
+  }
+
+  .landingProblemSection h2,
+  .landingLogoPanel h2,
+  .landingHowSection h2,
+  .landingSecurityCard h2,
+  .landingClosingCard h2,
+  .landingActCopy h3 {
+    font-size: 44px;
+  }
+
+  .landingSectionLead,
+  .landingHowLead,
+  .landingProblemCard p,
+  .landingActCopy p {
+    font-size: 17px;
+  }
+
+  .landingHowLead {
+    font-size: 22px;
+  }
+
+  .landingProblemCard,
+  .landingLogoPanel,
+  .landingSecurityCard,
+  .landingClosingCard {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .landingProblemCard {
+    min-height: 0;
+    padding-top: 28px;
+    padding-bottom: 28px;
+  }
+
+  .landingLogoTrack {
+    gap: 14px;
+  }
+
+  .landingLogoPill {
+    width: 108px;
+    height: 108px;
+  }
+
+  .landingAct {
+    gap: 18px;
+    padding: 24px 0;
+  }
+
+  .landingActMedia {
+    width: 100%;
+  }
+}
