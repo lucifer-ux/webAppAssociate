@@ -1,23 +1,48 @@
 import "../componentStyling/LoginSignUpPage.css";
 import Button from "./Button";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const LoginSignUpPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { loginWithGoogle, loginWithPassword, signupWithPassword } = useAuth();
+  const {
+    loginWithGoogle,
+    loginWithPassword,
+    pendingInviteEmail,
+    refreshPendingInvite,
+    signupWithPassword,
+    verifyInviteCode,
+  } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isInviteStep, setIsInviteStep] = useState(false);
   const query = new URLSearchParams(location.search);
   const authError = query.get("googleAuth") === "error"
     ? query.get("reason") || "Google sign in failed."
     : "";
+  const inviteStatus = query.get("invite") || "";
+  const inviteMessage =
+    inviteStatus === "required" || inviteStatus === "missing"
+      ? "This email is not invited to Associate."
+      : inviteStatus === "expired"
+        ? "Your invite has expired."
+        : inviteStatus === "revoked"
+          ? "This invite is no longer active."
+          : "";
+
+  useEffect(() => {
+    if (inviteStatus === "pending") {
+      setIsInviteStep(true);
+      void refreshPendingInvite();
+    }
+  }, [inviteStatus, refreshPendingInvite]);
 
   const submitPasswordForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -25,13 +50,31 @@ const LoginSignUpPage = () => {
     setIsSubmitting(true);
     try {
       if (mode === "signup") {
-        await signupWithPassword(email, password, displayName);
+        await signupWithPassword(email, password, displayName, inviteCode);
       } else {
         await loginWithPassword(email, password);
       }
       navigate("/dashboard", { replace: true });
     } catch (error) {
+      const inviteError = error as Error & { requiresInvite?: boolean };
+      if (inviteError.requiresInvite) {
+        setIsInviteStep(true);
+      }
       setFormError(error instanceof Error ? error.message : "Authentication failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitInviteForm = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    setIsSubmitting(true);
+    try {
+      await verifyInviteCode(inviteCode);
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Invite verification failed.");
     } finally {
       setIsSubmitting(false);
     }
@@ -40,6 +83,7 @@ const LoginSignUpPage = () => {
   const toggleMode = () => {
     setMode((current) => (current === "login" ? "signup" : "login"));
     setFormError("");
+    setInviteCode("");
   };
 
   return (
@@ -49,10 +93,52 @@ const LoginSignUpPage = () => {
           <img src="/logo.jpeg" alt="Associate logo" className="loginLogo" />
           <p className="loginSubtitle">Secure access to the legal workspace.</p>
 
-          {(authError || formError) && (
-            <p className="loginError">{(formError || authError).replace(/_/g, " ")}</p>
+          {(authError || formError || inviteMessage) && (
+            <p className="loginError">
+              {(formError || authError || inviteMessage).replace(/_/g, " ")}
+            </p>
           )}
 
+          {isInviteStep ? (
+            <form className="loginForm" onSubmit={submitInviteForm}>
+              <div className="invitePrompt">
+                <span>Invite required</span>
+                <strong>{pendingInviteEmail || email || "Verified email"}</strong>
+              </div>
+
+              <div className="formField">
+                <label htmlFor="inviteCode">Invite code</label>
+                <input
+                  id="inviteCode"
+                  autoComplete="one-time-code"
+                  value={inviteCode}
+                  onChange={(event) => setInviteCode(event.target.value)}
+                  placeholder="22-character code"
+                  maxLength={22}
+                  required
+                />
+              </div>
+
+              <Button className="signInButton" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Verifying..." : "Unlock workspace"}
+              </Button>
+
+              <p className="loginModeSwitch">
+                Need to use another email?
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsInviteStep(false);
+                    setFormError("");
+                    setInviteCode("");
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </p>
+            </form>
+          ) : (
+          <>
           <form className="loginForm" onSubmit={submitPasswordForm}>
             {mode === "signup" ? (
               <div className="formField">
@@ -96,6 +182,21 @@ const LoginSignUpPage = () => {
               />
             </div>
 
+            {mode === "signup" ? (
+              <div className="formField">
+                <label htmlFor="signupInviteCode">Invite code</label>
+                <input
+                  id="signupInviteCode"
+                  autoComplete="one-time-code"
+                  value={inviteCode}
+                  onChange={(event) => setInviteCode(event.target.value)}
+                  placeholder="22-character code"
+                  maxLength={22}
+                  required
+                />
+              </div>
+            ) : null}
+
             <Button className="signInButton" type="submit" disabled={isSubmitting}>
               {isSubmitting
                 ? "Please wait..."
@@ -135,6 +236,8 @@ const LoginSignUpPage = () => {
             </svg>
             <span>Continue with Google</span>
           </Button>
+          </>
+          )}
 
           <p className="loginFooter">© 2026 Associate. All Restricted Access.</p>
         </div>

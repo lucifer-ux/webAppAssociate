@@ -17,20 +17,28 @@ export type AuthUser = {
 };
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+type InviteAuthError = Error & {
+  requiresInvite?: boolean;
+  email?: string;
+};
 
 type AuthContextValue = {
   user: AuthUser | null;
   status: AuthStatus;
   isAuthenticated: boolean;
+  pendingInviteEmail: string;
   loginWithGoogle: () => void;
   loginWithPassword: (email: string, password: string) => Promise<AuthUser>;
   signupWithPassword: (
     email: string,
     password: string,
     displayName?: string,
+    inviteCode?: string,
   ) => Promise<AuthUser>;
+  verifyInviteCode: (code: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  refreshPendingInvite: () => Promise<void>;
   updateDisplayName: (displayName: string) => Promise<AuthUser>;
 };
 
@@ -50,6 +58,26 @@ const readUserFromPayload = (payload: { user?: AuthUser | null }) => {
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [status, setStatus] = useState<AuthStatus>("loading");
+  const [pendingInviteEmail, setPendingInviteEmail] = useState("");
+
+  const refreshPendingInvite = useCallback(async () => {
+    try {
+      const response = await fetch(buildApiUrl("/api/auth/invite/pending"), {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        setPendingInviteEmail("");
+        return;
+      }
+      const payload = (await response.json()) as {
+        success?: boolean;
+        email?: string;
+      };
+      setPendingInviteEmail(payload.success && payload.email ? String(payload.email) : "");
+    } catch {
+      setPendingInviteEmail("");
+    }
+  }, []);
 
   const refreshUser = useCallback(async () => {
     try {
@@ -59,17 +87,24 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       if (!response.ok) {
         setUser(null);
         setStatus("unauthenticated");
+        await refreshPendingInvite();
         return;
       }
       const payload = (await response.json()) as { user?: AuthUser | null };
       const nextUser = readUserFromPayload(payload);
       setUser(nextUser);
       setStatus(nextUser ? "authenticated" : "unauthenticated");
+      if (nextUser) {
+        setPendingInviteEmail("");
+      } else {
+        await refreshPendingInvite();
+      }
     } catch {
       setUser(null);
       setStatus("unauthenticated");
+      await refreshPendingInvite();
     }
-  }, []);
+  }, [refreshPendingInvite]);
 
   useEffect(() => {
     void refreshUser();
@@ -85,11 +120,13 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       email,
       password,
       displayName,
+      inviteCode,
     }: {
       endpoint: string;
       email: string;
       password: string;
       displayName?: string;
+      inviteCode?: string;
     }) => {
       const response = await fetch(buildApiUrl(endpoint), {
         method: "POST",
@@ -101,15 +138,24 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
           email,
           password,
           displayName,
+          inviteCode,
         }),
       });
       const payload = (await response.json()) as {
         success?: boolean;
         error?: string;
+        requires_invite?: boolean;
+        email?: string;
         user?: AuthUser | null;
       };
       if (!response.ok || payload.success === false) {
-        throw new Error(payload.error || "Authentication failed.");
+        if (payload.requires_invite) {
+          setPendingInviteEmail(String(payload.email || email));
+        }
+        const authError = new Error(payload.error || "Authentication failed.") as InviteAuthError;
+        authError.requiresInvite = Boolean(payload.requires_invite);
+        authError.email = payload.email ? String(payload.email) : email;
+        throw authError;
       }
       const nextUser = readUserFromPayload(payload);
       if (!nextUser) {
@@ -117,6 +163,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       }
       setUser(nextUser);
       setStatus("authenticated");
+      setPendingInviteEmail("");
       return nextUser;
     },
     [],
@@ -133,15 +180,43 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   );
 
   const signupWithPassword = useCallback(
-    (email: string, password: string, displayName = "") =>
+    (email: string, password: string, displayName = "", inviteCode = "") =>
       submitPasswordAuth({
         endpoint: "/api/auth/signup",
         email,
         password,
         displayName,
+        inviteCode,
       }),
     [submitPasswordAuth],
   );
+
+  const verifyInviteCode = useCallback(async (code: string) => {
+    const response = await fetch(buildApiUrl("/api/auth/invite/verify"), {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ code }),
+    });
+    const payload = (await response.json()) as {
+      success?: boolean;
+      error?: string;
+      user?: AuthUser | null;
+    };
+    if (!response.ok || payload.success === false) {
+      throw new Error(payload.error || "Invite verification failed.");
+    }
+    const nextUser = readUserFromPayload(payload);
+    if (!nextUser) {
+      throw new Error("Authenticated profile was not returned.");
+    }
+    setUser(nextUser);
+    setStatus("authenticated");
+    setPendingInviteEmail("");
+    return nextUser;
+  }, []);
 
   const logout = useCallback(async () => {
     await fetch(buildApiUrl("/api/auth/logout"), {
@@ -149,6 +224,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       credentials: "include",
     }).catch(() => undefined);
     setUser(null);
+    setPendingInviteEmail("");
     setStatus("unauthenticated");
   }, []);
 
@@ -175,6 +251,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     }
     setUser(nextUser);
     setStatus("authenticated");
+    setPendingInviteEmail("");
     return nextUser;
   }, []);
 
@@ -183,22 +260,28 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       user,
       status,
       isAuthenticated: status === "authenticated" && Boolean(user),
+      pendingInviteEmail,
       loginWithGoogle,
       loginWithPassword,
       signupWithPassword,
+      verifyInviteCode,
       logout,
       refreshUser,
+      refreshPendingInvite,
       updateDisplayName,
     }),
     [
       loginWithGoogle,
       loginWithPassword,
       logout,
+      pendingInviteEmail,
       refreshUser,
+      refreshPendingInvite,
       signupWithPassword,
       status,
       updateDisplayName,
       user,
+      verifyInviteCode,
     ],
   );
 

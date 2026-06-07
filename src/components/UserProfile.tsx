@@ -1,5 +1,6 @@
 import "../componentStyling/UserProfile.css";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import Button from "./Button";
 import { useAuth } from "../context/AuthContext";
 
@@ -21,7 +22,7 @@ const UserProfile = ({ isOpen, onClose }: UserProfileProps) => {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="userProfileOverlay"
       role="dialog"
@@ -82,7 +83,8 @@ const UserProfile = ({ isOpen, onClose }: UserProfileProps) => {
           Sign out
         </Button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import Button from "./Button";
 import "../componentStyling/PricingModal.css";
@@ -117,7 +118,7 @@ const PricingModal = ({
     navigate(plan.action === "dashboard" ? "/dashboard" : "/login");
   };
 
-  return (
+  return createPortal(
     <div
       className="pricingModalBackdrop"
       role="dialog"
@@ -174,7 +175,8 @@ const PricingModal = ({
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

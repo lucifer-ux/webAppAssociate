@@ -177,6 +177,33 @@
   line-height: 1.4;
 }
 
+.invitePrompt {
+  margin-top: 22px;
+  padding: 12px;
+  border: 1px solid #d5cbc2;
+  background: #fffaf5;
+  color: #2b2a28;
+}
+
+.invitePrompt span,
+.invitePrompt strong {
+  display: block;
+  font-family: "Inter", sans-serif;
+}
+
+.invitePrompt span {
+  color: #760c0c;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.invitePrompt strong {
+  margin-top: 6px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .googleIcon {
   width: 18px;
   height: 18px;
