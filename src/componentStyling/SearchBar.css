@@ -2,6 +2,48 @@
   align-items: center;
   min-height: 56px;
   border-radius: 28px;
+  box-shadow:
+    0 10px 32px rgba(43, 26, 22, 0.16),
+    0 2px 8px rgba(43, 26, 22, 0.08);
+}
+
+.chatModeSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #ddd2c6;
+  border-radius: 999px;
+  background: #f6efe7;
+  flex: 0 0 auto;
+}
+
+.chatModeOption {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #6b6057;
+  padding: 8px 11px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.chatModeOption.is-active {
+  background: #ffffff;
+  color: #5c3128;
+  box-shadow: 0 1px 4px rgba(54, 34, 23, 0.1);
+}
+
+.chatModeOption:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .chatDock textarea {
@@ -65,4 +107,16 @@
 
 .chatSendBtn:not(:disabled):hover {
   background: var(--brand-soft);
+}
+
+@media (max-width: 720px) {
+  .chatModeSwitch {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .chatModeOption {
+    flex: 1 1 0;
+    text-align: center;
+  }
 }

@@ -37,8 +37,11 @@ import {
 } from "../context/MatterStoreContext";
 import Loader from "./Loader";
 import UploadPopUp, { type UploadPopupValidationItem } from "./UploadPopUp";
-import SearchBar from "./SearchBar";
-import ChatBoxMatterSection from "./ChatBoxMatterSection";
+import SearchBar, { type SearchBarMode } from "./SearchBar";
+import ChatBoxMatterSection, {
+  type ChatSource,
+  type MatterChatMessage,
+} from "./ChatBoxMatterSection";
 import {
   getDraftRecommendations,
   refreshDraftRecommendations,
@@ -512,12 +515,17 @@ const MatterSection = ({
   const [isGroundAnalysisExpanded, setIsGroundAnalysisExpanded] =
     useState(false);
   const [isMatterChatOpen, setIsMatterChatOpen] = useState(false);
+  const [matterChatMode, setMatterChatMode] = useState<SearchBarMode>("normal");
+  const [matterChatMessages, setMatterChatMessages] = useState<
+    MatterChatMessage[]
+  >([]);
+  const [isMatterChatSubmitting, setIsMatterChatSubmitting] = useState(false);
+  const [matterChatError, setMatterChatError] = useState("");
   const [matterSearchResults, setMatterSearchResults] = useState<
     ContextCoreSearchResult[]
   >([]);
   const [matterSearchError, setMatterSearchError] = useState("");
   const [matterSearchInfo, setMatterSearchInfo] = useState("");
-  const [isMatterSearching, setIsMatterSearching] = useState(false);
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(
     null,
   );
@@ -727,6 +735,8 @@ const MatterSection = ({
           .slice(0, 12)
       : [];
   const groundAnalysis = activeMatter?.groundAnalysis || null;
+  const createMatterChatMessageId = () =>
+    `matter_chat_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
   const groundAnalysisStatus = useMemo(() => {
     const statuses = [
       activeMatter?.intelligence_statuses?.next_step_planner,
@@ -1801,6 +1811,12 @@ const MatterSection = ({
   }, [activeMatter?.id, isBriefQueryRequired]);
 
   useEffect(() => {
+    setMatterChatMessages([]);
+    setMatterChatError("");
+    setMatterChatMode("normal");
+  }, [activeMatter?.id]);
+
+  useEffect(() => {
     const shouldPollIntelligence =
       activeMatter?.intelligence_statuses?.brief_generation === "processing" ||
       activeMatter?.intelligence_statuses?.brief_verification ===
@@ -2658,83 +2674,79 @@ const MatterSection = ({
     throw new MatterPollingTimeoutError(jobId);
   };
 
-  const handleMatterContextSearch = async (query: string) => {
+  const handleMatterChatSubmit = async (
+    query: string,
+    mode: SearchBarMode,
+  ) => {
     if (!activeMatter?.id || isActiveMockMatter) {
-      setMatterSearchResults([]);
-      setMatterSearchError("");
-      setMatterSearchInfo(
-        "ContextCore retrieval is only available for real uploaded matters.",
+      setMatterChatError(
+        "Matter chat is only available for real uploaded matters.",
       );
+      setIsMatterChatOpen(true);
       return;
     }
 
-    if (activeMatterContextCore?.status !== "ready") {
-      setMatterSearchResults([]);
-      setMatterSearchError("");
-      setMatterSearchInfo(
-        activeMatterContextCore?.status === "not_requested"
-          ? "This matter was not passed through ContextCore."
-          : activeMatterContextCore?.status === "stale"
-            ? "This matter has files that were added without ContextCore re-indexing."
-            : activeMatterContextCore?.error ||
-              "ContextCore retrieval is unavailable for this matter.",
-      );
-      return;
-    }
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return;
 
-    setIsMatterSearching(true);
-    setMatterSearchError("");
-    setMatterSearchInfo("");
+    const nextUserMessage: MatterChatMessage = {
+      id: createMatterChatMessageId(),
+      role: "user",
+      text: trimmedQuery,
+    };
+    const priorMessages = [...matterChatMessages];
+
+    setMatterChatMode(mode);
+    setMatterChatError("");
+    setIsMatterChatOpen(true);
+    setIsMatterChatSubmitting(true);
+    setMatterChatMessages((prev) => [...prev, nextUserMessage]);
 
     try {
       const response = await fetch(
-        buildApiUrl(
-          `/api/matters/${encodeURIComponent(activeMatter.id)}/contextcore/search`,
-        ),
+        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/chat`),
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            message: trimmedQuery,
+            depth: mode,
+            history: priorMessages.map((message) => ({
+              role: message.role,
+              content: message.text,
+            })),
             contextcore_domain: contextCoreDomain,
-            query,
-            top_k: 8,
           }),
         },
       );
       const payload = (await response.json()) as {
         success?: boolean;
-        results?: ContextCoreSearchResult[];
+        answer?: string;
+        sources?: ChatSource[];
         error?: string;
-        disabled_reason?: string;
       };
 
-      if (!response.ok || !payload?.success) {
-        setMatterSearchResults([]);
-        setMatterSearchError(payload?.error || "");
-        setMatterSearchInfo(
-          payload?.disabled_reason || "ContextCore search failed for this matter.",
-        );
-        return;
+      if (!response.ok || !payload?.success || !payload.answer) {
+        throw new Error(payload?.error || "Matter chat failed.");
       }
 
-      const nextResults = Array.isArray(payload.results) ? payload.results : [];
-      setMatterSearchResults(nextResults);
-      setMatterSearchError("");
-      setMatterSearchInfo(
-        nextResults.length
-          ? ""
-          : "No matching paragraphs were found in this matter's ContextCore index.",
-      );
+      setMatterChatMessages((prev) => [
+        ...prev,
+        {
+          id: createMatterChatMessageId(),
+          role: "assistant",
+          text: payload.answer || "",
+          sources: Array.isArray(payload.sources) ? payload.sources : [],
+        },
+      ]);
     } catch (error) {
-      setMatterSearchResults([]);
-      setMatterSearchError(
-        error instanceof Error ? error.message : "ContextCore search failed.",
+      setMatterChatError(
+        error instanceof Error ? error.message : "Matter chat failed.",
       );
-      setMatterSearchInfo("ContextCore search failed for this matter.");
     } finally {
-      setIsMatterSearching(false);
+      setIsMatterChatSubmitting(false);
     }
   };
 
@@ -5196,9 +5208,11 @@ const MatterSection = ({
         activeSection="matterLibrary"
         allowTextOnly
         enableSubmit
-        isSubmitting={isMatterSearching}
-        onSubmitQuery={handleMatterContextSearch}
-        placeholderOverride="Search this matter through ContextCore..."
+        isSubmitting={isMatterChatSubmitting}
+        onSubmitQuery={handleMatterChatSubmit}
+        mode={matterChatMode}
+        onModeChange={setMatterChatMode}
+        placeholderOverride="Ask about this matter or switch to Deep Research..."
       />
 
       <div className="matterContextCorePanel">
@@ -5260,9 +5274,15 @@ const MatterSection = ({
         clarificationQuestions={isBriefQueryRequired ? briefQuestions : []}
         isSubmittingClarification={isSubmittingBriefAnswers}
         clarificationError={briefAnswerError}
+        messages={matterChatMessages}
+        chatMode={matterChatMode}
+        isSubmittingChat={isMatterChatSubmitting}
+        chatError={matterChatError}
         onClose={() => setIsMatterChatOpen(false)}
         onSubmitClarification={(answer) => handleSubmitBriefAnswers(answer)}
         onSkipClarification={() => handleSubmitBriefAnswers("__skip__")}
+        onSubmitChat={handleMatterChatSubmit}
+        onModeChange={setMatterChatMode}
       />
 
       {isPeopleDialogOpen && (

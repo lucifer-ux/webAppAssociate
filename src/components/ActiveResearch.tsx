@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import Button from "./Button";
 import { ArrowUpRight, Trash2 } from "lucide-react";
 import "../componentStyling/ActiveResearch.css";
-import SearchBar from "./SearchBar";
+import SearchBar, { type SearchBarMode } from "./SearchBar";
+import ChatBoxMatterSection, {
+  type ChatSource,
+  type MatterChatMessage,
+} from "./ChatBoxMatterSection";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { RecentResearchItem } from "./ActiveResearchPage";
 import { buildApiUrl } from "../lib/apiBase";
@@ -171,6 +175,7 @@ type ResearchRecord = RecentResearchItem & {
   finalPayload: DeepResearchResponse | null;
   selectedLaneId: string | null;
   clarificationAnswer: string | null;
+  chatMessages?: MatterChatMessage[];
 };
 
 export type SavedResearchApiItem = {
@@ -270,16 +275,21 @@ const ActiveResearch = ({
   const [isSavingResearch, setIsSavingResearch] = useState(false);
   const [isDeletingResearch, setIsDeletingResearch] = useState(false);
   const [runningStepIndex, setRunningStepIndex] = useState(0);
+  const [chatMode, setChatMode] = useState<SearchBarMode>("normal");
+  const [isResearchChatOpen, setIsResearchChatOpen] = useState(false);
 
   const thinkingMessages =
     loadingPhase === "deep" ? THINKING_MESSAGES.deep : THINKING_MESSAGES.intake;
 
   useEffect(() => {
     if (!isLoading) return;
-    const timer = window.setInterval(() => {
+    let timer = 0;
+    const rotate = () => {
       setRunningStepIndex((prev) => (prev + 1) % thinkingMessages.length);
-    }, 1200);
-    return () => window.clearInterval(timer);
+      timer = window.setTimeout(rotate, 2000 + Math.random() * 2000);
+    };
+    timer = window.setTimeout(rotate, 2000 + Math.random() * 2000);
+    return () => window.clearTimeout(timer);
   }, [isLoading, thinkingMessages.length]);
 
   useEffect(() => {
@@ -315,6 +325,7 @@ const ActiveResearch = ({
           finalPayload: item.finalPayload || null,
           selectedLaneId: item.selectedLaneId || null,
           clarificationAnswer: item.clarificationAnswer || null,
+          chatMessages: [],
         }));
         setResearchRuns(nextRuns);
         const nextRecent = nextRuns.map((item) => ({
@@ -355,6 +366,9 @@ const ActiveResearch = ({
       prev.map((item) => (item.id === id ? updater(item) : item)),
     );
   };
+
+  const createChatMessageId = () =>
+    `research_chat_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 
   const removeResearchRecord = (id: string) => {
     setResearchRuns((prev) => {
@@ -480,6 +494,7 @@ const ActiveResearch = ({
           finalPayload: null,
           selectedLaneId: nextSelectedLaneId,
           clarificationAnswer: clarificationAnswer || null,
+          chatMessages: [],
         };
 
         setResearchRuns((prev) => [item, ...prev]);
@@ -498,8 +513,110 @@ const ActiveResearch = ({
     }
   }
 
-  const handleSubmitQuery = async (query: string) => {
-    await runIntake(query);
+  const handleNormalChat = async (query: string) => {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return;
+
+    let targetId = activeResearch?.id || null;
+    if (!targetId) {
+      const record: ResearchRecord = {
+        id: crypto.randomUUID(),
+        query: trimmedQuery,
+        createdAt: new Date().toISOString(),
+        intakePayload: null,
+        finalPayload: null,
+        selectedLaneId: null,
+        clarificationAnswer: null,
+        chatMessages: [],
+      };
+      targetId = record.id;
+      setResearchRuns((prev) => [record, ...prev]);
+      onRecentResearchesChange([
+        { id: record.id, query: record.query, createdAt: record.createdAt },
+        ...recentResearches,
+      ]);
+      onActiveResearchChange(record.id);
+    }
+
+    const userMessage = {
+      id: createChatMessageId(),
+      role: "user" as const,
+      text: trimmedQuery,
+    };
+    const baseRecord =
+      researchRuns.find((item) => item.id === targetId) || activeResearch || null;
+    const existingMessages = Array.isArray(baseRecord?.chatMessages)
+      ? baseRecord.chatMessages
+      : [];
+
+    setError("");
+    setIsResearchChatOpen(true);
+    setIsLoading(true);
+    setLoadingPhase(null);
+    updateResearchRecord(targetId, (item) => ({
+      ...item,
+      query: item.query || trimmedQuery,
+      chatMessages: [...(item.chatMessages || []), userMessage],
+    }));
+
+    try {
+      const response = await fetch(buildApiUrl("/api/agent/research-chat"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: trimmedQuery,
+          history: existingMessages.map((message) => ({
+            role: message.role,
+            content: message.text,
+          })),
+          researchContext: {
+            query: baseRecord?.query || trimmedQuery,
+            intakePayload: baseRecord?.intakePayload || null,
+            finalPayload: baseRecord?.finalPayload || null,
+            selectedLaneId: baseRecord?.selectedLaneId || null,
+          },
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        success?: boolean;
+        answer?: string;
+        sources?: ChatSource[];
+        error?: string;
+      };
+
+      if (!response.ok || !payload?.success || !payload.answer) {
+        throw new Error(payload?.error || "Normal chat failed.");
+      }
+
+      updateResearchRecord(targetId, (item) => ({
+        ...item,
+        chatMessages: [
+          ...(item.chatMessages || []),
+          {
+            id: createChatMessageId(),
+            role: "assistant",
+            text: payload.answer || "",
+            sources: Array.isArray(payload.sources) ? payload.sources : [],
+          },
+        ],
+      }));
+    } catch (chatError) {
+      setError(
+        chatError instanceof Error ? chatError.message : "Normal chat failed.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmitQuery = async (query: string, mode: SearchBarMode) => {
+    setChatMode(mode);
+    if (mode === "deep") {
+      await runIntake(query);
+      return;
+    }
+    await handleNormalChat(query);
   };
 
   const handleSelectLane = (laneId: string) => {
@@ -603,6 +720,7 @@ const ActiveResearch = ({
   const agent1 = intake?.agent_1_output;
   const agent2 = intake?.agent_2_output;
   const finalResponse = activeResearch?.finalPayload?.final_response || null;
+  const researchChatMessages = activeResearch?.chatMessages || [];
   const visibleDiscoveryCases = (agent1?.search_results.case_law || []).filter(
     (item) => !isIndianKanoonUrl(item.source_url),
   );
@@ -668,8 +786,8 @@ const ActiveResearch = ({
           {!isLoading && !error && !activeResearch && (
             <div className="emptyWorkspaceCard chatOnlyEmpty">
               <p>
-                Ask a legal question to run discovery, choose a lane, and
-                continue into full research.
+                Ask a legal question, or switch to Deep Research to run
+                discovery, choose a lane, and continue into full research.
               </p>
             </div>
           )}
@@ -678,6 +796,22 @@ const ActiveResearch = ({
 
           {!isLoading && !error && activeResearch && (
             <article className="researchResultCard">
+              {researchChatMessages.length ? (
+                <section className="chatMessage llmMessage">
+                  <h4>Conversation</h4>
+                  <div className="researchConversation">
+                    {researchChatMessages.map((message) => (
+                      <article
+                        className={`researchConversationMessage is-${message.role}`}
+                        key={message.id}
+                      >
+                        <p>{message.text}</p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
               <section className="chatMessage userMessage">
                 <h4>User</h4>
                 <p>{activeResearch.query}</p>
@@ -897,7 +1031,25 @@ const ActiveResearch = ({
         activeSection={activeSection}
         onSubmitQuery={handleSubmitQuery}
         isSubmitting={isLoading}
-        placeholderOverride="Ask legal query to run discovery and route selection..."
+        mode={chatMode}
+        onModeChange={setChatMode}
+        placeholderOverride="Ask a legal question or switch to Deep Research..."
+      />
+      <ChatBoxMatterSection
+        open={isResearchChatOpen}
+        matterTitle={workspaceTitle}
+        messages={researchChatMessages}
+        chatMode="normal"
+        isSubmittingChat={isLoading && chatMode === "normal"}
+        chatError={chatMode === "normal" ? error : ""}
+        onClose={() => setIsResearchChatOpen(false)}
+        onSubmitChat={(message) => handleNormalChat(message)}
+        onModeChange={(mode) => {
+          setChatMode(mode);
+          if (mode === "deep") {
+            setIsResearchChatOpen(false);
+          }
+        }}
       />
     </>
   );

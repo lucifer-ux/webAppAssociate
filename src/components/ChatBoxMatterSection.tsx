@@ -1,14 +1,31 @@
 import "../componentStyling/ChatBoxMatterSection.css";
-import { useMemo, useState } from "react";
-import { Bot, Sparkles, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowUpRight, Bot, Sparkles, X } from "lucide-react";
 import Button from "./Button";
-import SearchBar from "./SearchBar";
+import SearchBar, { type SearchBarMode } from "./SearchBar";
 
-type MatterChatMessage = {
+export type MatterChatMessage = {
   id: string;
   role: "assistant" | "user";
   text: string;
+  sources?: ChatSource[];
 };
+
+export type ChatSource = {
+  type: "agent_brief" | "contextcore" | "exa" | string;
+  title: string;
+  detail?: string;
+  url?: string;
+  chunkId?: string;
+};
+
+const THINKING_MESSAGES = [
+  "Reading the question against the matter record",
+  "Checking the agent brief and verified facts",
+  "Reviewing relevant law and inference",
+  "Looking for source-backed support",
+  "Preparing a clear lawyer-facing answer",
+];
 
 type ChatBoxMatterSectionProps = {
   open: boolean;
@@ -16,9 +33,18 @@ type ChatBoxMatterSectionProps = {
   clarificationQuestions?: string[];
   isSubmittingClarification?: boolean;
   clarificationError?: string;
+  messages?: MatterChatMessage[];
+  chatMode?: SearchBarMode;
+  isSubmittingChat?: boolean;
+  chatError?: string;
   onClose: () => void;
   onSubmitClarification?: (answer: string) => Promise<void> | void;
   onSkipClarification?: () => Promise<void> | void;
+  onSubmitChat?: (
+    message: string,
+    mode: SearchBarMode,
+  ) => Promise<void> | void;
+  onModeChange?: (mode: SearchBarMode) => void;
 };
 
 const SUGGESTED_PROMPTS = [
@@ -27,9 +53,6 @@ const SUGGESTED_PROMPTS = [
   "What should I review first?",
   "List limitation and deadline issues.",
 ];
-
-const createMessageId = () =>
-  `matter_chat_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 
 const ASSISTANT_SKIP_MESSAGE =
   "Sure, I will think about the brief with the data that I have.";
@@ -42,14 +65,37 @@ const ChatBoxMatterSection = ({
   clarificationQuestions = [],
   isSubmittingClarification = false,
   clarificationError = "",
+  messages = [],
+  chatMode = "normal",
+  isSubmittingChat = false,
+  chatError = "",
   onClose,
   onSubmitClarification,
   onSkipClarification,
+  onSubmitChat,
+  onModeChange,
 }: ChatBoxMatterSectionProps) => {
-  const [messages, setMessages] = useState<MatterChatMessage[]>([]);
   const [typingMessage, setTypingMessage] = useState("");
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
+  const [thinkingMessage, setThinkingMessage] = useState(THINKING_MESSAGES[0]);
   const hasClarificationQuestions = clarificationQuestions.length > 0;
+
+  useEffect(() => {
+    if (!isSubmittingChat) {
+      setThinkingMessage(THINKING_MESSAGES[0]);
+      return;
+    }
+
+    let timeoutId = 0;
+    const rotate = () => {
+      setThinkingMessage(
+        THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)],
+      );
+      timeoutId = window.setTimeout(rotate, 2000 + Math.random() * 2000);
+    };
+    timeoutId = window.setTimeout(rotate, 2000 + Math.random() * 2000);
+    return () => window.clearTimeout(timeoutId);
+  }, [isSubmittingChat]);
 
   const openingMessage = useMemo(() => {
     if (hasClarificationQuestions) {
@@ -59,7 +105,7 @@ const ChatBoxMatterSection = ({
       ].join("\n");
     }
 
-    return "Ask a matter-specific question or pick a suggested prompt. This chat is local for now and will be connected to the matter LLM next.";
+    return "Ask a matter-specific question or switch to Deep Research for a heavier pass through the record.";
   }, [clarificationQuestions, hasClarificationQuestions]);
 
   const visibleMessages = useMemo<MatterChatMessage[]>(
@@ -80,24 +126,12 @@ const ChatBoxMatterSection = ({
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return;
 
-    setMessages((prev) => [
-      ...prev,
-      { id: createMessageId(), role: "user", text: trimmedQuery },
-    ]);
-
     if (hasClarificationQuestions && onSubmitClarification) {
       await onSubmitClarification(trimmedQuery);
       return;
     }
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: createMessageId(),
-        role: "assistant",
-        text: "Matter chat is ready. LLM responses are not connected yet, so this message is a placeholder.",
-      },
-    ]);
+    await onSubmitChat?.(trimmedQuery, chatMode);
   };
 
   const handleSuggestionClick = (prompt: string) => {
@@ -165,9 +199,45 @@ const ChatBoxMatterSection = ({
                   <Bot size={15} />
                 </span>
               ) : null}
-              <p>{message.text}</p>
+              <div className="matterChatMessageBody">
+                <p>{message.text}</p>
+                {message.sources?.length ? (
+                  <div className="matterChatSources">
+                    <span>Sources</span>
+                    {message.sources.map((source, index) =>
+                      source.url ? (
+                        <a
+                          key={`${source.type}-${source.title}-${index}`}
+                          href={source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <strong>{source.title}</strong>
+                          <small>{source.detail || source.type}</small>
+                          <ArrowUpRight size={13} />
+                        </a>
+                      ) : (
+                        <div key={`${source.type}-${source.title}-${index}`}>
+                          <strong>{source.title}</strong>
+                          <small>{source.detail || source.type}</small>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </article>
           ))}
+          {isSubmittingChat ? (
+            <article className="matterChatThinking" aria-live="polite">
+              <span className="matterChatThinkingMark">a.</span>
+              <div>
+                <strong>Associate is thinking</strong>
+                <p>{thinkingMessage}</p>
+              </div>
+              <span className="matterChatThinkingPulse" aria-hidden="true" />
+            </article>
+          ) : null}
           {typingMessage ? (
             <article className="matterChatMessage is-assistant isTyping">
               <span className="matterChatAvatar">
@@ -204,8 +274,8 @@ const ChatBoxMatterSection = ({
           </div>
         ) : null}
 
-        {clarificationError ? (
-          <p className="matterChatError">{clarificationError}</p>
+        {clarificationError || chatError ? (
+          <p className="matterChatError">{clarificationError || chatError}</p>
         ) : null}
 
         {hasClarificationQuestions ? (
@@ -225,8 +295,13 @@ const ChatBoxMatterSection = ({
             activeSection="matterLibrary"
             allowTextOnly
             enableSubmit
-            isSubmitting={isSubmittingClarification || isAssistantTyping}
+            isSubmitting={
+              isSubmittingClarification || isAssistantTyping || isSubmittingChat
+            }
             onSubmitQuery={handleSubmit}
+            mode={chatMode}
+            onModeChange={onModeChange}
+            showModeSelector={!hasClarificationQuestions}
             placeholderOverride={
               hasClarificationQuestions
                 ? "Answer the clarification questions..."

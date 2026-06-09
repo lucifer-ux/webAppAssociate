@@ -4,14 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { ArrowUp } from "lucide-react";
 
+export type SearchBarMode = "normal" | "deep";
+
 type SearchBarProps = {
   activeSection: "matterLibrary" | "activeResearch";
-  onSubmitQuery?: (query: string) => Promise<void> | void;
+  onSubmitQuery?: (query: string, mode: SearchBarMode) => Promise<void> | void;
   isSubmitting?: boolean;
   placeholderOverride?: string;
   allowTextOnly?: boolean;
   enableSubmit?: boolean;
   onActivate?: () => void;
+  mode?: SearchBarMode;
+  onModeChange?: (mode: SearchBarMode) => void;
+  showModeSelector?: boolean;
 };
 
 const SearchBar = ({
@@ -22,6 +27,9 @@ const SearchBar = ({
   allowTextOnly = false,
   enableSubmit,
   onActivate,
+  mode = "normal",
+  onModeChange,
+  showModeSelector = true,
 }: SearchBarProps) => {
   const [query, setQuery] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -53,7 +61,7 @@ const SearchBar = ({
       return;
     }
 
-    await onSubmitQuery?.(trimmedQuery);
+    await onSubmitQuery?.(trimmedQuery, mode);
     setQuery("");
   };
 
@@ -73,6 +81,26 @@ const SearchBar = ({
     <div className="chatDockWrap">
       <form className="chatDock" onSubmit={handleSubmit}>
         <div className="chatSparkle">a.</div>
+        {showModeSelector ? (
+          <div className="chatModeSwitch" role="tablist" aria-label="AI mode">
+            <button
+              type="button"
+              className={`chatModeOption ${mode === "normal" ? "is-active" : ""}`}
+              onClick={() => onModeChange?.("normal")}
+              aria-pressed={mode === "normal"}
+            >
+              Normal Chat
+            </button>
+            <button
+              type="button"
+              className={`chatModeOption ${mode === "deep" ? "is-active" : ""}`}
+              onClick={() => onModeChange?.("deep")}
+              aria-pressed={mode === "deep"}
+            >
+              Deep Research
+            </button>
+          </div>
+        ) : null}
         <textarea
           ref={textareaRef}
           value={query}
@@ -85,8 +113,8 @@ const SearchBar = ({
             placeholderOverride
               ? placeholderOverride
               : isActiveResearchMode
-                ? "Search case law, statutes, filings, or legal questions..."
-                : "AI Search is only available in Active Research"
+                ? "Ask a legal question or start deep research..."
+                : "Ask about this matter..."
           }
           aria-label="AI search"
           rows={1}

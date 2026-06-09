@@ -196,6 +196,40 @@
   gap: 14px;
 }
 
+.researchConversation {
+  display: grid;
+  gap: 10px;
+}
+
+.researchConversationMessage {
+  max-width: 88%;
+}
+
+.researchConversationMessage p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.researchConversationMessage.is-user {
+  justify-self: end;
+}
+
+.researchConversationMessage.is-user p {
+  background: #6f3f35;
+  color: #fffaf4;
+  padding: 12px 14px;
+  border-radius: 18px 18px 6px 18px;
+}
+
+.researchConversationMessage.is-assistant p {
+  background: #fff8ea;
+  border: 1px solid #ead7bd;
+  color: #2f241f;
+  padding: 12px 14px;
+  border-radius: 18px 18px 18px 6px;
+}
+
 .researchSaveRow {
   margin-top: 12px;
   display: flex;
