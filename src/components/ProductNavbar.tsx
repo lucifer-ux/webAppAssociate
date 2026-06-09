@@ -94,6 +94,8 @@ type DraftingChromeProps = {
   onOutdent: () => void;
   onIndent: () => void;
   onManualSave: () => void;
+  onGenerateFormat?: () => void;
+  isGeneratingFormat?: boolean;
 };
 
 type ProductNavbarProps = {
@@ -202,6 +204,18 @@ const ProductNavbar = ({
               </Button>
             </div>
             <span className="draftRoleChip">{roleLabel}</span>
+            {draftingChrome.onGenerateFormat ? (
+              <Button
+                type="button"
+                className="draftGenerateFormatBtn"
+                onClick={draftingChrome.onGenerateFormat}
+                disabled={draftingChrome.isGeneratingFormat}
+              >
+                {draftingChrome.isGeneratingFormat
+                  ? "Generating format..."
+                  : "Generate format through AI"}
+              </Button>
+            ) : null}
             {draftingChrome.currentRole === "viewer" && (
               <Button
                 type="button"

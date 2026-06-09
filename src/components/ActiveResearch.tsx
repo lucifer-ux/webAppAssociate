@@ -196,6 +196,7 @@ type ActiveResearchProps = {
   onActiveResearchChange: (id: string | null) => void;
   initialResearches?: SavedResearchApiItem[];
   isStartingFreshResearch?: boolean;
+  conversationOpenRequest?: number;
 };
 
 const THINKING_MESSAGES = {
@@ -251,6 +252,7 @@ const ActiveResearch = ({
   onActiveResearchChange,
   initialResearches = [],
   isStartingFreshResearch = false,
+  conversationOpenRequest = 0,
 }: ActiveResearchProps) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -277,6 +279,12 @@ const ActiveResearch = ({
   const [runningStepIndex, setRunningStepIndex] = useState(0);
   const [chatMode, setChatMode] = useState<SearchBarMode>("normal");
   const [isResearchChatOpen, setIsResearchChatOpen] = useState(false);
+
+  useEffect(() => {
+    if (conversationOpenRequest > 0) {
+      setIsResearchChatOpen(true);
+    }
+  }, [conversationOpenRequest]);
 
   const thinkingMessages =
     loadingPhase === "deep" ? THINKING_MESSAGES.deep : THINKING_MESSAGES.intake;

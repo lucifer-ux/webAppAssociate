@@ -1,7 +1,7 @@
 import "../componentStyling/HomeDashboardStyling.css";
 import Button from "./Button";
 import { useMemo, useState } from "react";
-import { BookOpen, FilePlus2, ShieldCheck } from "lucide-react";
+import { BookOpen, MessagesSquare, ShieldCheck } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import SideBar from "./SideBar";
 import ActiveResearch from "./ActiveResearch";
@@ -55,6 +55,7 @@ const ActiveResearchPage = () => {
   const [isStartingFreshResearch, setIsStartingFreshResearch] = useState(
     () => Boolean(navState?.startFreshResearch),
   );
+  const [conversationOpenRequest, setConversationOpenRequest] = useState(0);
 
   const handleSelectResearch = (id: string | null) => {
     setIsStartingFreshResearch(false);
@@ -87,9 +88,15 @@ const ActiveResearchPage = () => {
           <BookOpen size={18} />
           <span>Files</span>
         </Button>
-        <Button className="toolRailItem" type="button">
-          <FilePlus2 size={18} />
-          <span>Playbook</span>
+        <Button
+          className="toolRailItem"
+          type="button"
+          onClick={() =>
+            setConversationOpenRequest((request) => request + 1)
+          }
+        >
+          <MessagesSquare size={18} />
+          <span>Conversation</span>
         </Button>
         <Button className="toolRailItem" type="button">
           <ShieldCheck size={18} />
@@ -108,6 +115,7 @@ const ActiveResearchPage = () => {
           onActiveResearchChange={handleSelectResearch}
           initialResearches={(navState?.preloadedResearches || []) as SavedResearchApiItem[]}
           isStartingFreshResearch={isStartingFreshResearch}
+          conversationOpenRequest={conversationOpenRequest}
         />
       </main>
     </div>

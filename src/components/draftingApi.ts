@@ -348,6 +348,34 @@ export const startDraftRecommendation = async (input: {
   return payload;
 };
 
+export type DraftFormatProposal = {
+  title: string;
+  contentJson: JSONContent;
+  contextPatch: Partial<DraftContext>;
+  sources: Array<{ title: string; url: string; highlights?: string[] }>;
+  meta?: Record<string, unknown>;
+};
+
+export const generateDraftFormat = async (input: {
+  matterId: string;
+  draftKey: string;
+}) => {
+  const response = await fetch(
+    buildApiUrl(
+      `/api/matters/${encodeURIComponent(input.matterId)}/draft-recommendations/${encodeURIComponent(input.draftKey)}/generate-format`,
+    ),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+    },
+  );
+  const payload = await readJson<{
+    success: true;
+    proposal: DraftFormatProposal;
+  }>(response);
+  return payload.proposal;
+};
+
 export const getNextStepTemplate = async (input: {
   matterId: string;
   groundId: string;

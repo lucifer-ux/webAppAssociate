@@ -1,38 +1,19 @@
-import { FilePlus2, Scale } from "lucide-react";
+import { MessagesSquare } from "lucide-react";
 import Button from "./Button";
 
-type RightPanelType = "obligations" | "playbook" | null;
-
 type RightSidebarProps = {
-  activeRightPanel: RightPanelType;
-  onTogglePanel: (panel: Exclude<RightPanelType, null>) => void;
-  pendingRedlineCount: number;
+  onOpenConversation: () => void;
 };
 
-const RightSidebar = ({
-  activeRightPanel,
-  onTogglePanel,
-  pendingRedlineCount,
-}: RightSidebarProps) => (
+const RightSidebar = ({ onOpenConversation }: RightSidebarProps) => (
   <nav className="rightToolsRail">
     <Button
-      className={`toolRailItem ${activeRightPanel === "playbook" ? "active" : ""}`}
+      className="toolRailItem"
       type="button"
-      onClick={() => onTogglePanel("playbook")}
+      onClick={onOpenConversation}
     >
-      <FilePlus2 size={18} />
-      <span>Playbook</span>
-      {pendingRedlineCount > 0 ? (
-        <em className="toolRailBadge">{pendingRedlineCount}</em>
-      ) : null}
-    </Button>
-    <Button
-      className={`toolRailItem ${activeRightPanel === "obligations" ? "active" : ""}`}
-      type="button"
-      onClick={() => onTogglePanel("obligations")}
-    >
-      <Scale size={18} />
-      <span>Obligations</span>
+      <MessagesSquare size={18} />
+      <span>Conversation</span>
     </Button>
   </nav>
 );

@@ -8,20 +8,11 @@ import Loader from "./Loader";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 import { useMatterStore } from "../context/MatterStoreContext";
 
-type RightPanel = "obligations" | "playbook" | null;
-
 const MatterPage = () => {
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
-  const { activeMatter, isSavedMattersLoading, getPendingRedlineCount } =
-    useMatterStore();
-  const [activeRightPanel, setActiveRightPanel] = useState<RightPanel>(null);
-  const pendingRedlineCount = activeMatter
-    ? getPendingRedlineCount(activeMatter.id)
-    : 0;
-  const handleTogglePanel = (panel: Exclude<RightPanel, null>) => {
-    setActiveRightPanel((prev: RightPanel) => (prev === panel ? null : panel));
-  };
+  const { activeMatter, isSavedMattersLoading } = useMatterStore();
+  const [conversationOpenRequest, setConversationOpenRequest] = useState(0);
 
   if (isSavedMattersLoading && !activeMatter) {
     return (
@@ -50,22 +41,15 @@ const MatterPage = () => {
       <SideBar isCollapsed={isSideBarCollapsed} activeSection="matterLibrary" />
 
       <RightSidebar
-        activeRightPanel={activeRightPanel}
-        onTogglePanel={handleTogglePanel}
-        pendingRedlineCount={pendingRedlineCount}
+        onOpenConversation={() =>
+          setConversationOpenRequest((request) => request + 1)
+        }
       />
 
       <main
-        className={`homeDashMain ${isSideBarCollapsed ? "sidebarCollapsed" : ""} ${
-          activeRightPanel ? "withRightPanel" : ""
-        }`}
+        className={`homeDashMain ${isSideBarCollapsed ? "sidebarCollapsed" : ""}`}
       >
-        <MatterSection
-          isObligationPanelOpen={activeRightPanel === "obligations"}
-          isPlaybookPanelOpen={activeRightPanel === "playbook"}
-          onCloseObligationPanel={() => setActiveRightPanel(null)}
-          onClosePlaybookPanel={() => setActiveRightPanel(null)}
-        />
+        <MatterSection conversationOpenRequest={conversationOpenRequest} />
       </main>
     </div>
   );

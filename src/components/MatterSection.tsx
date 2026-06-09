@@ -47,7 +47,7 @@ import {
   refreshDraftRecommendations,
   startDraftRecommendation,
 } from "./draftingApi";
-import { buildApiUrl, contextCoreDomain } from "../lib/apiBase";
+import { buildApiUrl } from "../lib/apiBase";
 import {
   createMockMatterScenario,
   deleteMockMatterResult,
@@ -408,6 +408,7 @@ type MatterSectionProps = {
   isPlaybookPanelOpen?: boolean;
   onCloseObligationPanel?: () => void;
   onClosePlaybookPanel?: () => void;
+  conversationOpenRequest?: number;
 };
 
 type ClauseRedlinePosition = "aggressive" | "market" | "fallback";
@@ -440,6 +441,7 @@ const MatterSection = ({
   isPlaybookPanelOpen = false,
   onCloseObligationPanel,
   onClosePlaybookPanel,
+  conversationOpenRequest = 0,
 }: MatterSectionProps) => {
   const navigate = useNavigate();
   const {
@@ -521,6 +523,12 @@ const MatterSection = ({
   >([]);
   const [isMatterChatSubmitting, setIsMatterChatSubmitting] = useState(false);
   const [matterChatError, setMatterChatError] = useState("");
+
+  useEffect(() => {
+    if (conversationOpenRequest > 0) {
+      setIsMatterChatOpen(true);
+    }
+  }, [conversationOpenRequest]);
   const [matterSearchResults, setMatterSearchResults] = useState<
     ContextCoreSearchResult[]
   >([]);
@@ -1038,7 +1046,6 @@ const MatterSection = ({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            contextcore_domain: contextCoreDomain,
           }),
         },
       );
@@ -2717,7 +2724,6 @@ const MatterSection = ({
               role: message.role,
               content: message.text,
             })),
-            contextcore_domain: contextCoreDomain,
           }),
         },
       );
@@ -2858,9 +2864,6 @@ const MatterSection = ({
         "pass_through_contextcore",
         "true",
       );
-      if (contextCoreDomain) {
-        formData.append("contextcore_domain", contextCoreDomain);
-      }
 
       const response = await fetch(buildApiUrl("/api/matters/upload"), {
         method: "POST",
@@ -2964,9 +2967,6 @@ const MatterSection = ({
         "pass_through_contextcore",
         "true",
       );
-      if (contextCoreDomain) {
-        formData.append("contextcore_domain", contextCoreDomain);
-      }
 
       const response = await fetch(
         buildApiUrl(

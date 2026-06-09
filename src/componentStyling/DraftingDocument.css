@@ -10,6 +10,67 @@
     linear-gradient(180deg, #f7f3ec 0%, #f3efe8 100%);
 }
 
+.draftFormatProposal {
+  position: fixed;
+  z-index: 40;
+  top: 132px;
+  right: 24px;
+  width: min(420px, calc(100vw - 48px));
+  padding: 20px;
+  border: 1px solid #d7cbc0;
+  background: #fffdf8;
+  box-shadow: 0 18px 50px rgba(43, 26, 22, 0.18);
+}
+
+.draftFormatProposal h2 {
+  margin: 5px 0 8px;
+  font-family: "Newsreader", Georgia, serif;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.draftFormatProposal p {
+  margin: 0;
+  color: #685b52;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.draftFormatSources {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.draftFormatSources a {
+  overflow: hidden;
+  color: #842d28;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draftFormatProposalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.draftFormatProposalActions button {
+  padding: 9px 14px;
+  border: 1px solid #cdbfb4;
+  background: #fffdf8;
+  color: #342924;
+  font-weight: 700;
+}
+
+.draftFormatProposalActions button.isPrimary {
+  border-color: #842d28;
+  background: #842d28;
+  color: #fff;
+}
+
 .draftingTemplateMain {
   padding-top: 64px;
   padding-right: 80px;

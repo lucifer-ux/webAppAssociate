@@ -15,6 +15,7 @@ import {
   deriveDraftContextFromMatter,
   getDraftReview,
   getDraft,
+  generateDraftFormat,
   hashDraftContent,
   patchDraft,
   saveDraft,
@@ -22,6 +23,7 @@ import {
   type AccessRole,
   type DraftComment,
   type DraftDetail,
+  type DraftFormatProposal,
   type PendingAnnotation,
   type ParagraphStyle,
   type ZoomLevel,
@@ -141,6 +143,9 @@ const DraftingPage = () => {
   const [currentContentJson, setCurrentContentJson] = useState(activeDraft?.contentJson || {});
   const [loadError, setLoadError] = useState("");
   const [reviewStatus, setReviewStatus] = useState<"idle" | "running" | "ready" | "error">("idle");
+  const [formatProposal, setFormatProposal] = useState<DraftFormatProposal | null>(null);
+  const [isGeneratingFormat, setIsGeneratingFormat] = useState(false);
+  const [formatGenerationError, setFormatGenerationError] = useState("");
 
   useEffect(() => {
     if (!matterIdFromQuery) return;
@@ -555,6 +560,52 @@ const DraftingPage = () => {
           : "Saved to Associate Drive";
 
   const canRenderEditor = Boolean(activeDraft);
+  const recommendation = activeDraft?.context?.recommendation;
+  const canGenerateFormat = Boolean(
+    activeDraft?.matterId && recommendation?.draft_key,
+  );
+
+  const handleGenerateFormat = async () => {
+    if (!activeDraft?.matterId || !recommendation?.draft_key || isGeneratingFormat) return;
+    setIsGeneratingFormat(true);
+    setFormatGenerationError("");
+    setFormatProposal(null);
+    try {
+      setFormatProposal(
+        await generateDraftFormat({
+          matterId: activeDraft.matterId,
+          draftKey: recommendation.draft_key,
+        }),
+      );
+    } catch (error) {
+      setFormatGenerationError(
+        error instanceof Error ? error.message : "Failed to generate draft format.",
+      );
+    } finally {
+      setIsGeneratingFormat(false);
+    }
+  };
+
+  const acceptFormatProposal = () => {
+    if (!activeDraft || !formatProposal) return;
+    const nextContext = {
+      ...activeDraft.context,
+      ...formatProposal.contextPatch,
+      boilerplateMeta: formatProposal.meta || null,
+    };
+    setActiveDraft({
+      ...activeDraft,
+      title: formatProposal.title || activeDraft.title,
+      contentJson: formatProposal.contentJson,
+      context: nextContext,
+    });
+    setDocumentTitle(formatProposal.title || activeDraft.title);
+    setCurrentContentJson(formatProposal.contentJson);
+    currentHashRef.current = hashDraftContent(formatProposal.contentJson);
+    contextDirtyRef.current = true;
+    setSaveStatus("dirty");
+    setFormatProposal(null);
+  };
 
   return (
     <div className="homeDashPage">
@@ -623,6 +674,10 @@ const DraftingPage = () => {
                 onOutdent: () => applyCommand("outdent"),
                 onIndent: () => applyCommand("indent"),
                 onManualSave: () => void saveCurrentDraft("manual"),
+                onGenerateFormat: canGenerateFormat
+                  ? () => void handleGenerateFormat()
+                  : undefined,
+                isGeneratingFormat,
               }
             : undefined
         }
@@ -633,6 +688,40 @@ const DraftingPage = () => {
           canRenderEditor ? "draftingMain" : "draftingTemplateMain"
         } draftingNoAppSidebar`}
       >
+        {(formatProposal || formatGenerationError) && (
+          <aside className="draftFormatProposal">
+            <div>
+              <p className="draftTemplateEyebrow">AI Format Proposal</p>
+              <h2>{formatProposal?.title || "Format generation failed"}</h2>
+              <p>
+                {formatGenerationError ||
+                  "Exa references were reviewed and an editable document format is ready. Accepting replaces the current blank draft."}
+              </p>
+              {formatProposal?.sources?.length ? (
+                <div className="draftFormatSources">
+                  {formatProposal.sources.slice(0, 4).map((source) => (
+                    <a key={source.url} href={source.url} target="_blank" rel="noreferrer">
+                      {source.title || source.url}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div className="draftFormatProposalActions">
+              <button type="button" onClick={() => {
+                setFormatProposal(null);
+                setFormatGenerationError("");
+              }}>
+                Reject
+              </button>
+              {formatProposal ? (
+                <button type="button" className="isPrimary" onClick={acceptFormatProposal}>
+                  Accept format
+                </button>
+              ) : null}
+            </div>
+          </aside>
+        )}
         {activeDraft ? (
           <DraftingDocument
             ref={editorRef}

@@ -312,6 +312,23 @@
   cursor: pointer;
 }
 
+.draftGenerateFormatBtn {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid #842d28;
+  background: #962f29;
+  color: #fffaf4;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.draftGenerateFormatBtn:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
 .draftRequestEditBtn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
