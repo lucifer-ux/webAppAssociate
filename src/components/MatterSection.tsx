@@ -615,9 +615,27 @@ const MatterSection = ({
   const briefQuestions = Array.isArray(briefDisplayPayload?.questions)
     ? briefDisplayPayload.questions.filter(Boolean)
     : [];
+  const briefNextAction =
+    briefDisplayPayload &&
+    typeof briefDisplayPayload === "object" &&
+    "next_action" in briefDisplayPayload
+      ? String(
+          (briefDisplayPayload as Record<string, unknown>).next_action || "",
+        )
+      : "";
+  const isBriefIndexReadinessPending =
+    briefDisplayPayload?.brief_type === "pending_index_readiness" ||
+    briefNextAction === "wait_for_index_readiness" ||
+    (activeMatter?.accumulatedBriefReadiness?.ready === false &&
+      Array.isArray(activeMatter?.accumulatedBriefReadiness?.missing) &&
+      activeMatter.accumulatedBriefReadiness.missing.includes(
+        "index_readiness",
+      ));
   const isBriefQueryRequired =
-    activeMatter?.intelligence_statuses?.brief_generation ===
-      "query_required" || briefDisplayPayload?.decision === "query_for_user";
+    !isBriefIndexReadinessPending &&
+    (activeMatter?.intelligence_statuses?.brief_generation ===
+      "query_required" ||
+      briefDisplayPayload?.decision === "query_for_user");
   const briefPoints = useMemo(
     () =>
       Array.isArray(briefDisplayPayload?.brief_points)
@@ -3019,6 +3037,12 @@ const MatterSection = ({
 
   const handleSubmitBriefAnswers = async (answerOverride?: string) => {
     if (!activeMatter || isSubmittingBriefAnswers) return;
+    if (isBriefIndexReadinessPending) {
+      setBriefAnswerError(
+        "Search is still warming up for this matter. Retry brief generation once ContextCore becomes searchable.",
+      );
+      return;
+    }
     const answer = (answerOverride ?? briefAnswerText).trim();
     if (!answer) {
       setBriefAnswerError("Add the missing information before continuing.");
@@ -3051,7 +3075,17 @@ const MatterSection = ({
         success?: boolean;
         result?: MatterProcessedResult;
         error?: string;
+        accumulated_brief?: MatterProcessedResult["accumulated_brief"];
+        accumulated_brief_readiness?: MatterProcessedResult["accumulated_brief_readiness"];
+        accumulated_brief_meta?: MatterProcessedResult["accumulated_brief_meta"];
       };
+      if (response.status === 410) {
+        setBriefAnswerError(
+          payload?.error ||
+            "This clarification loop is no longer available. Use ContextCore continue/retry instead.",
+        );
+        return;
+      }
       if (!response.ok || !payload?.success || !payload.result) {
         throw new Error(payload?.error || "Brief continuation failed.");
       }
@@ -3900,6 +3934,33 @@ const MatterSection = ({
                       onClick={() => void handleContinueContextCore()}
                     >
                       {isContinuingContextCore ? "Continuing..." : "Continue"}
+                    </Button>
+                  </div>
+                </div>
+              ) : isBriefIndexReadinessPending ? (
+                <div className="matterBriefQuestionBox">
+                  <p>
+                    ContextCore finished indexing the matter files, but search
+                    is not returning results yet. Brief generation cannot
+                    proceed until retrieval is ready.
+                  </p>
+                  {briefDisplayPayload?.warning ? (
+                    <p className="matterBriefError">
+                      {briefDisplayPayload.warning}
+                    </p>
+                  ) : null}
+                  {briefAnswerError ? (
+                    <p className="matterBriefError">{briefAnswerError}</p>
+                  ) : null}
+                  <div className="matterBriefActions">
+                    <Button
+                      type="button"
+                      disabled={isContinuingContextCore}
+                      onClick={() => void handleContinueContextCore()}
+                    >
+                      {isContinuingContextCore
+                        ? "Retrying..."
+                        : "Retry brief generation"}
                     </Button>
                   </div>
                 </div>

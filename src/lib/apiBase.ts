@@ -5,14 +5,18 @@ const normalizeBaseUrl = (value: string) =>
 
 const frontendEnv = import.meta.env as Record<string, string | undefined>;
 
-const DEFAULT_DEV_API_BASE_URL = "http://localhost:4000";
+const DEFAULT_DEV_API_BASE_URL = "";
 const DEFAULT_PROD_API_BASE_URL =
   "https://associatebackend-production.up.railway.app";
+const EXPLICIT_API_BASE_URL = normalizeBaseUrl(
+  frontendEnv.VITE_API_BASE_URL || frontendEnv.API_BASE_URL || "",
+);
 
 export const apiBaseUrl = normalizeBaseUrl(
-  import.meta.env.DEV
-    ? DEFAULT_DEV_API_BASE_URL
-    : DEFAULT_PROD_API_BASE_URL,
+  EXPLICIT_API_BASE_URL ||
+    (import.meta.env.DEV
+      ? DEFAULT_DEV_API_BASE_URL
+      : DEFAULT_PROD_API_BASE_URL),
 );
 
 export const contextCoreDomain = normalizeBaseUrl(
