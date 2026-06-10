@@ -35,6 +35,7 @@ import {
 
 const FONT_FAMILIES = ["Newsreader", "Georgia", "Times New Roman", "Work Sans"];
 const COLOR_CHOICES = ["#1b1c19", "#4c0003", "#6f5d55", "#0f5b78"];
+const DRAFT_REVIEW_POLL_INTERVAL_MS = 5000;
 
 const styleMap: Record<ParagraphStyle, string> = {
   normal: "P",
@@ -117,6 +118,7 @@ const DraftingPage = () => {
   const sourceDocumentFromQuery = String(searchParams.get("sourceDocument") || "").trim();
   const sourceDraftRequestRef = useRef("");
   const blankDraftRequestRef = useRef("");
+  const lastDraftReviewPollAtRef = useRef<Record<string, number>>({});
   const selectedMatter = useMemo(
     () =>
       matters.find((matter) => matter.id === matterIdFromQuery) ||
@@ -403,8 +405,11 @@ const DraftingPage = () => {
     if (!activeDraft?.id || reviewStatus !== "running") return;
 
     let cancelled = false;
+    let timeoutId: number | null = null;
+    const draftKey = String(activeDraft.id || "");
     const poll = async () => {
       try {
+        lastDraftReviewPollAtRef.current[draftKey] = Date.now();
         const reviewJob = await getDraftReview(activeDraft.id);
         if (cancelled) return;
         if (reviewJob.status === "completed") {
@@ -421,9 +426,9 @@ const DraftingPage = () => {
           setLoadError(reviewJob.error || "Draft review failed.");
           return;
         }
-        window.setTimeout(() => {
+        timeoutId = window.setTimeout(() => {
           void poll();
-        }, 2000);
+        }, DRAFT_REVIEW_POLL_INTERVAL_MS);
       } catch (error) {
         if (cancelled) return;
         setReviewStatus("error");
@@ -431,9 +436,20 @@ const DraftingPage = () => {
       }
     };
 
-    void poll();
+    const elapsedSinceLastPoll =
+      Date.now() - (lastDraftReviewPollAtRef.current[draftKey] || 0);
+    const initialDelay = Math.max(
+      0,
+      DRAFT_REVIEW_POLL_INTERVAL_MS - elapsedSinceLastPoll,
+    );
+    timeoutId = window.setTimeout(() => {
+      void poll();
+    }, initialDelay);
     return () => {
       cancelled = true;
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
     };
   }, [activeDraft?.id, reviewStatus]);
 

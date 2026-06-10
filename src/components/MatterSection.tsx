@@ -109,6 +109,8 @@ const MATTER_UPLOAD_MAX_FILES = 5;
 const MATTER_UPLOAD_MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MATTER_UPLOAD_MAX_PAGES = 20;
 const GROUND_ANALYSIS_INITIAL_FACT_COUNT = 3;
+const MATTER_JOB_POLL_INTERVAL_MS = 5000;
+const GROUND_ANALYSIS_POLL_INTERVAL_MS = 5000;
 
 type SourceViewerState = {
   fileName: string;
@@ -567,6 +569,8 @@ const MatterSection = ({
   >({});
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  const lastMatterJobPollAtRef = useRef<Record<string, number>>({});
+  const lastGroundAnalysisPollAtRef = useRef<Record<string, number>>({});
   const people = activeMatter?.people || [];
   const pages = activeMatter?.pageAwareStructure?.pages || [];
   const clauseSections = activeMatter?.pageAwareStructure?.sections || [];
@@ -1890,9 +1894,12 @@ const MatterSection = ({
     }
 
     let cancelled = false;
+    let timeoutId: number | null = null;
+    const matterKey = String(activeMatter.id || "");
 
     const pollForFields = async () => {
       try {
+        lastMatterJobPollAtRef.current[matterKey] = Date.now();
         const response = await fetch(
           buildApiUrl(
             `/api/matters/jobs/${encodeURIComponent(activeMatter.job_id)}`,
@@ -1934,19 +1941,30 @@ const MatterSection = ({
             "processing";
 
         if (!cancelled && shouldContinue) {
-          window.setTimeout(() => {
+          timeoutId = window.setTimeout(() => {
             void pollForFields();
-          }, 5000);
+          }, MATTER_JOB_POLL_INTERVAL_MS);
         }
       } catch {
         if (!cancelled) markMatterJobExpired(activeMatter.id);
       }
     };
 
-    void pollForFields();
+    const elapsedSinceLastPoll =
+      Date.now() - (lastMatterJobPollAtRef.current[matterKey] || 0);
+    const initialDelay = Math.max(
+      0,
+      MATTER_JOB_POLL_INTERVAL_MS - elapsedSinceLastPoll,
+    );
+    timeoutId = window.setTimeout(() => {
+      void pollForFields();
+    }, initialDelay);
 
     return () => {
       cancelled = true;
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
     };
   }, [
     activeMatter?.extractedFieldsStatus,
@@ -1988,11 +2006,13 @@ const MatterSection = ({
     let cancelled = false;
     let timeoutId: number | null = null;
     let isRequestInFlight = false;
+    const matterKey = String(activeMatter.id || "");
 
     const pollGroundAnalysis = async () => {
       if (cancelled || isRequestInFlight) return;
       isRequestInFlight = true;
       try {
+        lastGroundAnalysisPollAtRef.current[matterKey] = Date.now();
         const response = await fetch(
           buildApiUrl(
             `/api/matters/${encodeURIComponent(activeMatter.id)}/ground-analysis`,
@@ -2032,7 +2052,7 @@ const MatterSection = ({
         if (!cancelled && shouldContinue) {
           timeoutId = window.setTimeout(() => {
             void pollGroundAnalysis();
-          }, 5000);
+          }, GROUND_ANALYSIS_POLL_INTERVAL_MS);
         }
       } catch {
         // Ignore transient polling failures here; the main matter record remains usable.
@@ -2041,7 +2061,15 @@ const MatterSection = ({
       }
     };
 
-    void pollGroundAnalysis();
+    const elapsedSinceLastPoll =
+      Date.now() - (lastGroundAnalysisPollAtRef.current[matterKey] || 0);
+    const initialDelay = Math.max(
+      0,
+      GROUND_ANALYSIS_POLL_INTERVAL_MS - elapsedSinceLastPoll,
+    );
+    timeoutId = window.setTimeout(() => {
+      void pollGroundAnalysis();
+    }, initialDelay);
 
     return () => {
       cancelled = true;
@@ -2692,7 +2720,7 @@ const MatterSection = ({
     onProgress: (stage?: string, progress?: number) => void,
   ) => {
     for (let attempt = 0; attempt < 180; attempt += 1) {
-      await sleep(1500);
+      await sleep(MATTER_JOB_POLL_INTERVAL_MS);
       const response = await fetch(
         buildApiUrl(`/api/matters/jobs/${encodeURIComponent(jobId)}`),
       );
