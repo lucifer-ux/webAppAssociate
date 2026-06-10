@@ -1,6 +1,7 @@
 import "../componentStyling/MatterSection.css";
 import Button from "./Button";
 import {
+  useCallback,
   useEffect,
   Fragment,
   useMemo,
@@ -37,7 +38,7 @@ import {
 } from "../context/MatterStoreContext";
 import Loader from "./Loader";
 import UploadPopUp, { type UploadPopupValidationItem } from "./UploadPopUp";
-import SearchBar, { type SearchBarMode } from "./SearchBar";
+import { type SearchBarMode } from "./SearchBar";
 import ChatBoxMatterSection, {
   type ChatSource,
   type MatterChatMessage,
@@ -111,6 +112,32 @@ const MATTER_UPLOAD_MAX_PAGES = 20;
 const GROUND_ANALYSIS_INITIAL_FACT_COUNT = 3;
 const MATTER_JOB_POLL_INTERVAL_MS = 5000;
 const GROUND_ANALYSIS_POLL_INTERVAL_MS = 5000;
+const CLASSIFICATION_CONTINUATION_POLL_ATTEMPTS = 36;
+
+const clipText = (value: string, limit = 180) => {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= limit) return normalized;
+  return `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+};
+
+const getMatterIntelligenceStatuses = (
+  result: MatterProcessedResult | null | undefined,
+) => result?.matter?.intelligence_statuses || {};
+
+const isClassificationContinuationProcessing = (
+  result: MatterProcessedResult | null | undefined,
+) => {
+  const statuses = getMatterIntelligenceStatuses(result);
+  return [
+    statuses.law_generation,
+    statuses.law_verification,
+    statuses.inference_generation,
+    statuses.inference_verification,
+    statuses.next_step_planner,
+    statuses.debrief_generation,
+    statuses.debrief_verification,
+  ].some((status) => status === "processing");
+};
 
 type SourceViewerState = {
   fileName: string;
@@ -213,6 +240,13 @@ type ContextCoreSearchResult = {
   };
 };
 
+type MatterWorkspaceTab =
+  | "overview"
+  | "facts"
+  | "drafts"
+  | "timeline"
+  | "people";
+
 class MatterPollingTimeoutError extends Error {
   jobId: string;
 
@@ -307,6 +341,19 @@ const getBriefPointSourceNames = (point: {
     : [];
   const names = fromRefs.length ? fromRefs : splitSourceNames(point.sourceDocument);
   return names.filter((name, index, list) => list.indexOf(name) === index);
+};
+
+const sourceRefMatchesFile = (
+  sourceRef: MatterSignalSourceRef | undefined,
+  sourceName: string,
+) => {
+  const refFileName = String(
+    sourceRef?.file_name || sourceRef?.document_id || "",
+  )
+    .trim()
+    .toLowerCase();
+  const normalizedSource = String(sourceName || "").trim().toLowerCase();
+  return Boolean(refFileName && normalizedSource) && refFileName.includes(normalizedSource);
 };
 
 const sourceNameKey = (value: string) =>
@@ -518,6 +565,12 @@ const MatterSection = ({
   const [briefAcceptError, setBriefAcceptError] = useState("");
   const [isGroundAnalysisExpanded, setIsGroundAnalysisExpanded] =
     useState(false);
+  const [activeMatterTab, setActiveMatterTab] =
+    useState<MatterWorkspaceTab>("overview");
+  const [expandedFactIds, setExpandedFactIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [showLowRelevanceDrafts, setShowLowRelevanceDrafts] = useState(false);
   const [isMatterChatOpen, setIsMatterChatOpen] = useState(false);
   const [matterChatMode, setMatterChatMode] = useState<SearchBarMode>("normal");
   const [matterChatMessages, setMatterChatMessages] = useState<
@@ -531,6 +584,10 @@ const MatterSection = ({
       setIsMatterChatOpen(true);
     }
   }, [conversationOpenRequest]);
+  useEffect(() => {
+    setExpandedFactIds({});
+    setShowLowRelevanceDrafts(false);
+  }, [activeMatter?.id]);
   const [matterSearchResults, setMatterSearchResults] = useState<
     ContextCoreSearchResult[]
   >([]);
@@ -602,6 +659,19 @@ const MatterSection = ({
     appendRemainingSlots <= 0 ||
     isActiveMockMatter;
   const matterHeading = useMemo(() => {
+    const extractedPartyNames = Array.isArray(
+      activeMatter?.extractedFields?.parties,
+    )
+      ? activeMatter.extractedFields.parties
+          .map((party) => String(party?.name || "").trim())
+          .filter(Boolean)
+      : [];
+    const uniquePartyNames = extractedPartyNames.filter(
+      (name, index, list) => list.indexOf(name) === index,
+    );
+    if (uniquePartyNames.length >= 2) {
+      return `${uniquePartyNames[0]} v. ${uniquePartyNames[1]}`;
+    }
     const classificationName = String(
       activeMatter?.classification?.classification_name || "",
     ).trim();
@@ -663,6 +733,7 @@ const MatterSection = ({
   const isBriefQueryRequired =
     !isBriefIndexReadinessPending &&
     !isContextCoreEvidenceGap &&
+    briefMetaSource !== "contextcore" &&
     (activeMatter?.intelligence_statuses?.brief_generation ===
       "query_required" ||
       briefDisplayPayload?.decision === "query_for_user");
@@ -1053,6 +1124,55 @@ const MatterSection = ({
     0,
     groundAnalysisCards.length - visibleGroundAnalysisCards.length,
   );
+  const isMatterStepBusy =
+    isContinuingContextCore || isConfirmingSecondaryClassification;
+
+  const openGapFactCards = useCallback(() => {
+    const gapCardIds = groundAnalysisCards
+      .filter((card) => card.researchGaps.length > 0)
+      .map((card) => card.id);
+    if (!gapCardIds.length) return;
+    setExpandedFactIds((prev) => {
+      const next = { ...prev };
+      gapCardIds.forEach((id) => {
+        next[id] = true;
+      });
+      return next;
+    });
+  }, [groundAnalysisCards]);
+
+  const navigateToWorkspaceSection = useCallback(
+    (
+      tab: MatterWorkspaceTab,
+      options?: { openGaps?: boolean; openFirstFact?: boolean },
+    ) => {
+      if (options?.openGaps) {
+        openGapFactCards();
+      }
+      if (options?.openFirstFact && groundAnalysisCards[0]?.id) {
+        setExpandedFactIds((prev) =>
+          prev[groundAnalysisCards[0].id]
+            ? prev
+            : { ...prev, [groundAnalysisCards[0].id]: true },
+        );
+      }
+      setActiveMatterTab(tab);
+      window.setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }, 60);
+    },
+    [groundAnalysisCards, openGapFactCards],
+  );
+
+  useEffect(() => {
+    if (activeMatterTab !== "facts") return;
+    if (!groundAnalysisCards.length) return;
+    const firstCardId = groundAnalysisCards[0]?.id;
+    if (!firstCardId) return;
+    setExpandedFactIds((prev) =>
+      prev[firstCardId] ? prev : { ...prev, [firstCardId]: true },
+    );
+  }, [activeMatterTab, groundAnalysisCards]);
 
   useEffect(() => {
     setIsGroundAnalysisExpanded(false);
@@ -1189,6 +1309,7 @@ const MatterSection = ({
       }
 
       updateMatter(payload.result);
+      setActiveMatterTab("facts");
 
       if (payload.people?.needs_categorization) {
         const unresolved = Array.isArray(payload.people.unresolved_candidates)
@@ -1309,6 +1430,148 @@ const MatterSection = ({
   const draftRecommendationsPending =
     !draftRecommendationItems.length &&
     (isLoadingDraftRecommendations || isGroundAnalysisProcessing);
+  const lowRelevanceDraftRecommendations = useMemo(
+    () =>
+      lockedDraftRecommendations.filter((recommendation) => {
+        const score = Number(recommendation.readiness_score || 0);
+        const matchedCount =
+          (Array.isArray(recommendation.matched_documents)
+            ? recommendation.matched_documents.length
+            : 0) +
+          (Array.isArray(recommendation.matched_facts)
+            ? recommendation.matched_facts.length
+            : 0);
+        return score < 0.45 || matchedCount === 0;
+      }),
+    [lockedDraftRecommendations],
+  );
+  const primaryLockedDraftRecommendations = useMemo(
+    () =>
+      lockedDraftRecommendations.filter(
+        (recommendation) =>
+          !lowRelevanceDraftRecommendations.some(
+            (candidate) => candidate.draft_key === recommendation.draft_key,
+          ),
+      ),
+    [lockedDraftRecommendations, lowRelevanceDraftRecommendations],
+  );
+  const factCoverageCount =
+    groundAnalysisCards.length || secondaryVerifiedFactCount || 0;
+  const workspaceStats = [
+    {
+      label: "Documents",
+      value: uploadedDocumentCount,
+      tone: "neutral",
+      note: "uploaded set",
+      action: () => navigateToWorkspaceSection("overview"),
+    },
+    {
+      label: "Verified facts",
+      value: factCoverageCount,
+      tone: factCoverageCount ? "positive" : "neutral",
+      note: "grounded signals",
+      action: () =>
+        navigateToWorkspaceSection("facts", { openFirstFact: true }),
+    },
+    {
+      label: "Open gaps",
+      value: secondaryGapCount,
+      tone: secondaryGapCount ? "warning" : "positive",
+      note: "need support",
+      action: () =>
+        navigateToWorkspaceSection("facts", {
+          openGaps: true,
+          openFirstFact: true,
+        }),
+    },
+    {
+      label: "Drafts ready",
+      value: readyDraftRecommendations.length,
+      tone: readyDraftRecommendations.length ? "positive" : "neutral",
+      note: "can start now",
+      action: () => navigateToWorkspaceSection("drafts"),
+    },
+  ] as const;
+  const pipelineStages = [
+    {
+      key: "intake",
+      label: "Intake",
+      status: activeMatter ? "ready" : "queued",
+    },
+    {
+      key: "analysis",
+      label: "Analysis",
+      status:
+        activeMatter?.intelligence_statuses?.brief_generation === "ready"
+          ? "ready"
+          : activeMatter?.intelligence_statuses?.brief_generation ===
+                "processing" || activeMatterContextCore?.status === "processing"
+            ? "processing"
+            : activeMatterContextCore?.status === "ready"
+              ? "ready"
+              : activeMatter?.intelligence_statuses?.brief_generation === "failed"
+                ? "failed"
+                : "queued",
+    },
+    {
+      key: "strategy",
+      label: "Strategy",
+      status:
+        groundAnalysisStatus === "ready"
+          ? "ready"
+          : groundAnalysisStatus === "processing"
+            ? "processing"
+            : groundAnalysisStatus === "failed"
+              ? "failed"
+              : "queued",
+    },
+    {
+      key: "drafting",
+      label: "Drafting",
+      status:
+        readyDraftRecommendations.length > 0
+          ? "ready"
+          : isLoadingDraftRecommendations
+            ? "processing"
+            : draftRecommendationItems.length > 0
+              ? "queued"
+              : "queued",
+    },
+    {
+      key: "filing",
+      label: "Filing",
+      status: "queued",
+    },
+  ] as const;
+  const workspaceTabs: Array<{
+    id: MatterWorkspaceTab;
+    label: string;
+    count?: number;
+  }> = [
+    { id: "overview", label: "Overview" },
+    { id: "facts", label: "Facts", count: factCoverageCount },
+    { id: "drafts", label: "Drafts", count: draftRecommendationItems.length },
+    { id: "timeline", label: "Timeline", count: briefPoints.length || groundAnalysisCards.length },
+    { id: "people", label: "People", count: people.length },
+  ];
+
+  const timelineItems = useMemo(() => {
+    const fromBrief = briefPoints.slice(0, 6).map((point, index) => ({
+      id: `${point.id}-timeline`,
+      title: point.heading,
+      detail: point.detail,
+      source: getBriefPointSourceNames(point)[0] || point.sourceDocument || "",
+      step: index + 1,
+    }));
+    if (fromBrief.length) return fromBrief;
+    return groundAnalysisCards.slice(0, 6).map((card, index) => ({
+      id: `${card.id}-timeline`,
+      title: card.title,
+      detail: card.factText,
+      source: card.sourceFiles[0] || "",
+      step: index + 1,
+    }));
+  }, [briefPoints, groundAnalysisCards]);
   const findDocumentBySource = (
     sourceName: string,
     sourceRef?: MatterSignalSourceRef | null,
@@ -2550,7 +2813,34 @@ const MatterSection = ({
     };
     if (response.ok && payload?.success && Array.isArray(payload.matters)) {
       setMattersFromServer(payload.matters);
+      return payload.matters;
     }
+    return null;
+  };
+
+  const pollMatterAfterClassificationConfirm = async (matterId: string) => {
+    for (
+      let attempt = 0;
+      attempt < CLASSIFICATION_CONTINUATION_POLL_ATTEMPTS;
+      attempt += 1
+    ) {
+      await sleep(MATTER_JOB_POLL_INTERVAL_MS);
+      const matters = await refreshStoredMatters();
+      const refreshedMatter =
+        Array.isArray(matters)
+          ? matters.find((item) => item?.matter?.id === matterId) || null
+          : null;
+      if (!refreshedMatter) continue;
+
+      updateMatter(refreshedMatter);
+      setActiveMatterTab("facts");
+
+      if (!isClassificationContinuationProcessing(refreshedMatter)) {
+        return refreshedMatter;
+      }
+    }
+
+    return null;
   };
 
   useEffect(() => {
@@ -3259,6 +3549,12 @@ const MatterSection = ({
         );
       }
       updateMatter(payload.result);
+      setActiveMatterTab("facts");
+      if (isClassificationContinuationProcessing(payload.result)) {
+        void pollMatterAfterClassificationConfirm(activeMatter.id);
+      } else {
+        void refreshStoredMatters();
+      }
     } catch (error) {
       setBriefAcceptError(
         error instanceof Error
@@ -3842,6 +4138,61 @@ const MatterSection = ({
           document review.
         </p>
 
+        {activeMatter ? (
+          <>
+            <div className="matterPipelineStrip">
+              {pipelineStages.map((stage, index) => (
+                <div
+                  className={`matterPipelineStep is-${stage.status}`}
+                  key={stage.key}
+                >
+                  <span className="matterPipelineIndex">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <strong>{stage.label}</strong>
+                    <small>{stage.status}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="matterStatStrip">
+              {workspaceStats.map((stat) => (
+                <button
+                  type="button"
+                  className={`matterStatCard tone-${stat.tone}`}
+                  key={stat.label}
+                  onClick={stat.action}
+                >
+                  <p>{stat.label}</p>
+                  <strong>{stat.value}</strong>
+                  <span>{stat.note}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="matterWorkspaceTabs" role="tablist" aria-label="Matter workspace">
+              {workspaceTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeMatterTab === tab.id}
+                  className={`matterWorkspaceTab ${activeMatterTab === tab.id ? "isActive" : ""}`}
+                  onClick={() => setActiveMatterTab(tab.id)}
+                >
+                  <span>{tab.label}</span>
+                  {typeof tab.count === "number" ? (
+                    <small>{tab.count}</small>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        {activeMatterTab === "people" ? (
         <section className="matterPeopleSection">
           <div className="matterPeopleHead">
             <h2>People</h2>
@@ -3919,7 +4270,9 @@ const MatterSection = ({
             />
           )}
         </section>
+        ) : null}
 
+        {activeMatterTab === "overview" ? (
         <div className="matterMetaGrid">
           <article className="matterMetaCard">
             <span className="matterMetaIcon">
@@ -3944,9 +4297,11 @@ const MatterSection = ({
             </div>
           </article>
         </div>
+        ) : null}
 
         {activeMatter ? (
           <>
+            {activeMatterTab === "overview" ? (
             <article className="matterBriefLoopPanel">
               <div className="matterBriefLoopHead">
                 <p className="matterEyebrow">
@@ -3981,6 +4336,17 @@ const MatterSection = ({
                   {briefAnswerError ? (
                     <p className="matterBriefError">{briefAnswerError}</p>
                   ) : null}
+                  {isContinuingContextCore ? (
+                    <div className="matterInlineLoaderWrap">
+                      <Loader
+                        mode="inline"
+                        variant="spinner"
+                        eyebrow="ContextCore"
+                        title="Generating grounded brief"
+                        message="Searching the indexed matter, grounding evidence, and extracting participants."
+                      />
+                    </div>
+                  ) : null}
                   <div className="matterBriefActions">
                     <Button
                       type="button"
@@ -4005,6 +4371,17 @@ const MatterSection = ({
                   ) : null}
                   {briefAnswerError ? (
                     <p className="matterBriefError">{briefAnswerError}</p>
+                  ) : null}
+                  {isContinuingContextCore ? (
+                    <div className="matterInlineLoaderWrap">
+                      <Loader
+                        mode="inline"
+                        variant="spinner"
+                        eyebrow="ContextCore"
+                        title="Retrying brief generation"
+                        message="Waiting for retrieval and grounded brief assembly to complete."
+                      />
+                    </div>
                   ) : null}
                   <div className="matterBriefActions">
                     <Button
@@ -4039,6 +4416,17 @@ const MatterSection = ({
                   ) : null}
                   {briefAnswerError ? (
                     <p className="matterBriefError">{briefAnswerError}</p>
+                  ) : null}
+                  {isContinuingContextCore ? (
+                    <div className="matterInlineLoaderWrap">
+                      <Loader
+                        mode="inline"
+                        variant="spinner"
+                        eyebrow="ContextCore"
+                        title="Regenerating grounded brief"
+                        message="Refreshing retrieval sweeps and rebuilding the matter brief."
+                      />
+                    </div>
                   ) : null}
                   <div className="matterBriefActions">
                     <Button
@@ -4382,6 +4770,17 @@ const MatterSection = ({
                           {secondaryGapCount} gaps.
                         </p>
                       )}
+                      {isConfirmingSecondaryClassification ? (
+                        <div className="matterInlineLoaderWrap">
+                          <Loader
+                            mode="inline"
+                            variant="spinner"
+                            eyebrow="Ground Analysis"
+                            title="Confirming classification"
+                            message="Generating fact cards, law bindings, inferences, and draft recommendations."
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {briefAcceptError ? (
@@ -4396,8 +4795,362 @@ const MatterSection = ({
                 </p>
               )}
             </article>
+            ) : null}
 
-            {shouldShowGroundAnalysis ? (
+            {activeMatterTab === "facts" ? (
+              <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                <div className="matterWorkspacePanelHead">
+                  <div>
+                    <p className="matterEyebrow">Facts</p>
+                    <h2>Grounded fact map</h2>
+                  </div>
+                  <span className={`matterBriefStatus is-${groundAnalysisStatus}`}>
+                    {groundAnalysisStatus || "not started"}
+                  </span>
+                </div>
+                {briefDisplayPayload?.warning ? (
+                  <p className="matterWorkspaceWarning">
+                    {briefDisplayPayload.warning}
+                  </p>
+                ) : null}
+                {isMatterStepBusy || isGroundAnalysisProcessing ? (
+                  <div className="matterInlineLoaderWrap">
+                    <Loader
+                      mode="inline"
+                      variant="spinner"
+                      eyebrow="Ground Analysis"
+                      title={
+                        isConfirmingSecondaryClassification
+                          ? "Building fact cards"
+                          : activeMatter.intelligence_statuses?.inference_generation ===
+                                "processing" ||
+                              activeMatter.intelligence_statuses?.inference_verification ===
+                                "processing"
+                            ? "Generating inferences"
+                            : activeMatter.intelligence_statuses?.law_generation ===
+                                  "processing" ||
+                                activeMatter.intelligence_statuses?.law_verification ===
+                                  "processing"
+                              ? "Attaching law support"
+                              : "Updating grounded analysis"
+                      }
+                      message="This matter is still being enriched in the background. Completed cards appear below as soon as they are ready."
+                    />
+                  </div>
+                ) : null}
+                {groundAnalysisCards.length ? (
+                  <div className="matterCompactFactList">
+                    {groundAnalysisCards.map((card) => {
+                      const isExpanded = Boolean(expandedFactIds[card.id]);
+                      const factDotStatus = card.factText ? "ready" : "queued";
+                      const lawDotStatus =
+                        card.lawText || card.lawCard
+                          ? "ready"
+                          : activeMatter.intelligence_statuses?.law_generation ===
+                                "processing" ||
+                              activeMatter.intelligence_statuses?.law_verification ===
+                                "processing"
+                            ? "processing"
+                            : "queued";
+                      const inferenceDotStatus =
+                        card.inferenceText
+                          ? "ready"
+                          : activeMatter.intelligence_statuses
+                                ?.inference_generation === "processing" ||
+                              activeMatter.intelligence_statuses
+                                ?.inference_verification === "processing"
+                            ? "processing"
+                            : "queued";
+                      return (
+                        <article
+                          className={`matterCompactFactCard ${isExpanded ? "isExpanded" : ""}`}
+                          key={card.id}
+                        >
+                          <button
+                            type="button"
+                            className="matterCompactFactToggle"
+                            onClick={() =>
+                              setExpandedFactIds((prev) => ({
+                                ...prev,
+                                [card.id]: !prev[card.id],
+                              }))
+                            }
+                          >
+                            <div className="matterCompactFactLead">
+                              <div className="matterCompactFactTitleRow">
+                                <strong>{card.title}</strong>
+                                <span className="matterCompactFactScore">
+                                  {typeof card.supportScore === "number"
+                                    ? Math.round(card.supportScore * 100)
+                                    : card.confidencePercent}
+                                  %
+                                </span>
+                              </div>
+                              <p>{clipText(card.factText, 165)}</p>
+                            </div>
+                            <div className="matterCompactFactSignals">
+                              <span className={`matterSignalDot fact is-${factDotStatus}`}>F</span>
+                              <span className={`matterSignalDot law is-${lawDotStatus}`}>L</span>
+                              <span className={`matterSignalDot inference is-${inferenceDotStatus}`}>I</span>
+                            </div>
+                          </button>
+                          {isExpanded ? (
+                            <div className="matterCompactFactBody">
+                              <div className="matterCompactFactDetailGrid">
+                                <div className="matterCompactFactPanel fact">
+                                  <span>Fact</span>
+                                  <p>{card.factText}</p>
+                                </div>
+                                <div className="matterCompactFactPanel law">
+                                  <span>Law</span>
+                                  <p>
+                                    {card.lawText ||
+                                      card.lawCard?.bindingExplanation ||
+                                      "No supported legal rule extracted yet."}
+                                  </p>
+                                </div>
+                                <div className="matterCompactFactPanel inference">
+                                  <span>Inference</span>
+                                  <p>
+                                    {card.inferenceText ||
+                                      "Inference is pending or intentionally withheld until stronger support is available."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="matterCompactFactMeta">
+                                {card.sourceFiles.length ? (
+                                  <div className="matterCompactFactMetaGroup">
+                                    <strong>Source files:</strong>
+                                    <div className="matterSourceFileChipRow">
+                                      {card.sourceFiles.map((sourceFile) => {
+                                        const sourceRef =
+                                          card.sourceRefs.find((ref) =>
+                                            sourceRefMatchesFile(ref, sourceFile),
+                                          ) || card.sourceRefs[0] || null;
+                                        return (
+                                          <button
+                                            type="button"
+                                            key={`${card.id}-${sourceFile}`}
+                                            className="matterSourceFileChip"
+                                            onClick={() =>
+                                              openSourceViewer({
+                                                sourceName: sourceFile,
+                                                sourceRef,
+                                                fallbackText: card.factText,
+                                              })
+                                            }
+                                          >
+                                            {sourceFile}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : null}
+                                {card.researchGaps.length ? (
+                                  <p>
+                                    <strong>Gaps:</strong>{" "}
+                                    {card.researchGaps.join(" ")}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="matterDebriefEmpty">
+                    Grounded fact extraction has not populated yet for this matter.
+                  </p>
+                )}
+              </article>
+            ) : null}
+
+            {activeMatterTab === "drafts" ? (
+              <article className="matterWorkspacePanel matterWorkspaceDraftsPanel">
+                <div className="matterWorkspacePanelHead">
+                  <div>
+                    <p className="matterEyebrow">Drafts</p>
+                    <h2>Drafting catalogue</h2>
+                  </div>
+                  <div className="matterDraftRecommendationsActions">
+                    {activeDraftRecommendations?.counts ? (
+                      <span className="matterBriefStatus is-ready">
+                        {activeDraftRecommendations.counts.ready || 0} ready
+                      </span>
+                    ) : null}
+                    {!isActiveMockMatter ? (
+                      <Button
+                        type="button"
+                        className="matterDraftRefreshBtn"
+                        onClick={() => void handleRefreshDraftRecommendations()}
+                        disabled={isLoadingDraftRecommendations}
+                      >
+                        {isLoadingDraftRecommendations ? "Refreshing..." : "Refresh"}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                {readyDraftRecommendations.length ? (
+                  <>
+                    {startingDraftKey ? (
+                      <div className="matterInlineLoaderWrap">
+                        <Loader
+                          mode="inline"
+                          variant="spinner"
+                          eyebrow="Drafting"
+                          title="Creating draft workspace"
+                          message="Generating the draft, saving it, and preparing the editor."
+                        />
+                      </div>
+                    ) : null}
+                    <div className="matterDraftRecommendationGrid">
+                      {readyDraftRecommendations.map((recommendation) => (
+                        <article
+                          className="matterDraftRecommendationCard isReady"
+                          key={recommendation.draft_key}
+                        >
+                          <div className="matterDraftRecommendationTop">
+                            <h3>{recommendation.title}</h3>
+                            <span>
+                              {Math.round(Number(recommendation.readiness_score || 0) * 100)}%
+                            </span>
+                          </div>
+                          <p>{recommendation.purpose || recommendation.reason}</p>
+                          <small>
+                            {recommendation.reason || "Ready because the current matter already contains the required source material."}
+                          </small>
+                          <div className="matterDraftRecommendationFooter">
+                            <span>
+                              {recommendation.priority || "medium"} · {recommendation.risk_level || "medium"} risk
+                            </span>
+                            <Button
+                              type="button"
+                              className="matterStartDraftingBtn"
+                              onClick={() =>
+                                void handleStartDraftRecommendation(recommendation)
+                              }
+                              disabled={startingDraftKey === recommendation.draft_key}
+                            >
+                              {startingDraftKey === recommendation.draft_key
+                                ? "Starting..."
+                                : "Start draft"}
+                            </Button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </>
+                ) : draftRecommendationsPending ? (
+                  <p className="matterDebriefEmpty">
+                    Draft recommendations are still being prepared.
+                  </p>
+                ) : null}
+                {primaryLockedDraftRecommendations.length ? (
+                  <section className="matterDraftRecommendationGroup">
+                    <div className="matterDraftRecommendationGroupHead">
+                      <span>Unlock with more support</span>
+                      <small>These templates match the matter, but key inputs are missing.</small>
+                    </div>
+                    <div className="matterDraftRecommendationGrid">
+                      {primaryLockedDraftRecommendations.map((recommendation) => (
+                        <article
+                          className="matterDraftRecommendationCard isLocked"
+                          key={recommendation.draft_key}
+                        >
+                          <div className="matterDraftRecommendationTop">
+                            <h3>{recommendation.title}</h3>
+                            <span>
+                              {Math.round(Number(recommendation.readiness_score || 0) * 100)}%
+                            </span>
+                          </div>
+                          <p>{recommendation.purpose || recommendation.reason}</p>
+                          {recommendation.missing_inputs?.length ? (
+                            <div className="matterDraftMissingList">
+                              {recommendation.missing_inputs.slice(0, 4).map((input) => (
+                                <span key={`${recommendation.draft_key}-${input.input_key}`}>
+                                  {input.label || input.input_label || input.input_key.replace(/_/g, " ")}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+                {lowRelevanceDraftRecommendations.length ? (
+                  <section className="matterDraftRecommendationGroup matterLowRelevanceGroup">
+                    <button
+                      type="button"
+                      className="matterLowRelevanceToggle"
+                      onClick={() => setShowLowRelevanceDrafts((current) => !current)}
+                    >
+                      <span>Low-confidence matches</span>
+                      <small>
+                        {lowRelevanceDraftRecommendations.length} hidden until expanded
+                      </small>
+                    </button>
+                    {showLowRelevanceDrafts ? (
+                      <div className="matterDraftRecommendationGrid">
+                        {lowRelevanceDraftRecommendations.map((recommendation) => (
+                          <article
+                            className="matterDraftRecommendationCard isLocked"
+                            key={recommendation.draft_key}
+                          >
+                            <div className="matterDraftRecommendationTop">
+                              <h3>{recommendation.title}</h3>
+                              <span>
+                                {Math.round(Number(recommendation.readiness_score || 0) * 100)}%
+                              </span>
+                            </div>
+                            <p>{recommendation.purpose || recommendation.reason}</p>
+                            <small>
+                              This match is currently weak and should be reviewed before use.
+                            </small>
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
+              </article>
+            ) : null}
+
+            {activeMatterTab === "timeline" ? (
+              <article className="matterWorkspacePanel matterWorkspaceTimelinePanel">
+                <div className="matterWorkspacePanelHead">
+                  <div>
+                    <p className="matterEyebrow">Timeline</p>
+                    <h2>Matter sequence</h2>
+                  </div>
+                </div>
+                {timelineItems.length ? (
+                  <div className="matterTimeline">
+                    {timelineItems.map((item) => (
+                      <article className="matterTimelineItem" key={item.id}>
+                        <span className="matterTimelineStep">
+                          {String(item.step).padStart(2, "0")}
+                        </span>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <p>{item.detail}</p>
+                          {item.source ? <small>{item.source}</small> : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="matterDebriefEmpty">
+                    A chronology will appear here once fact extraction has enough material.
+                  </p>
+                )}
+              </article>
+            ) : null}
+
+            {Boolean(false) && shouldShowGroundAnalysis ? (
               <article className="matterDebriefPanel">
                 <div className="matterDebriefHead">
                   <p className="matterEyebrow">
@@ -5353,17 +6106,7 @@ const MatterSection = ({
         </aside>
       ) : null}
 
-      <SearchBar
-        activeSection="matterLibrary"
-        allowTextOnly
-        enableSubmit
-        isSubmitting={isMatterChatSubmitting}
-        onSubmitQuery={handleMatterChatSubmit}
-        mode={matterChatMode}
-        onModeChange={setMatterChatMode}
-        placeholderOverride="Ask about this matter or switch to Deep Research..."
-      />
-
+      {activeMatterTab === "overview" ? (
       <div className="matterContextCorePanel">
         {isActiveMockMatter ? (
           <p className="matterContextCoreMessage">
@@ -5416,6 +6159,18 @@ const MatterSection = ({
           </div>
         ) : null}
       </div>
+      ) : null}
+
+      {!isMatterChatOpen && activeMatter ? (
+        <button
+          type="button"
+          className="matterChatDockButton"
+          onClick={() => setIsMatterChatOpen(true)}
+        >
+          <span className="matterChatDockButtonEyebrow">Matter chat</span>
+          <strong>Ask about this record</strong>
+        </button>
+      ) : null}
 
       <ChatBoxMatterSection
         open={isMatterChatOpen}
