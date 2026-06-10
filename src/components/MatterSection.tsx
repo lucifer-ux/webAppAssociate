@@ -623,6 +623,23 @@ const MatterSection = ({
           (briefDisplayPayload as Record<string, unknown>).next_action || "",
         )
       : "";
+  const briefMetaSource = String(
+    activeMatter?.accumulatedBriefMeta &&
+      typeof activeMatter.accumulatedBriefMeta === "object" &&
+      "source" in activeMatter.accumulatedBriefMeta
+      ? (activeMatter.accumulatedBriefMeta as Record<string, unknown>).source ||
+          ""
+      : "",
+  ).trim();
+  const briefEvidenceCount =
+    activeMatter?.accumulatedBriefMeta &&
+    typeof activeMatter.accumulatedBriefMeta === "object" &&
+    "evidence_count" in activeMatter.accumulatedBriefMeta
+      ? Number(
+          (activeMatter.accumulatedBriefMeta as Record<string, unknown>)
+            .evidence_count || 0,
+        )
+      : 0;
   const isBriefIndexReadinessPending =
     briefDisplayPayload?.brief_type === "pending_index_readiness" ||
     briefNextAction === "wait_for_index_readiness" ||
@@ -631,8 +648,17 @@ const MatterSection = ({
       activeMatter.accumulatedBriefReadiness.missing.includes(
         "index_readiness",
       ));
+  const isContextCoreEvidenceGap =
+    !isBriefIndexReadinessPending &&
+    briefMetaSource === "contextcore" &&
+    briefDisplayPayload?.decision === "query_for_user" &&
+    (briefEvidenceCount === 0 ||
+      briefQuestions.some((question) =>
+        String(question).startsWith("No evidence found for:"),
+      ));
   const isBriefQueryRequired =
     !isBriefIndexReadinessPending &&
+    !isContextCoreEvidenceGap &&
     (activeMatter?.intelligence_statuses?.brief_generation ===
       "query_required" ||
       briefDisplayPayload?.decision === "query_for_user");
@@ -3961,6 +3987,40 @@ const MatterSection = ({
                       {isContinuingContextCore
                         ? "Retrying..."
                         : "Retry brief generation"}
+                    </Button>
+                  </div>
+                </div>
+              ) : isContextCoreEvidenceGap ? (
+                <div className="matterBriefQuestionBox">
+                  <p>
+                    ContextCore search completed, but the current retrieval did
+                    not produce grounded evidence for this brief. This is not a
+                    manual clarification loop.
+                  </p>
+                  {briefQuestions.length ? (
+                    <ul>
+                      {briefQuestions.map((question) => (
+                        <li key={question}>{question}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {briefDisplayPayload?.warning ? (
+                    <p className="matterBriefError">
+                      {briefDisplayPayload.warning}
+                    </p>
+                  ) : null}
+                  {briefAnswerError ? (
+                    <p className="matterBriefError">{briefAnswerError}</p>
+                  ) : null}
+                  <div className="matterBriefActions">
+                    <Button
+                      type="button"
+                      disabled={isContinuingContextCore}
+                      onClick={() => void handleContinueContextCore()}
+                    >
+                      {isContinuingContextCore
+                        ? "Retrying..."
+                        : "Retry grounded brief generation"}
                     </Button>
                   </div>
                 </div>
