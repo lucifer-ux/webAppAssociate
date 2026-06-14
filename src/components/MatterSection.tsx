@@ -1,7 +1,7 @@
 import "../componentStyling/MatterSection.css";
 import Button from "./Button";
+import { UiButton, UiInput } from "./ui/Primitives";
 import {
-  useCallback,
   useEffect,
   Fragment,
   useMemo,
@@ -12,22 +12,34 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  AlertTriangle,
   ArrowUp,
-  CalendarClock,
+  ArrowRight,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   FilePenLine,
-  FolderOpen,
   Plus,
   Search,
+  ShieldAlert,
   X,
 } from "lucide-react";
 import {
+  type AtlasBaseRecognitionCandidate,
+  type AtlasBaseRecognitionResult,
+  type AtlasCaseResearchResult,
+  type AtlasDeciderResearchResult,
+  type AtlasGapCheckpoint,
+  type AtlasMatterBrief,
+  type AtlasNextStepsAnalysis,
+  type AtlasWorkflowConfirmation,
   useMatterStore,
   type AcceptedRedline,
   type ClauseSection,
+  type ClarificationCheckpoint,
   type ClauseItem,
   type ContextCoreMatterState,
+  type FrontendBriefArtifact,
   type MatterDraftRecommendation,
   type MatterDraftRecommendations,
   type MatterProcessedResult,
@@ -78,7 +90,15 @@ type MatterLoaderState = {
   history: string[];
 };
 
+type AnalysisProgressMessage = {
+  id: string;
+  tone: "done" | "current" | "waiting";
+  text: string;
+  rotationMessages: string[];
+};
+
 type UploadPopupMode = "create" | "append";
+type MatterReaderFont = "newsreader" | "roboto" | "comic" | "georgia";
 
 type MatterValidationApiResponse = {
   success?: boolean;
@@ -106,6 +126,8 @@ const sleep = (ms: number) =>
 
 const MATTER_AI_ENABLED = false;
 const MATTER_UPLOAD_SESSION_KEY = "open_matter_uploader";
+const MATTER_READER_FONT_SESSION_KEY = "matter_reader_font";
+const MATTER_BRIEF_ANIMATION_KEY = "matter_brief_animation_signature";
 const MATTER_UPLOAD_MAX_FILES = 5;
 const MATTER_UPLOAD_MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MATTER_UPLOAD_MAX_PAGES = 20;
@@ -115,9 +137,227 @@ const GROUND_ANALYSIS_POLL_INTERVAL_MS = 5000;
 const CLASSIFICATION_CONTINUATION_POLL_ATTEMPTS = 36;
 
 const clipText = (value: string, limit = 180) => {
-  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  const normalized = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (normalized.length <= limit) return normalized;
   return `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+};
+
+const normalizeInline = (value: string) =>
+  String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const formatSummaryTypeLabel = (value: string) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "full") return "Full Summary";
+  if (normalized === "limited") return "Limited Summary";
+  if (normalized === "blocked") return "Blocked";
+  if (normalized === "needs_review") return "Needs Review";
+  if (normalized === "processing") return "Processing";
+  return "Processing";
+};
+
+const formatAtlasLabel = (value: string) =>
+  String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const buildHighlightedSummary = (
+  text: string,
+  extraTerms: string[] = [],
+): ReactNode => {
+  const normalized = String(text || "").trim();
+  if (!normalized) return "";
+  const candidateTerms = [
+    ...extraTerms,
+    "Master Services Agreement",
+    "termination for cause",
+    "written notice",
+    "cure period",
+    "material default",
+    "delivery delay",
+    "refund obligations",
+    "arbitration",
+    "governing law",
+    "similar cases",
+    "critical gap",
+  ]
+    .map((term) => String(term || "").trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+  if (!candidateTerms.length) return normalized;
+  const escapedTerms = candidateTerms
+    .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  if (!escapedTerms) return normalized;
+  const matcher = new RegExp(`(${escapedTerms})`, "gi");
+  const termSet = new Set(candidateTerms.map((term) => term.toLowerCase()));
+  const parts = normalized.split(matcher);
+  return parts.map((part, index) =>
+    termSet.has(String(part || "").toLowerCase()) ? (
+      <strong key={`summary-part-${index}`}>{part}</strong>
+    ) : (
+      <Fragment key={`summary-part-${index}`}>{part}</Fragment>
+    ),
+  );
+};
+
+const splitReadableParagraphs = (value: string) =>
+  String(value || "")
+    .split(/\n{2,}|(?<=[.!?])\s+(?=[A-Z])/)
+    .map((item) => normalizeInline(item))
+    .filter(Boolean);
+
+const useTypewriterText = (
+  text: string,
+  options?: {
+    enabled?: boolean;
+    speed?: number;
+    startDelayMs?: number;
+  },
+) => {
+  const enabled = options?.enabled !== false;
+  const speed = options?.speed ?? 12;
+  const startDelayMs = options?.startDelayMs ?? 0;
+  const [visibleLength, setVisibleLength] = useState(
+    enabled ? 0 : String(text || "").length,
+  );
+  const normalizedText = String(text || "");
+
+  useEffect(() => {
+    if (!enabled) {
+      setVisibleLength(normalizedText.length);
+      return;
+    }
+    setVisibleLength(0);
+    let cancelled = false;
+    let timeoutId = 0;
+    let intervalId = 0;
+    const start = () => {
+      intervalId = window.setInterval(() => {
+        setVisibleLength((current) => {
+          if (cancelled) return current;
+          if (current >= normalizedText.length) {
+            window.clearInterval(intervalId);
+            return current;
+          }
+          const next = Math.min(normalizedText.length, current + 1);
+          if (next >= normalizedText.length) {
+            window.clearInterval(intervalId);
+          }
+          return next;
+        });
+      }, speed);
+    };
+    if (startDelayMs > 0) {
+      timeoutId = window.setTimeout(start, startDelayMs);
+    } else {
+      start();
+    }
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [enabled, normalizedText, speed, startDelayMs]);
+
+  return normalizedText.slice(0, visibleLength);
+};
+
+const useTypewriterList = (
+  items: string[],
+  options?: {
+    enabled?: boolean;
+    speed?: number;
+    startDelayMs?: number;
+  },
+) => {
+  const enabled = options?.enabled !== false;
+  const speed = options?.speed ?? 10;
+  const startDelayMs = options?.startDelayMs ?? 0;
+  const normalizedItems = useMemo(
+    () => items.map((item) => String(item || "")),
+    [items],
+  );
+  const totalLength = useMemo(
+    () =>
+      normalizedItems.reduce(
+        (sum, item, index) => sum + item.length + (index > 0 ? 1 : 0),
+        0,
+      ),
+    [normalizedItems],
+  );
+  const [visibleChars, setVisibleChars] = useState(enabled ? 0 : totalLength);
+
+  useEffect(() => {
+    if (!enabled) {
+      setVisibleChars(totalLength);
+      return;
+    }
+    setVisibleChars(0);
+    let cancelled = false;
+    let timeoutId = 0;
+    let intervalId = 0;
+    const start = () => {
+      intervalId = window.setInterval(() => {
+        setVisibleChars((current) => {
+          if (cancelled) return current;
+          if (current >= totalLength) {
+            window.clearInterval(intervalId);
+            return current;
+          }
+          const next = Math.min(totalLength, current + 1);
+          if (next >= totalLength) {
+            window.clearInterval(intervalId);
+          }
+          return next;
+        });
+      }, speed);
+    };
+    if (startDelayMs > 0) {
+      timeoutId = window.setTimeout(start, startDelayMs);
+    } else {
+      start();
+    }
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [enabled, speed, startDelayMs, totalLength]);
+
+  return useMemo(() => {
+    if (!enabled) return normalizedItems;
+    let remaining = visibleChars;
+    return normalizedItems.map((item, index) => {
+      const separatorCost = index > 0 ? 1 : 0;
+      if (remaining <= 0) return "";
+      if (remaining <= separatorCost) {
+        remaining = 0;
+        return "";
+      }
+      remaining -= separatorCost;
+      const visible = item.slice(0, Math.max(0, remaining));
+      remaining = Math.max(0, remaining - item.length);
+      return visible;
+    });
+  }, [enabled, normalizedItems, visibleChars]);
+};
+
+const formatSupportLevelLabel = (value: string) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "supported") return "Supported";
+  if (normalized === "conditional") return "Conditional";
+  if (normalized === "unsupported") return "Unsupported";
+  return "Unclear";
 };
 
 const getMatterIntelligenceStatuses = (
@@ -146,6 +386,18 @@ type SourceViewerState = {
   highlightBlockId: string | null;
   highlightText: string;
   matterId: string;
+};
+
+type CaseViewerState = {
+  title: string;
+  officialViewerUrl: string;
+  officialDocumentUrl: string;
+  officialSourceType: "pdf" | "html";
+  sourceCourt: string;
+  pageNumber: number | null;
+  relevantExcerpt: string;
+  relevantExcerptTitle: string;
+  officialCitation: string;
 };
 
 type GroundNextStepsState = {
@@ -243,6 +495,7 @@ type ContextCoreSearchResult = {
 type MatterWorkspaceTab =
   | "overview"
   | "facts"
+  | "evidence"
   | "drafts"
   | "timeline"
   | "people";
@@ -315,6 +568,44 @@ const renderHighlightedText = (
   return parts;
 };
 
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const renderEmphasizedInlineText = (text: string, terms: string[]) => {
+  const normalizedText = normalizeInline(text);
+  const normalizedTerms = Array.from(
+    new Set(
+      (Array.isArray(terms) ? terms : [])
+        .map((item) => normalizeInline(item))
+        .filter((item) => item.length >= 4),
+    ),
+  ).sort((left, right) => right.length - left.length);
+
+  if (!normalizedText || !normalizedTerms.length) {
+    return normalizedText;
+  }
+
+  const pattern = new RegExp(
+    `(${normalizedTerms.map((item) => escapeRegExp(item)).join("|")})`,
+    "gi",
+  );
+  const parts = normalizedText.split(pattern);
+
+  if (parts.length <= 1) return normalizedText;
+
+  return parts.map((part, index) =>
+    normalizedTerms.some(
+      (term) => term.toLowerCase() === part.toLowerCase(),
+    ) ? (
+      <mark key={`emphasis-${index}`} className="matterInlineEmphasis">
+        {part}
+      </mark>
+    ) : (
+      <span key={`plain-${index}`}>{part}</span>
+    ),
+  );
+};
+
 const normalizeSourceName = (value: string) =>
   String(value || "")
     .trim()
@@ -339,7 +630,9 @@ const getBriefPointSourceNames = (point: {
   const fromRefs = Array.isArray(point.sourceRefs)
     ? point.sourceRefs.map((sourceRef) => sourceRef.fileName).filter(Boolean)
     : [];
-  const names = fromRefs.length ? fromRefs : splitSourceNames(point.sourceDocument);
+  const names = fromRefs.length
+    ? fromRefs
+    : splitSourceNames(point.sourceDocument);
   return names.filter((name, index, list) => list.indexOf(name) === index);
 };
 
@@ -352,8 +645,13 @@ const sourceRefMatchesFile = (
   )
     .trim()
     .toLowerCase();
-  const normalizedSource = String(sourceName || "").trim().toLowerCase();
-  return Boolean(refFileName && normalizedSource) && refFileName.includes(normalizedSource);
+  const normalizedSource = String(sourceName || "")
+    .trim()
+    .toLowerCase();
+  return (
+    Boolean(refFileName && normalizedSource) &&
+    refFileName.includes(normalizedSource)
+  );
 };
 
 const sourceNameKey = (value: string) =>
@@ -520,9 +818,29 @@ const MatterSection = ({
   const [isExtractingPeople, setIsExtractingPeople] = useState(false);
   const [isContinuingContextCore, setIsContinuingContextCore] = useState(false);
   const [peopleExtractionMessage, setPeopleExtractionMessage] = useState("");
+  const [isEditingMatterTitle, setIsEditingMatterTitle] = useState(false);
+  const [matterTitleDraft, setMatterTitleDraft] = useState("");
+  const [isSavingMatterTitle, setIsSavingMatterTitle] = useState(false);
+  const [matterTitleError, setMatterTitleError] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingMatter, setIsDeletingMatter] = useState(false);
+  const [selectedReaderFont, setSelectedReaderFont] =
+    useState<MatterReaderFont>(() => {
+      const saved =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(MATTER_READER_FONT_SESSION_KEY)
+          : "";
+      if (
+        saved === "newsreader" ||
+        saved === "roboto" ||
+        saved === "comic" ||
+        saved === "georgia"
+      ) {
+        return saved;
+      }
+      return "newsreader";
+    });
   const [isMockModeEnabled, setIsMockModeEnabled] = useState(() =>
     loadMockModeEnabled(),
   );
@@ -557,8 +875,10 @@ const MatterSection = ({
     useState(false);
   const [briefAnswerError, setBriefAnswerError] = useState("");
   const [isAcceptingBrief, setIsAcceptingBrief] = useState(false);
-  const [isConfirmingSecondaryClassification, setIsConfirmingSecondaryClassification] =
-    useState(false);
+  const [
+    isConfirmingSecondaryClassification,
+    setIsConfirmingSecondaryClassification,
+  ] = useState(false);
   const [classificationTagInput, setClassificationTagInput] = useState("");
   const [isSavingClassificationTag, setIsSavingClassificationTag] =
     useState(false);
@@ -578,6 +898,25 @@ const MatterSection = ({
   >([]);
   const [isMatterChatSubmitting, setIsMatterChatSubmitting] = useState(false);
   const [matterChatError, setMatterChatError] = useState("");
+  const [orientationSnapshotsByMatterId] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
+  const [
+    summaryGenerationStateByMatterId,
+    setSummaryGenerationStateByMatterId,
+  ] = useState<Record<string, { running: boolean; error: string }>>({});
+  const [workflowSelectionIdByMatterId, setWorkflowSelectionIdByMatterId] =
+    useState<Record<string, string>>({});
+  const [workflowOverrideNoteByMatterId, setWorkflowOverrideNoteByMatterId] =
+    useState<Record<string, string>>({});
+  const [
+    workflowConfirmationStateByMatterId,
+    setWorkflowConfirmationStateByMatterId,
+  ] = useState<Record<string, { submitting: boolean; error: string }>>({});
+  const [atlasTransitionStateByMatterId, setAtlasTransitionStateByMatterId] =
+    useState<Record<string, "post-confirm" | "post-clarification">>({});
+  const [activeProgressVariantIndex, setActiveProgressVariantIndex] =
+    useState(0);
 
   useEffect(() => {
     if (conversationOpenRequest > 0) {
@@ -596,12 +935,12 @@ const MatterSection = ({
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(
     null,
   );
+  const [caseViewer, setCaseViewer] = useState<CaseViewerState | null>(null);
   const [draftRecommendations, setDraftRecommendations] =
     useState<MatterDraftRecommendations | null>(null);
   const [isLoadingDraftRecommendations, setIsLoadingDraftRecommendations] =
     useState(false);
-  const [draftRecommendationError, setDraftRecommendationError] =
-    useState("");
+  const [draftRecommendationError, setDraftRecommendationError] = useState("");
   const [startingDraftKey, setStartingDraftKey] = useState<string | null>(null);
   const sourceBlockRefs = useRef<Record<string, HTMLElement | null>>({});
   const mockPipelineTimeoutsRef = useRef<
@@ -624,6 +963,33 @@ const MatterSection = ({
   const [openClauseSections, setOpenClauseSections] = useState<
     Record<string, boolean>
   >({});
+  const [expandedSummaryIssueIds, setExpandedSummaryIssueIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedNextStepIds, setExpandedNextStepIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedCaseIds, setExpandedCaseIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [isBriefDetailModalOpen, setIsBriefDetailModalOpen] = useState(false);
+  const [briefRevealStage, setBriefRevealStage] = useState(3);
+  const [shouldAnimateBriefSections, setShouldAnimateBriefSections] =
+    useState(false);
+  const [clarificationDraftAnswers, setClarificationDraftAnswers] = useState<
+    Record<string, string>
+  >({});
+  const [
+    activeClarificationQuestionIndex,
+    setActiveClarificationQuestionIndex,
+  ] = useState(0);
+  const [isClarificationAdvancing, setIsClarificationAdvancing] =
+    useState(false);
+  const [clarificationAdvanceMessage, setClarificationAdvanceMessage] =
+    useState("Saving your answer and moving to the next question.");
+  const [isSubmittingClarification, setIsSubmittingClarification] =
+    useState(false);
+  const [clarificationSubmitError, setClarificationSubmitError] = useState("");
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const lastMatterJobPollAtRef = useRef<Record<string, number>>({});
@@ -648,10 +1014,85 @@ const MatterSection = ({
   const isActiveMockMatter = isMockMatterId(activeMatter?.id);
   const activeMatterContextCore = (activeMatter?.contextcore ||
     null) as ContextCoreMatterState | null;
+  const activeLegalBriefArtifact =
+    activeMatter?.executiveSummary ||
+    activeMatter?.latestExecutiveSummary?.summary ||
+    null;
+  const activeAtlasRecognition =
+    ((activeMatter?.atlasBaseRecognition ||
+      null) as AtlasBaseRecognitionResult | null) || null;
+  const activeAtlasConfirmation =
+    ((activeMatter?.atlasWorkflowConfirmation ||
+      null) as AtlasWorkflowConfirmation | null) || null;
+  const activeAtlasCheckpoint =
+    ((activeMatter?.atlasGapCheckpoint || null) as AtlasGapCheckpoint | null) ||
+    null;
+  const activeAtlasDeciderResearch =
+    ((activeMatter?.atlasDeciderResearch ||
+      null) as AtlasDeciderResearchResult | null) || null;
+  const activeAtlasCaseResearch =
+    ((activeMatter?.atlasCaseResearch ||
+      null) as AtlasCaseResearchResult | null) || null;
+  const activeAtlasNextSteps =
+    ((activeMatter?.atlasNextSteps || null) as AtlasNextStepsAnalysis | null) ||
+    null;
+  const activeAtlasMatterBrief =
+    ((activeMatter?.atlasMatterBrief || null) as AtlasMatterBrief | null) ||
+    null;
+  const activeFrontendBrief =
+    ((activeMatter?.frontendBrief ||
+      activeMatter?.latestFrontendBrief?.summary ||
+      null) as FrontendBriefArtifact | null) || null;
+  const activeBriefArtifact = activeLegalBriefArtifact;
+  const activeOverview = activeLegalBriefArtifact?.overview || null;
+  const activeDetailedBrief = activeLegalBriefArtifact?.detailedBrief || null;
+  const activeEvidenceReference =
+    activeLegalBriefArtifact?.evidenceReference || null;
+  const activeClarificationCheckpoint =
+    ((activeMatter?.clarificationCheckpoint ||
+      activeMatter?.analysis_state?.pendingClarification ||
+      null) as ClarificationCheckpoint | null) || null;
+  const activeAnalysisState = activeMatter?.analysis_state || null;
+  const isAtlasMatterFlow = Boolean(
+    activeAtlasRecognition ||
+    activeAtlasConfirmation ||
+    activeAtlasCheckpoint ||
+    activeAtlasDeciderResearch ||
+    activeAtlasCaseResearch ||
+    activeAtlasNextSteps ||
+    activeAtlasMatterBrief,
+  );
+  const activeOrientationSnapshot = activeMatter
+    ? orientationSnapshotsByMatterId[activeMatter.id] || null
+    : null;
+  const activeSummaryRunState = activeMatter
+    ? summaryGenerationStateByMatterId[activeMatter.id] || {
+        running: false,
+        error: "",
+      }
+    : { running: false, error: "" };
+  const activeWorkflowConfirmationState = activeMatter
+    ? workflowConfirmationStateByMatterId[activeMatter.id] || {
+        submitting: false,
+        error: "",
+      }
+    : { submitting: false, error: "" };
   const popupFileLimit =
     uploadPopupMode === "append"
       ? appendRemainingSlots
       : MATTER_UPLOAD_MAX_FILES;
+  const activeWorkflowSelectionId = activeMatter?.id
+    ? workflowSelectionIdByMatterId[activeMatter.id] ||
+      activeAtlasRecognition?.primaryWorkflowId ||
+      activeAtlasRecognition?.candidateWorkflows?.[0]?.workflowId ||
+      ""
+    : "";
+  const activeWorkflowOverrideNote = activeMatter?.id
+    ? workflowOverrideNoteByMatterId[activeMatter.id] || ""
+    : "";
+  const activeAtlasTransitionState = activeMatter?.id
+    ? atlasTransitionStateByMatterId[activeMatter.id] || null
+    : null;
   const isAddFilesDisabled =
     !activeMatter ||
     isAppendingMatterFiles ||
@@ -683,6 +1124,11 @@ const MatterSection = ({
     }
     return activeMatter?.title || "No matter uploaded yet";
   }, [activeMatter?.classification?.classification_name, activeMatter?.title]);
+  useEffect(() => {
+    setMatterTitleDraft(matterHeading);
+    setMatterTitleError("");
+    setIsEditingMatterTitle(false);
+  }, [activeMatter?.id, matterHeading]);
   const accumulatedBrief = activeMatter?.accumulatedBrief || null;
   const briefDisplayPayload =
     activeMatter?.acceptedBrief?.brief || accumulatedBrief || null;
@@ -746,38 +1192,42 @@ const MatterSection = ({
                 source_refs?: Array<Record<string, unknown>>;
               };
               return {
-              id: String(pointRecord?.id || ""),
-              heading: String(pointRecord?.heading || "").trim(),
-              detail: String(pointRecord?.detail || "").trim(),
-              tone: String(pointRecord?.tone || "neutral")
-                .trim()
-                .toLowerCase(),
-              sourceDocument: String(pointRecord?.source_document || "").trim(),
-              reason: String(pointRecord?.reason || "").trim(),
-              pointType: String(pointRecord?.point_type || "").trim(),
-              sourcePosture: String(pointRecord?.source_posture || "").trim(),
-              certainty: String(pointRecord?.certainty || pointRecord?.confidence || "")
-                .trim()
-                .toLowerCase(),
-              sourceRefs: Array.isArray(pointRecord?.source_refs)
-                ? pointRecord.source_refs
-                    .map((sourceRef) => ({
-                      chunkId: String(sourceRef?.chunk_id || "").trim(),
-                      fileName: String(sourceRef?.file_name || "").trim(),
-                      pageStart:
-                        sourceRef?.page_start == null
-                          ? null
-                          : Number(sourceRef.page_start),
-                      pageEnd:
-                        sourceRef?.page_end == null
-                          ? null
-                          : Number(sourceRef.page_end),
-                      verbatimBasis: String(
-                        sourceRef?.verbatim_basis || "",
-                      ).trim(),
-                    }))
-                    .filter((sourceRef) => sourceRef.chunkId)
-                : [],
+                id: String(pointRecord?.id || ""),
+                heading: String(pointRecord?.heading || "").trim(),
+                detail: String(pointRecord?.detail || "").trim(),
+                tone: String(pointRecord?.tone || "neutral")
+                  .trim()
+                  .toLowerCase(),
+                sourceDocument: String(
+                  pointRecord?.source_document || "",
+                ).trim(),
+                reason: String(pointRecord?.reason || "").trim(),
+                pointType: String(pointRecord?.point_type || "").trim(),
+                sourcePosture: String(pointRecord?.source_posture || "").trim(),
+                certainty: String(
+                  pointRecord?.certainty || pointRecord?.confidence || "",
+                )
+                  .trim()
+                  .toLowerCase(),
+                sourceRefs: Array.isArray(pointRecord?.source_refs)
+                  ? pointRecord.source_refs
+                      .map((sourceRef) => ({
+                        chunkId: String(sourceRef?.chunk_id || "").trim(),
+                        fileName: String(sourceRef?.file_name || "").trim(),
+                        pageStart:
+                          sourceRef?.page_start == null
+                            ? null
+                            : Number(sourceRef.page_start),
+                        pageEnd:
+                          sourceRef?.page_end == null
+                            ? null
+                            : Number(sourceRef.page_end),
+                        verbatimBasis: String(
+                          sourceRef?.verbatim_basis || "",
+                        ).trim(),
+                      }))
+                      .filter((sourceRef) => sourceRef.chunkId)
+                  : [],
               };
             })
             .filter((point) => point.id && point.heading && point.detail)
@@ -800,8 +1250,7 @@ const MatterSection = ({
             (profile as { file_name?: unknown }).file_name || "",
           ).trim(),
           documentType: String(
-            (profile as { document_type?: unknown }).document_type ||
-              "unknown",
+            (profile as { document_type?: unknown }).document_type || "unknown",
           ).trim(),
           confidence:
             (profile as { confidence?: unknown }).confidence == null
@@ -888,233 +1337,215 @@ const MatterSection = ({
     activeMatter?.intelligence_statuses?.debrief_verification,
     activeMatter?.intelligence_statuses?.debrief_generation,
   ]);
-  const groundAnalysisCards = useMemo(
-    () => {
-      const rawGroundCards = Array.isArray(groundAnalysis?.cards)
-        ? (groundAnalysis.cards as GroundAnalysisRawCard[])
-        : [];
-      const fallbackFactCards =
-        rawGroundCards.length || !Array.isArray(secondaryAnalysis?.extracted_facts)
-          ? []
-          : secondaryAnalysis.extracted_facts.map((fact, index) => {
-              const factRecord = fact as {
-                fact_id?: string;
-                assertion?: string;
-                fact_type?: string;
-                source_posture?: string;
-                source_refs?: Array<Record<string, unknown>>;
-                verification?: { similarity?: number };
-              };
-              const sourceRefs = Array.isArray(factRecord.source_refs)
-                ? (factRecord.source_refs as MatterSignalSourceRef[])
-                : [];
-              const sourceFiles = Array.from(
-                new Set(
-                  sourceRefs
-                    .map((ref) => String(ref?.file_name || "").trim())
-                    .filter(Boolean),
-                ),
-              );
-              const supportScore = Math.max(
-                0,
-                Math.min(
-                  1,
-                  Number(factRecord.verification?.similarity || 0.9),
-                ),
-              );
-              const title = formatBriefTaxonomyLabel(
-                String(factRecord.fact_type || "ContextCore fact"),
-              );
-              return {
-                card_id: `secondary_fact_${factRecord.fact_id || index}`,
-                title,
-                status: "ready",
-                confidence_percent: Math.round(supportScore * 100),
-                support_score: supportScore,
-                fact_text: String(factRecord.assertion || "").trim(),
-                law_text: null,
-                inference_text: null,
-                inference_card: { display_status: "review" },
-                law_verification_status: "not_started",
-                source_files: sourceFiles,
-                source_refs: sourceRefs,
-                law_sources: [],
-                legal_rules: [],
-                contrary_or_limiting_points: [],
-                research_gaps: [],
-              };
-            });
-      const displayCards: GroundAnalysisRawCard[] = rawGroundCards.length
-        ? rawGroundCards
-        : fallbackFactCards;
-      return displayCards
-            .map((card: GroundAnalysisRawCard) => ({
-              id: String(card?.card_id || ""),
-              title: String(card?.title || "").trim(),
-              status:
-                String(card?.status || "")
-                  .trim()
-                  .toLowerCase() === "open"
-                  ? "open"
-                  : "ready",
-              confidencePercent: Math.max(
-                0,
-                Math.min(100, Number(card?.confidence_percent || 0)),
+  const groundAnalysisCards = useMemo(() => {
+    const rawGroundCards = Array.isArray(groundAnalysis?.cards)
+      ? (groundAnalysis.cards as GroundAnalysisRawCard[])
+      : [];
+    const fallbackFactCards =
+      rawGroundCards.length ||
+      !Array.isArray(secondaryAnalysis?.extracted_facts)
+        ? []
+        : secondaryAnalysis.extracted_facts.map((fact, index) => {
+            const factRecord = fact as {
+              fact_id?: string;
+              assertion?: string;
+              fact_type?: string;
+              source_posture?: string;
+              source_refs?: Array<Record<string, unknown>>;
+              verification?: { similarity?: number };
+            };
+            const sourceRefs = Array.isArray(factRecord.source_refs)
+              ? (factRecord.source_refs as MatterSignalSourceRef[])
+              : [];
+            const sourceFiles = Array.from(
+              new Set(
+                sourceRefs
+                  .map((ref) => String(ref?.file_name || "").trim())
+                  .filter(Boolean),
               ),
-              supportScore:
-                typeof card?.support_score === "number"
-                  ? Math.max(0, Math.min(1, Number(card.support_score)))
-                  : null,
-              factText: String(card?.fact_text || "").trim(),
-              lawText:
-                card?.law_text == null
-                  ? null
-                  : String(card.law_text || "").trim(),
-              inferenceText:
-                card?.inference_text == null
-                  ? null
-                  : String(card.inference_text || "").trim(),
-              inferenceDisplayStatus: String(
-                card?.inference_card?.display_status || "review",
+            );
+            const supportScore = Math.max(
+              0,
+              Math.min(1, Number(factRecord.verification?.similarity || 0.9)),
+            );
+            const title = formatBriefTaxonomyLabel(
+              String(factRecord.fact_type || "ContextCore fact"),
+            );
+            return {
+              card_id: `secondary_fact_${factRecord.fact_id || index}`,
+              title,
+              status: "ready",
+              confidence_percent: Math.round(supportScore * 100),
+              support_score: supportScore,
+              fact_text: String(factRecord.assertion || "").trim(),
+              law_text: null,
+              inference_text: null,
+              inference_card: { display_status: "review" },
+              law_verification_status: "not_started",
+              source_files: sourceFiles,
+              source_refs: sourceRefs,
+              law_sources: [],
+              legal_rules: [],
+              contrary_or_limiting_points: [],
+              research_gaps: [],
+            };
+          });
+    const displayCards: GroundAnalysisRawCard[] = rawGroundCards.length
+      ? rawGroundCards
+      : fallbackFactCards;
+    return displayCards
+      .map((card: GroundAnalysisRawCard) => ({
+        id: String(card?.card_id || ""),
+        title: String(card?.title || "").trim(),
+        status:
+          String(card?.status || "")
+            .trim()
+            .toLowerCase() === "open"
+            ? "open"
+            : "ready",
+        confidencePercent: Math.max(
+          0,
+          Math.min(100, Number(card?.confidence_percent || 0)),
+        ),
+        supportScore:
+          typeof card?.support_score === "number"
+            ? Math.max(0, Math.min(1, Number(card.support_score)))
+            : null,
+        factText: String(card?.fact_text || "").trim(),
+        lawText:
+          card?.law_text == null ? null : String(card.law_text || "").trim(),
+        inferenceText:
+          card?.inference_text == null
+            ? null
+            : String(card.inference_text || "").trim(),
+        inferenceDisplayStatus: String(
+          card?.inference_card?.display_status || "review",
+        )
+          .trim()
+          .toLowerCase(),
+        inferenceMetaError:
+          card?.inference_meta == null
+            ? null
+            : String(card.inference_meta?.error || "").trim() || null,
+        nextSteps: {
+          status: String(card?.next_steps_status || "not_started")
+            .trim()
+            .toLowerCase(),
+          recommendedSteps: Array.isArray(
+            card?.next_steps?.recommended_next_steps,
+          )
+            ? card.next_steps.recommended_next_steps.map(
+                (step: GroundAnalysisRawStep) => ({
+                  stepId: String(step?.step_id || ""),
+                  title: String(step?.title || "").trim(),
+                  description: String(step?.description || "").trim(),
+                  actionType: String(step?.action_type || "")
+                    .trim()
+                    .toLowerCase(),
+                  priority: String(step?.priority || "medium")
+                    .trim()
+                    .toLowerCase(),
+                  status: String(step?.status || "ready")
+                    .trim()
+                    .toLowerCase(),
+                  reason: String(step?.reason || "").trim(),
+                  requiredBeforeDrafting: Boolean(
+                    step?.required_before_drafting,
+                  ),
+                  draftType:
+                    step?.draft_type == null
+                      ? null
+                      : String(step.draft_type || "").trim() || null,
+                  templateKey:
+                    step?.template_key == null
+                      ? null
+                      : String(step.template_key || "").trim() || null,
+                  requiredInputs: Array.isArray(step?.required_inputs)
+                    ? step.required_inputs
+                        .map((item: unknown) => String(item || "").trim())
+                        .filter(Boolean)
+                    : [],
+                }),
               )
-                .trim()
-                .toLowerCase(),
-              inferenceMetaError:
-                card?.inference_meta == null
-                  ? null
-                  : String(card.inference_meta?.error || "").trim() || null,
-              nextSteps: {
-                status: String(card?.next_steps_status || "not_started")
-                  .trim()
-                  .toLowerCase(),
-                recommendedSteps: Array.isArray(
-                  card?.next_steps?.recommended_next_steps,
-                )
-                  ? card.next_steps.recommended_next_steps.map((step: GroundAnalysisRawStep) => ({
-                      stepId: String(step?.step_id || ""),
-                      title: String(step?.title || "").trim(),
-                      description: String(step?.description || "").trim(),
-                      actionType: String(step?.action_type || "")
-                        .trim()
-                        .toLowerCase(),
-                      priority: String(step?.priority || "medium")
-                        .trim()
-                        .toLowerCase(),
-                      status: String(step?.status || "ready")
-                        .trim()
-                        .toLowerCase(),
-                      reason: String(step?.reason || "").trim(),
-                      requiredBeforeDrafting: Boolean(
-                        step?.required_before_drafting,
-                      ),
-                      draftType:
-                        step?.draft_type == null
-                          ? null
-                          : String(step.draft_type || "").trim() || null,
-                      templateKey:
-                        step?.template_key == null
-                          ? null
-                          : String(step.template_key || "").trim() || null,
-                      requiredInputs: Array.isArray(step?.required_inputs)
-                        ? step.required_inputs
-                            .map((item: unknown) => String(item || "").trim())
-                            .filter(Boolean)
-                        : [],
-                    }))
-                  : [],
-                primaryDraftingAction:
-                  card?.next_steps?.primary_drafting_action == null
-                    ? null
-                    : {
-                        label: String(
-                          card.next_steps.primary_drafting_action?.label || "",
-                        ).trim(),
-                        draftType:
-                          card.next_steps.primary_drafting_action?.draft_type ==
-                          null
-                            ? null
-                            : String(
-                                card.next_steps.primary_drafting_action
-                                  ?.draft_type || "",
-                              ).trim() || null,
-                        templateKey:
+            : [],
+          primaryDraftingAction:
+            card?.next_steps?.primary_drafting_action == null
+              ? null
+              : {
+                  label: String(
+                    card.next_steps.primary_drafting_action?.label || "",
+                  ).trim(),
+                  draftType:
+                    card.next_steps.primary_drafting_action?.draft_type == null
+                      ? null
+                      : String(
+                          card.next_steps.primary_drafting_action?.draft_type ||
+                            "",
+                        ).trim() || null,
+                  templateKey:
+                    card.next_steps.primary_drafting_action?.template_key ==
+                    null
+                      ? null
+                      : String(
                           card.next_steps.primary_drafting_action
-                            ?.template_key == null
-                            ? null
-                            : String(
-                                card.next_steps.primary_drafting_action
-                                  ?.template_key || "",
-                              ).trim() || null,
-                        cta: String(
-                          card.next_steps.primary_drafting_action?.cta ||
-                            "Open draft",
-                        ).trim(),
-                      },
-                metaError:
-                  card?.next_steps_meta == null
-                    ? null
-                    : String(card.next_steps_meta?.error || "").trim() || null,
-              } satisfies GroundNextStepsState,
-              lawSources: Array.isArray(card?.law_sources)
-                ? (card.law_sources as Array<Record<string, unknown>>)
-                : [],
-              lawCard: (() => {
-                if (card?.law_card && typeof card.law_card === "object") {
-                  return {
-                      lawBindingId: String(
-                        card.law_card.law_binding_id || "",
-                      ).trim(),
-                      title: String(card.law_card.title || "").trim(),
-                      sourceUrl: String(card.law_card.source_url || "").trim(),
-                      sourceDomain: String(
-                        card.law_card.source_domain || "",
-                      ).trim(),
-                      authorityType: String(
-                        card.law_card.authority_type || "",
-                      ).trim(),
-                      bindingStrength: String(
-                        card.law_card.binding_strength || "",
-                      ).trim(),
-                      bindingExplanation: String(
-                        card.law_card.binding_explanation || "",
-                      ).trim(),
-                      application: String(
-                        card.law_card.application || "",
-                      ).trim(),
-                      verificationStatus: String(
-                        card.law_card.verification_status || "",
-                      ).trim(),
-                    };
-                }
-                return null;
-              })(),
-              legalRules: Array.isArray(card?.legal_rules)
-                ? card.legal_rules
-                : [],
-              contraryPoints: Array.isArray(card?.contrary_or_limiting_points)
-                ? card.contrary_or_limiting_points
-                : [],
-              researchGaps: Array.isArray(card?.research_gaps)
-                ? card.research_gaps
-                    .map((item) => String(item || "").trim())
-                    .filter(Boolean)
-                : [],
-              lawVerificationStatus: String(
-                card?.law_verification_status || "not_started",
+                            ?.template_key || "",
+                        ).trim() || null,
+                  cta: String(
+                    card.next_steps.primary_drafting_action?.cta ||
+                      "Open draft",
+                  ).trim(),
+                },
+          metaError:
+            card?.next_steps_meta == null
+              ? null
+              : String(card.next_steps_meta?.error || "").trim() || null,
+        } satisfies GroundNextStepsState,
+        lawSources: Array.isArray(card?.law_sources)
+          ? (card.law_sources as Array<Record<string, unknown>>)
+          : [],
+        lawCard: (() => {
+          if (card?.law_card && typeof card.law_card === "object") {
+            return {
+              lawBindingId: String(card.law_card.law_binding_id || "").trim(),
+              title: String(card.law_card.title || "").trim(),
+              sourceUrl: String(card.law_card.source_url || "").trim(),
+              sourceDomain: String(card.law_card.source_domain || "").trim(),
+              authorityType: String(card.law_card.authority_type || "").trim(),
+              bindingStrength: String(
+                card.law_card.binding_strength || "",
               ).trim(),
-              sourceFiles: Array.isArray(card?.source_files)
-                ? card.source_files
-                    .map((item) => String(item || "").trim())
-                    .filter(Boolean)
-                : [],
-              sourceRefs: Array.isArray(card?.source_refs)
-                ? card.source_refs
-                : [],
-            }))
-            .filter((card) => card.id && card.title && card.factText)
-    },
-    [groundAnalysis?.cards, secondaryAnalysis?.extracted_facts],
-  );
+              bindingExplanation: String(
+                card.law_card.binding_explanation || "",
+              ).trim(),
+              application: String(card.law_card.application || "").trim(),
+              verificationStatus: String(
+                card.law_card.verification_status || "",
+              ).trim(),
+            };
+          }
+          return null;
+        })(),
+        legalRules: Array.isArray(card?.legal_rules) ? card.legal_rules : [],
+        contraryPoints: Array.isArray(card?.contrary_or_limiting_points)
+          ? card.contrary_or_limiting_points
+          : [],
+        researchGaps: Array.isArray(card?.research_gaps)
+          ? card.research_gaps
+              .map((item) => String(item || "").trim())
+              .filter(Boolean)
+          : [],
+        lawVerificationStatus: String(
+          card?.law_verification_status || "not_started",
+        ).trim(),
+        sourceFiles: Array.isArray(card?.source_files)
+          ? card.source_files
+              .map((item) => String(item || "").trim())
+              .filter(Boolean)
+          : [],
+        sourceRefs: Array.isArray(card?.source_refs) ? card.source_refs : [],
+      }))
+      .filter((card) => card.id && card.title && card.factText);
+  }, [groundAnalysis?.cards, secondaryAnalysis?.extracted_facts]);
   const hasHiddenGroundAnalysisCards =
     groundAnalysisCards.length > GROUND_ANALYSIS_INITIAL_FACT_COUNT;
   const visibleGroundAnalysisCards = isGroundAnalysisExpanded
@@ -1126,43 +1557,966 @@ const MatterSection = ({
   );
   const isMatterStepBusy =
     isContinuingContextCore || isConfirmingSecondaryClassification;
+  const detectedDocumentIdentity = normalizeInline(
+    String(
+      (
+        activeOrientationSnapshot as {
+          initialOrientation?: { documentIdentity?: string };
+        } | null
+      )?.initialOrientation?.documentIdentity || "",
+    ),
+  );
+  const summaryIssues = Array.isArray(activeDetailedBrief?.issueAnalysis)
+    ? activeDetailedBrief.issueAnalysis
+    : [];
+  const missingProofItems = useMemo(() => {
+    if (activeAtlasMatterBrief?.remainingGaps?.length) {
+      return activeAtlasMatterBrief.remainingGaps
+        .map((item) => normalizeInline(item))
+        .filter(Boolean);
+    }
+    if (activeAtlasCheckpoint?.gapClassification?.factualProofMissing?.length) {
+      return activeAtlasCheckpoint.gapClassification.factualProofMissing
+        .map((item) => normalizeInline(item))
+        .filter(Boolean);
+    }
+    if (activeAtlasCheckpoint?.missingWorkflowRequirements?.length) {
+      return activeAtlasCheckpoint.missingWorkflowRequirements
+        .map((item) => normalizeInline(item))
+        .filter(Boolean);
+    }
+    return (activeOverview?.gapsToClose || []).map((item) =>
+      normalizeInline(`${item.label}${item.reason ? ` — ${item.reason}` : ""}`),
+    );
+  }, [
+    activeAtlasCheckpoint?.gapClassification?.factualProofMissing,
+    activeAtlasCheckpoint?.missingWorkflowRequirements,
+    activeAtlasMatterBrief?.remainingGaps,
+    activeOverview?.gapsToClose,
+  ]);
+  const activeFrontendSummary = useMemo(
+    () => String(activeFrontendBrief?.summary || "").trim(),
+    [activeFrontendBrief?.summary],
+  );
+  const activeAtlasSummary = useMemo(
+    () => String(activeAtlasMatterBrief?.brief || "").trim(),
+    [activeAtlasMatterBrief?.brief],
+  );
+  const atlasDraftQueue = useMemo(
+    () =>
+      Array.isArray(activeAtlasNextSteps?.draftQueue)
+        ? activeAtlasNextSteps.draftQueue
+        : [],
+    [activeAtlasNextSteps?.draftQueue],
+  );
+  const activePrimarySummary = activeAtlasSummary || activeFrontendSummary;
+  const activeBriefAnimationSignature = useMemo(() => {
+    if (!activeMatter?.id || !activePrimarySummary) return "";
+    const latestAtlasMeta =
+      activeMatter?.latestAtlasMatterBrief &&
+      typeof activeMatter.latestAtlasMatterBrief === "object"
+        ? (activeMatter.latestAtlasMatterBrief as {
+            version?: number;
+            created_at?: string;
+          })
+        : null;
+    const latestFrontendMeta =
+      activeMatter?.latestFrontendBrief &&
+      typeof activeMatter.latestFrontendBrief === "object"
+        ? activeMatter.latestFrontendBrief
+        : null;
+    if (activeAtlasMatterBrief) {
+      return [
+        activeMatter.id,
+        "atlas",
+        String(latestAtlasMeta?.version || ""),
+        String(latestAtlasMeta?.created_at || ""),
+        String(activeAtlasMatterBrief.workflowId || ""),
+        String(activeAtlasMatterBrief.brief || ""),
+      ].join("::");
+    }
+    if (activeFrontendBrief) {
+      return [
+        activeMatter.id,
+        "frontend",
+        String(
+          activeFrontendBrief.version || latestFrontendMeta?.version || "",
+        ),
+        String(
+          activeFrontendBrief.createdAt || latestFrontendMeta?.created_at || "",
+        ),
+        String(activeFrontendBrief.title || ""),
+        String(activeFrontendBrief.summary || ""),
+      ].join("::");
+    }
+    return [activeMatter.id, "fallback", activePrimarySummary].join("::");
+  }, [
+    activeAtlasMatterBrief,
+    activeFrontendBrief,
+    activeMatter?.id,
+    activeMatter?.latestAtlasMatterBrief,
+    activeMatter?.latestFrontendBrief,
+    activePrimarySummary,
+  ]);
+  const activeSummaryTitle =
+    activeAtlasMatterBrief?.usedWorkflow?.name ||
+    activeFrontendBrief?.title ||
+    activeOverview?.headline ||
+    "Matter brief";
+  const activeWorkflowDisplayName =
+    activeAtlasRecognition?.primaryWorkflowName ||
+    activeAtlasRecognition?.candidateWorkflows?.find(
+      (candidate) => candidate.workflowId === activeWorkflowSelectionId,
+    )?.workflowName ||
+    formatAtlasLabel(activeWorkflowSelectionId);
+  const activePracticeAreaDisplayName =
+    activeAtlasRecognition?.primaryAreaName ||
+    activeAtlasRecognition?.candidateWorkflows?.find(
+      (candidate) => candidate.workflowId === activeWorkflowSelectionId,
+    )?.areaName ||
+    "";
+  const summaryHighlightTerms = useMemo(
+    () =>
+      [
+        activeAtlasMatterBrief?.usedWorkflow?.name || "",
+        activePracticeAreaDisplayName,
+        "termination for cause",
+        "written notice",
+        "cure period",
+        "material default",
+        "delivery delay",
+        "refund obligations",
+        "arbitration",
+      ].filter(Boolean),
+    [activeAtlasMatterBrief?.usedWorkflow?.name, activePracticeAreaDisplayName],
+  );
+  const atlasSimilarCases = Array.isArray(activeAtlasCaseResearch?.similarCases)
+    ? activeAtlasCaseResearch.similarCases
+    : [];
+  useEffect(() => {
+    if (!activeMatter?.id || !activeBriefAnimationSignature) {
+      setShouldAnimateBriefSections(false);
+      setBriefRevealStage(3);
+      return;
+    }
+    const storageKey = `${MATTER_BRIEF_ANIMATION_KEY}:${activeMatter.id}`;
+    const savedSignature =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(storageKey)
+        : "";
+    if (savedSignature === activeBriefAnimationSignature) {
+      setShouldAnimateBriefSections(false);
+      setBriefRevealStage(3);
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey, activeBriefAnimationSignature);
+    }
+    setShouldAnimateBriefSections(true);
+    setBriefRevealStage(1);
+  }, [activeBriefAnimationSignature, activeMatter?.id]);
+  const typedPrimarySummary = useTypewriterText(activePrimarySummary, {
+    enabled: Boolean(activePrimarySummary) && shouldAnimateBriefSections,
+    speed: 10,
+    startDelayMs: 120,
+  });
+  const typedMissingProofItems = useTypewriterList(missingProofItems, {
+    enabled:
+      shouldAnimateBriefSections &&
+      briefRevealStage >= 2 &&
+      missingProofItems.length > 0,
+    speed: 7,
+    startDelayMs: 320,
+  });
+  const typedAtlasCaseTitles = useTypewriterList(
+    atlasSimilarCases.map((item) => String(item.title || "")),
+    {
+      enabled:
+        shouldAnimateBriefSections &&
+        briefRevealStage >= 3 &&
+        atlasSimilarCases.length > 0,
+      speed: 7,
+      startDelayMs: 520,
+    },
+  );
+  useEffect(() => {
+    if (!shouldAnimateBriefSections) return;
+    if (briefRevealStage !== 1) return;
+    if (typedPrimarySummary.length < activePrimarySummary.length) return;
+    const timeoutId = window.setTimeout(() => {
+      if (missingProofItems.length) {
+        setBriefRevealStage(2);
+      } else if (atlasSimilarCases.length) {
+        setBriefRevealStage(3);
+      } else {
+        setBriefRevealStage(3);
+        setShouldAnimateBriefSections(false);
+      }
+    }, 260);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activePrimarySummary.length,
+    atlasSimilarCases.length,
+    briefRevealStage,
+    missingProofItems.length,
+    shouldAnimateBriefSections,
+    typedPrimarySummary.length,
+  ]);
+  useEffect(() => {
+    if (!shouldAnimateBriefSections) return;
+    if (briefRevealStage !== 2) return;
+    const typedMissingComplete =
+      typedMissingProofItems.filter(Boolean).length ===
+        missingProofItems.length &&
+      typedMissingProofItems.every(
+        (item, index) => item.length >= (missingProofItems[index] || "").length,
+      );
+    if (!typedMissingComplete) return;
+    const timeoutId = window.setTimeout(() => {
+      if (atlasSimilarCases.length) {
+        setBriefRevealStage(3);
+      } else {
+        setShouldAnimateBriefSections(false);
+      }
+    }, 240);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    atlasSimilarCases.length,
+    briefRevealStage,
+    missingProofItems,
+    shouldAnimateBriefSections,
+    typedMissingProofItems,
+  ]);
+  useEffect(() => {
+    if (!shouldAnimateBriefSections) return;
+    if (briefRevealStage !== 3) return;
+    if (!atlasSimilarCases.length) {
+      setShouldAnimateBriefSections(false);
+      return;
+    }
+    const typedCasesComplete =
+      typedAtlasCaseTitles.filter(Boolean).length ===
+        atlasSimilarCases.length &&
+      typedAtlasCaseTitles.every(
+        (item, index) =>
+          item.length >= String(atlasSimilarCases[index]?.title || "").length,
+      );
+    if (!typedCasesComplete) return;
+    const timeoutId = window.setTimeout(() => {
+      setShouldAnimateBriefSections(false);
+    }, 220);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    atlasSimilarCases,
+    briefRevealStage,
+    shouldAnimateBriefSections,
+    typedAtlasCaseTitles,
+  ]);
+  useEffect(() => {
+    window.localStorage.setItem(
+      MATTER_READER_FONT_SESSION_KEY,
+      selectedReaderFont,
+    );
+  }, [selectedReaderFont]);
+  const readerFontOptions: Array<{
+    value: MatterReaderFont;
+    label: string;
+  }> = [
+    { value: "newsreader", label: "Newsreader" },
+    { value: "roboto", label: "Roboto" },
+    { value: "comic", label: "Comic Sans" },
+    { value: "georgia", label: "Georgia" },
+  ];
+  const readerFontClass =
+    activeMatterTab === "drafts"
+      ? ""
+      : `matterReaderFont-${selectedReaderFont}`;
+  const renderAtlasSimilarCases = (
+    cases: typeof atlasSimilarCases,
+    emptyMessage = "Comparable case references will appear here once research is ready.",
+  ) => {
+    if (!cases.length) {
+      return <p className="matterDebriefEmpty">{emptyMessage}</p>;
+    }
+    return (
+      <div className="matterCaseList">
+        {cases.map((item, index) => {
+          const caseId =
+            item.officialViewerUrl ||
+            item.officialDocumentUrl ||
+            item.referenceUrl ||
+            item.title ||
+            `atlas-case-${index}`;
+          const isExpanded = Boolean(expandedCaseIds[caseId]);
+          const summaryText = normalizeInline(
+            String(item.relevantExcerpt || item.note || ""),
+          );
+          const typedTitle = shouldAnimateBriefSections
+            ? typedAtlasCaseTitles[index] || ""
+            : String(item.title || "");
+          return (
+            <article className="matterCaseRow" key={caseId}>
+              <div className="matterCaseRowMain">
+                <button
+                  type="button"
+                  className="matterCaseTitleLink"
+                  onClick={() => {
+                    const targetUrl =
+                      item.officialViewerUrl || item.officialDocumentUrl;
+                    if (targetUrl) {
+                      window.open(targetUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                >
+                  {typedTitle || item.title}
+                </button>
+                {summaryText ? (
+                  <button
+                    type="button"
+                    className="matterCaseSummaryToggle"
+                    onClick={() =>
+                      setExpandedCaseIds((current) => ({
+                        ...current,
+                        [caseId]: !current[caseId],
+                      }))
+                    }
+                    aria-expanded={isExpanded}
+                  >
+                    <span>Summary</span>
+                    {isExpanded ? (
+                      <ChevronDown size={16} />
+                    ) : (
+                      <ChevronRight size={16} />
+                    )}
+                  </button>
+                ) : null}
+              </div>
+              {isExpanded && summaryText ? (
+                <div className="matterCaseSummary">
+                  {item.facts ? (
+                    <p>
+                      <strong>Facts:</strong> {item.facts}
+                    </p>
+                  ) : null}
+                  {item.legalQuestion ? (
+                    <p>
+                      <strong>Legal question:</strong> {item.legalQuestion}
+                    </p>
+                  ) : null}
+                  {item.holding ? (
+                    <p>
+                      <strong>Holding:</strong> {item.holding}
+                    </p>
+                  ) : null}
+                  {item.relevanceToMatter ? (
+                    <p>
+                      <strong>Why it matters:</strong> {item.relevanceToMatter}
+                    </p>
+                  ) : null}
+                  <p>{summaryText}</p>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    );
+  };
+  const renderAtlasNextSteps = () => {
+    if (!activeAtlasNextSteps) {
+      return (
+        <p className="matterDebriefEmpty">
+          Next procedural steps and draft suggestions will appear once the
+          research pass is complete.
+        </p>
+      );
+    }
 
-  const openGapFactCards = useCallback(() => {
-    const gapCardIds = groundAnalysisCards
-      .filter((card) => card.researchGaps.length > 0)
-      .map((card) => card.id);
-    if (!gapCardIds.length) return;
-    setExpandedFactIds((prev) => {
-      const next = { ...prev };
-      gapCardIds.forEach((id) => {
-        next[id] = true;
+    const draftQueue = Array.isArray(activeAtlasNextSteps.draftQueue)
+      ? activeAtlasNextSteps.draftQueue
+      : [];
+    const whyTheseNext = Array.isArray(activeAtlasNextSteps.whyTheseNext)
+      ? activeAtlasNextSteps.whyTheseNext
+      : [];
+    const blockingItems = Array.isArray(activeAtlasNextSteps.blockingItems)
+      ? activeAtlasNextSteps.blockingItems
+      : [];
+    const nextStepHighlightTerms = [
+      "blocked",
+      "ready",
+      "generated",
+      "cure period",
+      "termination",
+      "notice",
+      "refund",
+      "written notice",
+      "material default",
+      "delivery deadlines",
+      "clause",
+      "proof",
+      "upload",
+      "SOW",
+      activeAtlasMatterBrief?.usedWorkflow?.name || "",
+    ].filter(Boolean);
+    const renderNextStepAccordion = ({
+      id,
+      title,
+      badge,
+      preview,
+      body,
+      panelClassName = "",
+    }: {
+      id: string;
+      title: string;
+      badge?: ReactNode;
+      preview?: ReactNode;
+      body?: ReactNode;
+      panelClassName?: string;
+    }) => {
+      const isExpanded = Boolean(expandedNextStepIds[id]);
+      return (
+        <article
+          className={`matterNextStepsPanel matterNextStepsAccordion ${panelClassName}`.trim()}
+          key={id}
+        >
+          <button
+            type="button"
+            className="matterNextStepsAccordionToggle"
+            onClick={() =>
+              setExpandedNextStepIds((current) => ({
+                ...current,
+                [id]: !current[id],
+              }))
+            }
+            aria-expanded={isExpanded}
+          >
+            <div className="matterNextStepCardHead">
+              <strong>{title}</strong>
+              <div className="matterNextStepsAccordionMeta">
+                {badge}
+                {isExpanded ? (
+                  <ChevronDown size={18} />
+                ) : (
+                  <ChevronRight size={18} />
+                )}
+              </div>
+            </div>
+            {preview ? (
+              <p className="matterNextStepsPreview">{preview}</p>
+            ) : null}
+          </button>
+          {isExpanded && body ? (
+            <div className="matterNextStepsAccordionBody">{body}</div>
+          ) : null}
+        </article>
+      );
+    };
+
+    return (
+      <div className="matterNextStepsStack">
+        {!draftQueue.length ? (
+          <article className="matterNextStepsPanel">
+            <div className="matterNextStepCardHead">
+              <strong>
+                Workflow-grounded follow-up is still being assembled
+              </strong>
+            </div>
+            {blockingItems.length ? (
+              <>
+                <p>
+                  The current matter still has blocking prerequisites before a
+                  stronger drafting queue can be suggested.
+                </p>
+                <ul className="matterBulletList">
+                  {blockingItems.map((item) => (
+                    <li key={`blocking-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </>
+            ) : whyTheseNext.length ? (
+              <ul className="matterBulletList">
+                {whyTheseNext.map((item) => (
+                  <li key={`why-${item}`}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>
+                The workflow and similar-case pass completed, but the next-step
+                plan did not return a usable sequence yet.
+              </p>
+            )}
+            {activeAtlasNextSteps.researchTrace?.error ? (
+              <small className="matterNextStepDraftType">
+                {activeAtlasNextSteps.researchTrace.error}
+              </small>
+            ) : null}
+          </article>
+        ) : null}
+        {draftQueue.length ? (
+          <article className="matterNextStepsPanel">
+            <div className="matterNextStepsStack">
+              {draftQueue.map((item) =>
+                renderNextStepAccordion({
+                  id: item.id,
+                  title: item.title,
+                  preview: renderEmphasizedInlineText(
+                    item.description,
+                    nextStepHighlightTerms,
+                  ),
+                  body: (
+                    <>
+                      <p>
+                        {renderEmphasizedInlineText(
+                          item.description,
+                          nextStepHighlightTerms,
+                        )}
+                      </p>
+                      {item.unblocksWhen.length ? (
+                        <ul className="matterBulletList">
+                          {item.unblocksWhen.map((dependency) => (
+                            <li key={`${item.id}-${dependency}`}>
+                              {renderEmphasizedInlineText(
+                                dependency,
+                                nextStepHighlightTerms,
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </>
+                  ),
+                  panelClassName: "isDraft",
+                }),
+              )}
+            </div>
+          </article>
+        ) : null}
+        {whyTheseNext.length ? (
+          <article className="matterNextStepsPanel">
+            {renderNextStepAccordion({
+              id: "why-these-steps-matter",
+              title: "Why these steps matter",
+              preview: (
+                <span className="matterNextStepsPreviewHint">
+                  Expand to see the reasoning behind the draft order.
+                </span>
+              ),
+              body: (
+                <ul className="matterBulletList">
+                  {whyTheseNext.map((item) => (
+                    <li key={`why-next-${item}`}>
+                      {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
+                    </li>
+                  ))}
+                </ul>
+              ),
+            })}
+          </article>
+        ) : null}
+      </div>
+    );
+  };
+  const atlasRunningStatuses = new Set([
+    "orientation_running",
+    "evidence_matrix_running",
+    "base_recognition_running",
+    "workflow_gap_check_running",
+    "decider_research_running",
+    "case_research_running",
+    "next_steps_running",
+    "atlas_brief_running",
+    "atlas_cancelling",
+  ]);
+  const atlasPauseStatuses = new Set([
+    "workflow_confirmation_needed",
+    "workflow_gap_checkpoint",
+  ]);
+  const isExtractionRunning =
+    activeMatter?.status === "processing" ||
+    activeMatter?.extractedFieldsStatus === "processing";
+  const isIndexingRunning = activeMatterContextCore?.status === "processing";
+  const hasOrientationSignals = Boolean(
+    detectedDocumentIdentity ||
+    activeAnalysisState?.whatWeFound?.length ||
+    activeOrientationSnapshot,
+  );
+  const analysisProgressMessages = useMemo<AnalysisProgressMessage[]>(() => {
+    if (
+      Array.isArray(activeAnalysisState?.feed) &&
+      activeAnalysisState.feed.length
+    ) {
+      return activeAnalysisState.feed.map((rawItem) => {
+        const item = rawItem as {
+          id: string;
+          state: "done" | "current" | "waiting" | "attention";
+          message: string;
+          rotationMessages?: unknown[];
+        };
+        return {
+          id: item.id,
+          tone:
+            item.state === "done"
+              ? "done"
+              : item.state === "attention"
+                ? "current"
+                : item.state === "current"
+                  ? "current"
+                  : "waiting",
+          text: item.message,
+          rotationMessages: Array.isArray(item.rotationMessages)
+            ? item.rotationMessages
+                .map((entry: unknown) => normalizeInline(String(entry || "")))
+                .filter(Boolean)
+            : [],
+        };
       });
+    }
+    const messages: AnalysisProgressMessage[] = [];
+    messages.push({
+      id: "upload",
+      tone: activeMatter ? "done" : "waiting",
+      text: activeMatter
+        ? "Documents received safely. We’ve saved the matter and started the review."
+        : "Upload a document to begin the matter review.",
+      rotationMessages: [],
+    });
+    messages.push({
+      id: "read",
+      tone:
+        isExtractionRunning || isIndexingRunning
+          ? "current"
+          : activeMatter
+            ? "done"
+            : "waiting",
+      text: isExtractionRunning
+        ? "Reading document text, headings, dates, parties, and clause structure."
+        : isIndexingRunning
+          ? "Preparing the searchable record so evidence can be checked against the uploaded text."
+          : "Searchable text is ready for matter analysis.",
+      rotationMessages: isExtractionRunning
+        ? [
+            "Reading document text, headings, dates, parties, and clause structure.",
+            "Converting the uploaded record into searchable text.",
+          ]
+        : isIndexingRunning
+          ? [
+              "Preparing the searchable record so evidence can be checked against the uploaded text.",
+              "Indexing the uploaded material for evidence-backed retrieval.",
+            ]
+          : [],
+    });
+    messages.push({
+      id: "understand",
+      tone: hasOrientationSignals
+        ? "done"
+        : activeSummaryRunState.running
+          ? "current"
+          : activeMatter && !activePrimarySummary
+            ? "current"
+            : "waiting",
+      text: detectedDocumentIdentity
+        ? `Matter orientation complete. This appears to be ${detectedDocumentIdentity}.`
+        : "Understanding the matter type and likely legal focus.",
+      rotationMessages: [
+        "Understanding the matter type and likely legal focus.",
+        "Checking the document’s legal role and subject matter.",
+      ],
+    });
+    messages.push({
+      id: "verify",
+      tone:
+        activePrimarySummary || activeSummaryRunState.running
+          ? missingProofItems.length
+            ? "done"
+            : "current"
+          : hasOrientationSignals && !activePrimarySummary
+            ? "current"
+            : "waiting",
+      text:
+        missingProofItems.length > 0
+          ? "Evidence review found contractual support, but some factual proof is still missing."
+          : "Checking what the uploaded record actually supports and what remains unproven.",
+      rotationMessages: [
+        "Checking what the uploaded record actually supports and what remains unproven.",
+        "Separating record-backed support from unresolved factual gaps.",
+      ],
+    });
+    messages.push({
+      id: "summary",
+      tone: activeBriefArtifact
+        ? "done"
+        : activeSummaryRunState.running
+          ? "current"
+          : "waiting",
+      text: activeBriefArtifact
+        ? "The brief is ready. You can review the summary and open the detailed analysis."
+        : "Preparing the executive brief. You can do something else and return when it is ready.",
+      rotationMessages: activeBriefArtifact
+        ? []
+        : [
+            "Preparing the executive brief. You can do something else and return when it is ready.",
+            "Combining the workflow, evidence, and case research into a concise brief.",
+          ],
+    });
+    return messages;
+  }, [
+    activeAnalysisState?.feed,
+    activeBriefArtifact,
+    activeMatter,
+    activeMatter?.extractedFieldsStatus,
+    activeMatter?.status,
+    activeMatterContextCore?.status,
+    activeSummaryRunState.running,
+    detectedDocumentIdentity,
+    hasOrientationSignals,
+    isExtractionRunning,
+    isIndexingRunning,
+    missingProofItems.length,
+  ]);
+  const activeProgressMessage =
+    analysisProgressMessages.find((message) => message.tone === "current") ||
+    analysisProgressMessages.find((message) => message.tone === "waiting") ||
+    null;
+  const activeProgressDisplayText = activeProgressMessage
+    ? (() => {
+        const variants = Array.isArray(activeProgressMessage.rotationMessages)
+          ? activeProgressMessage.rotationMessages
+          : [];
+        if (!variants.length) return activeProgressMessage.text;
+        return (
+          variants[activeProgressVariantIndex % variants.length] ||
+          activeProgressMessage.text
+        );
+      })()
+    : "";
+  const shouldShowProgressThread =
+    activeSummaryRunState.running ||
+    (!activePrimarySummary && Boolean(activeMatter));
+  const shouldShowWorkflowConfirmationState =
+    Boolean(activeAtlasRecognition) &&
+    !activeAtlasConfirmation?.selectedWorkflowId &&
+    activeAnalysisState?.status === "workflow_confirmation_needed" &&
+    activeAtlasTransitionState !== "post-confirm" &&
+    !activePrimarySummary;
+  const isAtlasCheckpointActionable =
+    Boolean(activeAtlasCheckpoint) &&
+    activeAnalysisState?.status === "workflow_gap_checkpoint";
+  const shouldShowClarificationState =
+    Boolean(
+      isAtlasCheckpointActionable ||
+      (!isAtlasMatterFlow &&
+        activeClarificationCheckpoint &&
+        activeClarificationCheckpoint?.status !== "ready_to_summarize"),
+    ) &&
+    activeAtlasTransitionState !== "post-clarification" &&
+    !shouldShowWorkflowConfirmationState &&
+    !activePrimarySummary;
+  const activeQuestionSet =
+    (isAtlasCheckpointActionable
+      ? activeAtlasCheckpoint?.criticalQuestions
+      : null) ||
+    (!isAtlasMatterFlow ? activeClarificationCheckpoint?.questions : null) ||
+    [];
+  const isMatterResearchRunning =
+    isClarificationAdvancing ||
+    activeSummaryRunState.running ||
+    isExtractionRunning ||
+    isIndexingRunning ||
+    Boolean(
+      activeAnalysisState?.status &&
+      atlasRunningStatuses.has(String(activeAnalysisState.status)),
+    ) ||
+    (!activePrimarySummary &&
+      Boolean(activeMatter) &&
+      !shouldShowClarificationState &&
+      !shouldShowWorkflowConfirmationState &&
+      !(
+        activeAnalysisState?.status &&
+        atlasPauseStatuses.has(String(activeAnalysisState.status))
+      ));
+  const isMatterStatePolling =
+    Boolean(activeMatter?.id) &&
+    (isExtractionRunning ||
+      isIndexingRunning ||
+      activeSummaryRunState.running ||
+      Boolean(
+        activeAnalysisState?.status &&
+        atlasRunningStatuses.has(String(activeAnalysisState.status)),
+      ));
+  const clarificationQuestions = activeQuestionSet;
+  const activeClarificationQuestion =
+    clarificationQuestions[activeClarificationQuestionIndex] || null;
+  const activeClarificationAnswerValue = activeClarificationQuestion
+    ? clarificationDraftAnswers[activeClarificationQuestion.id] || ""
+    : "";
+  const canAdvanceClarificationQuestion = activeClarificationQuestion
+    ? Boolean(String(activeClarificationAnswerValue || "").trim())
+    : false;
+  const researchWorkspaceTitle = activePrimarySummary
+    ? "Matter brief ready"
+    : shouldShowWorkflowConfirmationState
+      ? "Associate has matched this matter to an atlas workflow"
+      : shouldShowClarificationState
+        ? "Associate needs a few targeted inputs"
+        : "Associate is actively researching this matter";
+  const researchWorkspaceSummary = activePrimarySummary
+    ? "The short brief is ready below. Open it to review the full research, workflow grounding, and case analogs."
+    : shouldShowWorkflowConfirmationState
+      ? activeAtlasRecognition?.checkpoint?.messageToUser ||
+        "Confirm the workflow match before deeper research starts."
+      : shouldShowClarificationState
+        ? (isAtlasCheckpointActionable
+            ? activeAtlasCheckpoint?.messageToUser
+            : null) ||
+          activeClarificationCheckpoint?.messageToUser ||
+          "The contract framework is visible, but a stronger conclusion needs a few answers or supporting records."
+        : "The system is reading the record, mapping the matter type, checking what the documents actually support, and preparing the legal brief.";
+  const researchWorkspaceStatusLabel = activePrimarySummary
+    ? "brief ready"
+    : shouldShowWorkflowConfirmationState
+      ? "workflow confirmation"
+      : shouldShowClarificationState
+        ? "clarification checkpoint"
+        : isMatterResearchRunning
+          ? "live execution"
+          : "research queued";
+
+  useEffect(() => {
+    setActiveProgressVariantIndex(0);
+    if (!activeProgressMessage?.rotationMessages?.length) return;
+    const interval = window.setInterval(() => {
+      setActiveProgressVariantIndex((current) => current + 1);
+    }, 2200);
+    return () => window.clearInterval(interval);
+  }, [activeProgressMessage?.id, activeProgressMessage?.rotationMessages]);
+
+  useEffect(() => {
+    if (!activeMatter?.id || !isMatterStatePolling) return;
+    const interval = window.setInterval(() => {
+      const isAtlasPolling =
+        Boolean(
+          activeAnalysisState?.status &&
+          atlasRunningStatuses.has(String(activeAnalysisState.status)),
+        ) || Boolean(activeSummaryRunState.running);
+      if (isAtlasPolling) {
+        void refreshActiveAtlasMatterState(activeMatter.id);
+        return;
+      }
+      void refreshMattersFromServer();
+    }, 2500);
+    return () => window.clearInterval(interval);
+  }, [
+    activeAnalysisState?.status,
+    activeMatter?.id,
+    activeSummaryRunState.running,
+    isMatterStatePolling,
+  ]);
+
+  useEffect(() => {
+    if (!activeMatter?.id) return;
+    const status = String(activeAnalysisState?.status || "").trim();
+    if (
+      !status ||
+      status === "workflow_confirmation_needed" ||
+      status === "workflow_gap_checkpoint"
+    ) {
+      return;
+    }
+    setAtlasTransitionStateByMatterId((current) => {
+      if (!current[activeMatter.id]) return current;
+      const next = { ...current };
+      delete next[activeMatter.id];
       return next;
     });
-  }, [groundAnalysisCards]);
+  }, [activeAnalysisState?.status, activeMatter?.id]);
 
-  const navigateToWorkspaceSection = useCallback(
-    (
-      tab: MatterWorkspaceTab,
-      options?: { openGaps?: boolean; openFirstFact?: boolean },
-    ) => {
-      if (options?.openGaps) {
-        openGapFactCards();
+  useEffect(() => {
+    if (!activeMatter?.id) return;
+    const status = String(activeAnalysisState?.status || "").trim();
+    const shouldStopLocalRun =
+      Boolean(activePrimarySummary) ||
+      status === "workflow_confirmation_needed" ||
+      status === "workflow_gap_checkpoint" ||
+      status === "atlas_brief_ready" ||
+      status === "atlas_cancelled" ||
+      status === "atlas_failed" ||
+      status === "atlas_needs_review";
+    if (!shouldStopLocalRun) return;
+    setSummaryGenerationStateByMatterId((current) => {
+      const entry = current[activeMatter.id];
+      if (!entry?.running) return current;
+      return {
+        ...current,
+        [activeMatter.id]: {
+          ...entry,
+          running: false,
+        },
+      };
+    });
+  }, [activeAnalysisState?.status, activeMatter?.id, activePrimarySummary]);
+
+  useEffect(() => {
+    const hasOpenPopup =
+      isBriefDetailModalOpen ||
+      Boolean(sourceViewer) ||
+      Boolean(caseViewer) ||
+      shouldShowWorkflowConfirmationState ||
+      shouldShowClarificationState;
+    if (!hasOpenPopup) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (caseViewer) {
+        setCaseViewer(null);
+        return;
       }
-      if (options?.openFirstFact && groundAnalysisCards[0]?.id) {
-        setExpandedFactIds((prev) =>
-          prev[groundAnalysisCards[0].id]
-            ? prev
-            : { ...prev, [groundAnalysisCards[0].id]: true },
-        );
+      if (sourceViewer) {
+        setSourceViewer(null);
+        return;
       }
-      setActiveMatterTab(tab);
-      window.setTimeout(() => {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }, 60);
-    },
-    [groundAnalysisCards, openGapFactCards],
-  );
+      if (isBriefDetailModalOpen) {
+        setIsBriefDetailModalOpen(false);
+        return;
+      }
+      navigate("/");
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    caseViewer,
+    isBriefDetailModalOpen,
+    navigate,
+    shouldShowClarificationState,
+    shouldShowWorkflowConfirmationState,
+    sourceViewer,
+  ]);
+
+  useEffect(() => {
+    setActiveClarificationQuestionIndex(0);
+    setClarificationDraftAnswers({});
+    setClarificationSubmitError("");
+    setIsClarificationAdvancing(false);
+    setClarificationAdvanceMessage(
+      "Saving your answer and moving to the next question.",
+    );
+  }, [activeMatter?.id, activeClarificationCheckpoint?.matterId]);
+
+  useEffect(() => {
+    if (!activeMatter?.id) return;
+    const fallbackWorkflowId =
+      activeAtlasRecognition?.primaryWorkflowId ||
+      activeAtlasRecognition?.candidateWorkflows?.[0]?.workflowId ||
+      "";
+    if (!fallbackWorkflowId) return;
+    setWorkflowSelectionIdByMatterId((current) =>
+      current[activeMatter.id]
+        ? current
+        : { ...current, [activeMatter.id]: fallbackWorkflowId },
+    );
+  }, [
+    activeMatter?.id,
+    activeAtlasRecognition?.primaryWorkflowId,
+    activeAtlasRecognition?.candidateWorkflows,
+  ]);
 
   useEffect(() => {
     if (activeMatterTab !== "facts") return;
@@ -1207,14 +2561,15 @@ const MatterSection = ({
 
     try {
       const response = await fetch(
-        buildApiUrl(`/api/matters/${encodeURIComponent(matterId)}/people/extract`),
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(matterId)}/people/extract`,
+        ),
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-          }),
+          body: JSON.stringify({}),
         },
       );
 
@@ -1455,107 +2810,70 @@ const MatterSection = ({
       ),
     [lockedDraftRecommendations, lowRelevanceDraftRecommendations],
   );
+  const draftPanelItems = isAtlasMatterFlow
+    ? atlasDraftQueue
+    : draftRecommendationItems;
+  const draftPanelCount = draftPanelItems.length;
   const factCoverageCount =
     groundAnalysisCards.length || secondaryVerifiedFactCount || 0;
-  const workspaceStats = [
-    {
-      label: "Documents",
-      value: uploadedDocumentCount,
-      tone: "neutral",
-      note: "uploaded set",
-      action: () => navigateToWorkspaceSection("overview"),
-    },
-    {
-      label: "Verified facts",
-      value: factCoverageCount,
-      tone: factCoverageCount ? "positive" : "neutral",
-      note: "grounded signals",
-      action: () =>
-        navigateToWorkspaceSection("facts", { openFirstFact: true }),
-    },
-    {
-      label: "Open gaps",
-      value: secondaryGapCount,
-      tone: secondaryGapCount ? "warning" : "positive",
-      note: "need support",
-      action: () =>
-        navigateToWorkspaceSection("facts", {
-          openGaps: true,
-          openFirstFact: true,
-        }),
-    },
-    {
-      label: "Drafts ready",
-      value: readyDraftRecommendations.length,
-      tone: readyDraftRecommendations.length ? "positive" : "neutral",
-      note: "can start now",
-      action: () => navigateToWorkspaceSection("drafts"),
-    },
-  ] as const;
-  const pipelineStages = [
-    {
-      key: "intake",
-      label: "Intake",
-      status: activeMatter ? "ready" : "queued",
-    },
-    {
-      key: "analysis",
-      label: "Analysis",
-      status:
-        activeMatter?.intelligence_statuses?.brief_generation === "ready"
-          ? "ready"
-          : activeMatter?.intelligence_statuses?.brief_generation ===
-                "processing" || activeMatterContextCore?.status === "processing"
-            ? "processing"
-            : activeMatterContextCore?.status === "ready"
-              ? "ready"
-              : activeMatter?.intelligence_statuses?.brief_generation === "failed"
-                ? "failed"
-                : "queued",
-    },
-    {
-      key: "strategy",
-      label: "Strategy",
-      status:
-        groundAnalysisStatus === "ready"
-          ? "ready"
-          : groundAnalysisStatus === "processing"
-            ? "processing"
-            : groundAnalysisStatus === "failed"
-              ? "failed"
-              : "queued",
-    },
-    {
-      key: "drafting",
-      label: "Drafting",
-      status:
-        readyDraftRecommendations.length > 0
-          ? "ready"
-          : isLoadingDraftRecommendations
-            ? "processing"
-            : draftRecommendationItems.length > 0
-              ? "queued"
-              : "queued",
-    },
-    {
-      key: "filing",
-      label: "Filing",
-      status: "queued",
-    },
-  ] as const;
   const workspaceTabs: Array<{
     id: MatterWorkspaceTab;
     label: string;
     count?: number;
   }> = [
     { id: "overview", label: "Overview" },
-    { id: "facts", label: "Facts", count: factCoverageCount },
-    { id: "drafts", label: "Drafts", count: draftRecommendationItems.length },
-    { id: "timeline", label: "Timeline", count: briefPoints.length || groundAnalysisCards.length },
+    {
+      id: "facts",
+      label: "Analysis",
+      count: summaryIssues.length || factCoverageCount,
+    },
+    {
+      id: "evidence",
+      label: "Evidence",
+      count: activeEvidenceReference?.evidenceItems?.length || 0,
+    },
+    { id: "drafts", label: "Drafts", count: draftPanelCount },
+    {
+      id: "timeline",
+      label: "Timeline",
+      count:
+        (isAtlasMatterFlow ? atlasDraftQueue.length : 0) ||
+        briefPoints.length ||
+        groundAnalysisCards.length,
+    },
     { id: "people", label: "People", count: people.length },
   ];
 
   const timelineItems = useMemo(() => {
+    if (isAtlasMatterFlow && atlasDraftQueue.length) {
+      return atlasDraftQueue.slice(0, 8).map((item, index) => {
+        const dependencyText = Array.isArray(item.unblocksWhen)
+          ? item.unblocksWhen.join(" ")
+          : "";
+        const dependsText = Array.isArray(item.dependsOn)
+          ? item.dependsOn.join(" ")
+          : "";
+        const when =
+          index === 0
+            ? "Start first"
+            : /cure|notice|proof|upload|extract|support/i.test(
+                  `${dependencyText} ${dependsText}`,
+                )
+              ? "After supporting material is in place"
+              : /termination|expiry|uncured|non-cure/i.test(
+                    `${item.title} ${item.description} ${dependencyText}`,
+                  )
+                ? "After prerequisite notice and cure steps"
+                : "Next in sequence";
+        return {
+          id: `${item.id}-timeline`,
+          title: item.title,
+          detail: item.description,
+          source: when,
+          step: index + 1,
+        };
+      });
+    }
     const fromBrief = briefPoints.slice(0, 6).map((point, index) => ({
       id: `${point.id}-timeline`,
       title: point.heading,
@@ -1568,10 +2886,10 @@ const MatterSection = ({
       id: `${card.id}-timeline`,
       title: card.title,
       detail: card.factText,
-      source: card.sourceFiles[0] || "",
-      step: index + 1,
-    }));
-  }, [briefPoints, groundAnalysisCards]);
+        source: card.sourceFiles[0] || "",
+        step: index + 1,
+      }));
+  }, [atlasDraftQueue, briefPoints, groundAnalysisCards, isAtlasMatterFlow]);
   const findDocumentBySource = (
     sourceName: string,
     sourceRef?: MatterSignalSourceRef | null,
@@ -2140,8 +3458,7 @@ const MatterSection = ({
       activeMatter?.intelligence_statuses?.brief_verification ===
         "processing" ||
       activeMatter?.intelligence_statuses?.law_generation === "processing" ||
-      activeMatter?.intelligence_statuses?.law_verification ===
-        "processing" ||
+      activeMatter?.intelligence_statuses?.law_verification === "processing" ||
       activeMatter?.intelligence_statuses?.inference_generation ===
         "processing" ||
       activeMatter?.intelligence_statuses?.inference_verification ===
@@ -2826,10 +4143,9 @@ const MatterSection = ({
     ) {
       await sleep(MATTER_JOB_POLL_INTERVAL_MS);
       const matters = await refreshStoredMatters();
-      const refreshedMatter =
-        Array.isArray(matters)
-          ? matters.find((item) => item?.matter?.id === matterId) || null
-          : null;
+      const refreshedMatter = Array.isArray(matters)
+        ? matters.find((item) => item?.matter?.id === matterId) || null
+        : null;
       if (!refreshedMatter) continue;
 
       updateMatter(refreshedMatter);
@@ -3043,10 +4359,454 @@ const MatterSection = ({
     throw new MatterPollingTimeoutError(jobId);
   };
 
-  const handleMatterChatSubmit = async (
-    query: string,
-    mode: SearchBarMode,
+  const refreshMattersFromServer = async () => {
+    const response = await fetch(buildApiUrl("/api/matters"));
+    const payload = (await response.json()) as {
+      success?: boolean;
+      matters?: MatterProcessedResult[];
+    };
+    if (!response.ok || !payload?.success) {
+      throw new Error("Failed to refresh saved matters.");
+    }
+    setMattersFromServer(Array.isArray(payload.matters) ? payload.matters : []);
+  };
+
+  const refreshActiveAtlasMatterState = async (matterId: string) => {
+    const response = await fetch(
+      buildApiUrl(
+        `/api/matters/${encodeURIComponent(matterId)}/atlas-research/latest`,
+      ),
+    );
+    const payload = (await response.json()) as {
+      success?: boolean;
+      result?: MatterProcessedResult;
+    };
+    if (!response.ok || !payload?.success || !payload.result) {
+      throw new Error("Failed to refresh atlas matter state.");
+    }
+    updateMatter(payload.result);
+  };
+
+  const waitForMatterAvailability = async (matterId: string) => {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        await refreshActiveAtlasMatterState(matterId);
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Matter not ready yet.";
+        if (!/not found/i.test(message)) {
+          throw error;
+        }
+      }
+      await sleep(500);
+    }
+    return false;
+  };
+
+  const runMatterAtlasResearch = async (
+    matterId: string,
+    options?: { continueWithLimitedResearch?: boolean },
   ) => {
+    try {
+      const isAvailable = await waitForMatterAvailability(matterId);
+      if (!isAvailable) {
+        throw new Error(
+          "Matter was uploaded, but the research workspace is not ready yet. Please retry in a moment.",
+        );
+      }
+      setSummaryGenerationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { running: true, error: "" },
+      }));
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(matterId)}/atlas-research/run`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            continueWithLimitedResearch: Boolean(
+              options?.continueWithLimitedResearch,
+            ),
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        status?: string;
+        recognition?: AtlasBaseRecognitionResult;
+        checkpoint?: AtlasGapCheckpoint;
+        brief?: AtlasMatterBrief;
+        deciderResearch?: AtlasDeciderResearchResult;
+        caseResearch?: AtlasCaseResearchResult;
+        error?: string;
+        meta?: Record<string, unknown>;
+      };
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Matter legal brief request failed.");
+      }
+
+      await refreshMattersFromServer();
+      if (payload.status === "needs_confirmation") {
+        console.log("[atlas][base-recognition]", payload.recognition);
+        return;
+      }
+      if (payload.status === "running") {
+        return;
+      }
+      if (
+        payload.status === "needs_user_input" ||
+        payload.status === "needs_more_documents"
+      ) {
+        console.log("[atlas][gap-checkpoint]", payload.checkpoint);
+        return;
+      }
+    } catch (error) {
+      setSummaryGenerationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: {
+          running: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Matter atlas research request failed.",
+        },
+      }));
+      console.error("[atlas-research][failed]", error);
+    }
+  };
+
+  const cancelMatterAtlasResearch = async (matterId: string) => {
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(matterId)}/atlas-research/cancel`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        result?: MatterProcessedResult;
+      };
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Failed to cancel atlas research.");
+      }
+      await refreshActiveAtlasMatterState(matterId);
+      setSummaryGenerationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { running: false, error: "" },
+      }));
+      navigate("/");
+    } catch (error) {
+      setSummaryGenerationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: {
+          running: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to cancel atlas research.",
+        },
+      }));
+    }
+  };
+
+  const retryMatterAtlasRecognition = async (
+    matterId: string,
+    overrideNote = "",
+  ) => {
+    try {
+      setWorkflowConfirmationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { submitting: true, error: "" },
+      }));
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(matterId)}/base-recognition`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            overrideNote: normalizeInline(overrideNote),
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        recognition?: AtlasBaseRecognitionResult;
+        error?: string;
+      };
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Failed to retry categorization.");
+      }
+      await refreshMattersFromServer();
+      setWorkflowConfirmationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { submitting: false, error: "" },
+      }));
+      console.log("[atlas][base-recognition][retry]", payload.recognition);
+    } catch (error) {
+      setWorkflowConfirmationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: {
+          submitting: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to retry categorization.",
+        },
+      }));
+    }
+  };
+
+  const confirmMatterAtlasWorkflow = async ({
+    matterId,
+    selectedWorkflowId,
+    overrideNote,
+  }: {
+    matterId: string;
+    selectedWorkflowId: string;
+    overrideNote?: string;
+  }) => {
+    try {
+      setWorkflowConfirmationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { submitting: true, error: "" },
+      }));
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(matterId)}/base-recognition/confirm`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            selectedWorkflowId,
+            overrideNote: normalizeInline(overrideNote || ""),
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Failed to confirm the workflow.");
+      }
+      setAtlasTransitionStateByMatterId((current) => ({
+        ...current,
+        [matterId]: "post-confirm",
+      }));
+      setSummaryGenerationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { running: true, error: "" },
+      }));
+      await refreshMattersFromServer();
+      setWorkflowConfirmationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { submitting: false, error: "" },
+      }));
+      await runMatterAtlasResearch(matterId);
+    } catch (error) {
+      setWorkflowConfirmationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: {
+          submitting: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to confirm the workflow.",
+        },
+      }));
+    }
+  };
+
+  const logMatterUnderstandingAgents = async (matterId: string) => {
+    await runMatterAtlasResearch(matterId);
+  };
+
+  const submitClarificationAnswers = async (
+    matterId: string,
+    options?: { preserveLoader?: boolean },
+  ) => {
+    if (!activeClarificationCheckpoint?.questions?.length) return;
+    try {
+      setIsSubmittingClarification(true);
+      setClarificationSubmitError("");
+      if (!options?.preserveLoader) {
+        setClarificationAdvanceMessage(
+          "Using your answers to resume the research and prepare the next stage.",
+        );
+        setIsClarificationAdvancing(true);
+      }
+      const answers = activeClarificationCheckpoint.questions
+        .map((question) => {
+          const raw = String(
+            clarificationDraftAnswers[question.id] || "",
+          ).trim();
+          if (!raw) return null;
+          const normalizedAnswer =
+            question.answerType === "yes_no"
+              ? raw === "yes"
+                ? true
+                : raw === "no"
+                  ? false
+                  : raw
+              : raw;
+          return {
+            questionId: question.id,
+            answer: normalizedAnswer,
+            answerType: question.answerType,
+          };
+        })
+        .filter(Boolean);
+
+      if (!answers.length) {
+        throw new Error("Add at least one answer before submitting.");
+      }
+
+      const targetPath = `/api/matters/${encodeURIComponent(matterId)}/atlas-research/continue`;
+      const response = await fetch(buildApiUrl(targetPath), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ answers }),
+      });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !payload?.success) {
+        throw new Error(
+          payload?.error || "Failed to save clarification answers.",
+        );
+      }
+      setAtlasTransitionStateByMatterId((current) => ({
+        ...current,
+        [matterId]: "post-clarification",
+      }));
+      setSummaryGenerationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { running: true, error: "" },
+      }));
+      await refreshMattersFromServer();
+      setClarificationDraftAnswers({});
+      setActiveClarificationQuestionIndex(0);
+      return;
+    } catch (error) {
+      setIsClarificationAdvancing(false);
+      setClarificationSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Failed to save clarification answers.",
+      );
+    } finally {
+      setIsSubmittingClarification(false);
+    }
+  };
+
+  const advanceClarificationQuestion = async (
+    nextMessage = "Saving your answer and moving to the next question.",
+  ) => {
+    setClarificationAdvanceMessage(nextMessage);
+    setIsClarificationAdvancing(true);
+    await sleep(520);
+    setActiveClarificationQuestionIndex((current) =>
+      Math.min(current + 1, clarificationQuestions.length),
+    );
+    setIsClarificationAdvancing(false);
+  };
+
+  const continueWithLimitedSummary = async (matterId: string) => {
+    try {
+      setClarificationAdvanceMessage(
+        "Continuing with a limited brief and resuming the research flow.",
+      );
+      setIsClarificationAdvancing(true);
+      setAtlasTransitionStateByMatterId((current) => ({
+        ...current,
+        [matterId]: "post-clarification",
+      }));
+      await runMatterAtlasResearch(matterId, {
+        continueWithLimitedResearch: true,
+      });
+    } catch {
+      setIsClarificationAdvancing(false);
+    }
+  };
+
+  const handleClarificationAnswerAdvance = async (
+    draftOverride?: Record<string, string>,
+  ) => {
+    if (!activeClarificationQuestion || !activeMatter?.id) return;
+    const nextDraftAnswers = draftOverride || clarificationDraftAnswers;
+    const nextIndex = Math.min(
+      activeClarificationQuestionIndex + 1,
+      clarificationQuestions.length,
+    );
+    const isLastQuestion = nextIndex >= clarificationQuestions.length;
+    const answeredCount = clarificationQuestions.reduce((count, question) => {
+      const value = String(nextDraftAnswers[question.id] || "").trim();
+      return value ? count + 1 : count;
+    }, 0);
+
+    if (isLastQuestion && answeredCount > 0) {
+      setClarificationAdvanceMessage(
+        "All answers received. Associate is resuming the research now.",
+      );
+      setIsClarificationAdvancing(true);
+      await sleep(520);
+      setActiveClarificationQuestionIndex(nextIndex);
+      await submitClarificationAnswers(activeMatter.id, {
+        preserveLoader: true,
+      });
+      return;
+    }
+
+    await advanceClarificationQuestion();
+  };
+
+  const handleClarificationSkip = async () => {
+    if (!activeClarificationQuestion) return;
+    setClarificationDraftAnswers((current) => {
+      const next = { ...current };
+      delete next[activeClarificationQuestion.id];
+      return next;
+    });
+    await advanceClarificationQuestion(
+      "Skipping this question and moving to the next checkpoint.",
+    );
+  };
+
+  const handleClarificationSkipAll = () => {
+    setClarificationAdvanceMessage(
+      "Skipping the remaining questions and preparing the next checkpoint.",
+    );
+    setIsClarificationAdvancing(true);
+    window.setTimeout(() => {
+      setActiveClarificationQuestionIndex(clarificationQuestions.length);
+      setIsClarificationAdvancing(false);
+    }, 520);
+  };
+
+  const handleMatterChatSubmit = async (query: string, mode: SearchBarMode) => {
     if (!activeMatter?.id || isActiveMockMatter) {
       setMatterChatError(
         "Matter chat is only available for real uploaded matters.",
@@ -3118,6 +4878,23 @@ const MatterSection = ({
     }
   };
 
+  const openMissingProofInMatterChat = (missingItem: string) => {
+    if (!activeMatter?.id) return;
+    if (isMatterChatSubmitting) return;
+    const workflowName =
+      activeAtlasMatterBrief?.usedWorkflow?.name ||
+      activeWorkflowDisplayName ||
+      "this workflow";
+    const prompt = [
+      `Help me obtain or prove this missing item for ${workflowName}: ${missingItem}.`,
+      "Explain what document, communication, record, or confirmation I should get next.",
+      "If the ideal document is unavailable, explain what alternate proof may still work.",
+      "Answer in practical lawyer-facing steps.",
+    ].join(" ");
+    setIsMatterChatOpen(true);
+    void handleMatterChatSubmit(prompt, "deep");
+  };
+
   const handleAddPerson = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!activeMatter || !personName.trim()) return;
@@ -3166,6 +4943,49 @@ const MatterSection = ({
       );
     } finally {
       setIsDeletingMatter(false);
+    }
+  };
+
+  const handleSaveMatterTitle = async () => {
+    if (!activeMatter || isSavingMatterTitle) return;
+    const nextTitle = matterTitleDraft.trim();
+    if (!nextTitle) {
+      setMatterTitleError("Title cannot be empty.");
+      return;
+    }
+    if (nextTitle === String(activeMatter.title || "").trim()) {
+      setIsEditingMatterTitle(false);
+      setMatterTitleError("");
+      return;
+    }
+
+    setIsSavingMatterTitle(true);
+    setMatterTitleError("");
+    try {
+      const response = await fetch(
+        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/title`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: nextTitle }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        result?: MatterProcessedResult;
+      };
+      if (!response.ok || !payload?.success || !payload.result) {
+        throw new Error(payload?.error || "Failed to rename matter.");
+      }
+      updateMatter(payload.result);
+      setIsEditingMatterTitle(false);
+    } catch (error) {
+      setMatterTitleError(
+        error instanceof Error ? error.message : "Failed to rename matter.",
+      );
+    } finally {
+      setIsSavingMatterTitle(false);
     }
   };
 
@@ -3222,10 +5042,7 @@ const MatterSection = ({
         formData.append("matter", file);
       });
       formData.append("matter_query", queryToUpload);
-      formData.append(
-        "pass_through_contextcore",
-        "true",
-      );
+      formData.append("pass_through_contextcore", "true");
 
       const response = await fetch(buildApiUrl("/api/matters/upload"), {
         method: "POST",
@@ -3268,6 +5085,7 @@ const MatterSection = ({
       }
 
       addMatter(result);
+      void logMatterUnderstandingAgents(result.matter.id);
       persistMockMatter(result);
       closeUploadPopup(true);
       navigate("/matter");
@@ -3325,10 +5143,7 @@ const MatterSection = ({
         formData.append("matter", file);
       });
       formData.append("matter_query", queryToUpload);
-      formData.append(
-        "pass_through_contextcore",
-        "true",
-      );
+      formData.append("pass_through_contextcore", "true");
 
       const response = await fetch(
         buildApiUrl(
@@ -3360,6 +5175,7 @@ const MatterSection = ({
         updateAppendLoaderStage,
       );
       updateMatter(result);
+      void logMatterUnderstandingAgents(result.matter.id);
       closeUploadPopup(true);
     } catch (error) {
       setIsUploadPopupOpen(true);
@@ -3568,7 +5384,8 @@ const MatterSection = ({
 
   const handleAddClassificationTag = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!activeMatter || isActiveMockMatter || isSavingClassificationTag) return;
+    if (!activeMatter || isActiveMockMatter || isSavingClassificationTag)
+      return;
     const tag = classificationTagInput.trim();
     if (!tag) return;
 
@@ -3611,7 +5428,11 @@ const MatterSection = ({
   };
 
   const handleRefreshDraftRecommendations = async () => {
-    if (!activeMatter?.id || isActiveMockMatter || isLoadingDraftRecommendations) {
+    if (
+      !activeMatter?.id ||
+      isActiveMockMatter ||
+      isLoadingDraftRecommendations
+    ) {
       return;
     }
     setIsLoadingDraftRecommendations(true);
@@ -3990,7 +5811,7 @@ const MatterSection = ({
   void activeDraftText;
 
   return (
-    <section className="matterOverviewWrap">
+    <section className={`matterOverviewWrap ${readerFontClass}`.trim()}>
       <UploadPopUp
         open={isUploadPopupOpen}
         title={
@@ -4086,7 +5907,58 @@ const MatterSection = ({
       <header className="matterOverviewHead">
         <p className="matterEyebrow">Matter Overview</p>
         <div className="matterOverviewTitleRow">
-          <h1>{matterHeading}</h1>
+          <div className="matterEditableTitleWrap">
+            {isEditingMatterTitle ? (
+              <>
+                <input
+                  className="matterTitleEditorInput"
+                  value={matterTitleDraft}
+                  onChange={(event) => {
+                    setMatterTitleDraft(event.target.value);
+                    if (matterTitleError) {
+                      setMatterTitleError("");
+                    }
+                  }}
+                  onBlur={() => {
+                    void handleSaveMatterTitle();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleSaveMatterTitle();
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setMatterTitleDraft(matterHeading);
+                      setMatterTitleError("");
+                      setIsEditingMatterTitle(false);
+                    }
+                  }}
+                  placeholder="Rename this matter"
+                  autoFocus
+                  disabled={isSavingMatterTitle}
+                />
+                {matterTitleError ? (
+                  <p className="matterTitleEditorError">{matterTitleError}</p>
+                ) : null}
+              </>
+            ) : (
+              <button
+                type="button"
+                className="matterTitleEditTrigger"
+                onClick={() => {
+                  if (!activeMatter) return;
+                  setMatterTitleDraft(matterHeading);
+                  setMatterTitleError("");
+                  setIsEditingMatterTitle(true);
+                }}
+                disabled={!activeMatter}
+                title="Click to rename this matter"
+              >
+                <h1>{matterHeading}</h1>
+              </button>
+            )}
+          </div>
           <div className="matterOverviewActionRow">
             <Button
               type="button"
@@ -4137,42 +6009,33 @@ const MatterSection = ({
           Focused view for quick orientation, working notes, and clause-aware
           document review.
         </p>
+        <div className="matterReaderFontBar">
+          <label className="matterReaderFontLabel" htmlFor="matter-reader-font">
+            Reader font
+          </label>
+          <select
+            id="matter-reader-font"
+            className="matterReaderFontSelect"
+            value={selectedReaderFont}
+            onChange={(event) =>
+              setSelectedReaderFont(event.target.value as MatterReaderFont)
+            }
+          >
+            {readerFontOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {activeMatter ? (
           <>
-            <div className="matterPipelineStrip">
-              {pipelineStages.map((stage, index) => (
-                <div
-                  className={`matterPipelineStep is-${stage.status}`}
-                  key={stage.key}
-                >
-                  <span className="matterPipelineIndex">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <strong>{stage.label}</strong>
-                    <small>{stage.status}</small>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="matterStatStrip">
-              {workspaceStats.map((stat) => (
-                <button
-                  type="button"
-                  className={`matterStatCard tone-${stat.tone}`}
-                  key={stat.label}
-                  onClick={stat.action}
-                >
-                  <p>{stat.label}</p>
-                  <strong>{stat.value}</strong>
-                  <span>{stat.note}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="matterWorkspaceTabs" role="tablist" aria-label="Matter workspace">
+            <div
+              className="matterWorkspaceTabs"
+              role="tablist"
+              aria-label="Matter workspace"
+            >
               {workspaceTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -4191,669 +6054,1389 @@ const MatterSection = ({
             </div>
           </>
         ) : null}
-
         {activeMatterTab === "people" ? (
-        <section className="matterPeopleSection">
-          <div className="matterPeopleHead">
-            <h2>People</h2>
-            <div className="matterPeopleActions">
-              <Button
-                type="button"
-                className="matterPeopleFetchBtn"
-                disabled={
-                  !activeMatter ||
-                  isActiveMockMatter ||
-                  isExtractingPeople ||
-                  activeMatterContextCore?.status !== "ready"
-                }
-                onClick={() =>
-                  activeMatter &&
-                  void runPeopleExtraction(activeMatter.id, {
-                    markAttempted: true,
-                  })
-                }
-                text={isExtractingPeople ? "Fetching..." : "Fetch from ContextCore"}
-                showImage
-                image={<Search size={16} />}
-              />
-              <Button
-                type="button"
-                className="matterPeopleAddBtn"
-                disabled={!activeMatter}
-                onClick={() => setIsPeopleDialogOpen(true)}
-                aria-label="Add a person to this matter"
-                showImage
-                image={<Plus size={18} />}
-              />
+          <section className="matterPeopleSection">
+            <div className="matterPeopleHead">
+              <div>
+                <h2>Parties involved</h2>
+                <p className="matterPeopleInfo">
+                  The matter record, extracted fields, and manual additions all
+                  contribute to this party view.
+                </p>
+              </div>
+              <div className="matterPeopleActions">
+                <Button
+                  type="button"
+                  className="matterPeopleFetchBtn"
+                  disabled={
+                    !activeMatter ||
+                    isActiveMockMatter ||
+                    isExtractingPeople ||
+                    activeMatterContextCore?.status !== "ready"
+                  }
+                  onClick={() =>
+                    activeMatter &&
+                    void runPeopleExtraction(activeMatter.id, {
+                      markAttempted: true,
+                    })
+                  }
+                  text={
+                    isExtractingPeople
+                      ? "Fetching..."
+                      : "Fetch from ContextCore"
+                  }
+                  showImage
+                  image={<Search size={16} />}
+                />
+                <Button
+                  type="button"
+                  className="matterPeopleAddBtn"
+                  disabled={!activeMatter}
+                  onClick={() => setIsPeopleDialogOpen(true)}
+                  aria-label="Add a person to this matter"
+                  showImage
+                  image={<Plus size={18} />}
+                />
+              </div>
             </div>
-          </div>
 
-          {isExtractingPeople ? (
-            <p className="matterPeopleInfo">Identifying parties and counsel...</p>
-          ) : peopleExtractionMessage ? (
-            <p className="matterPeopleInfo">{peopleExtractionMessage}</p>
-          ) : null}
+            {isExtractingPeople ? (
+              <p className="matterPeopleInfo">
+                Identifying parties and counsel...
+              </p>
+            ) : peopleExtractionMessage ? (
+              <p className="matterPeopleInfo">{peopleExtractionMessage}</p>
+            ) : null}
 
-          {people.length ? (
-            <div className="matterPeopleGrid">
-              {people.map((person) => (
-                <article className="matterPersonCard" key={person.id}>
-                  <Button
-                    type="button"
-                    className="matterPersonRemoveBtn"
-                    aria-label={`Remove ${person.name}`}
-                    onClick={() =>
-                      activeMatter &&
-                      removePersonFromMatter(activeMatter.id, person.id)
-                    }
-                    showImage
-                    image={<X size={14} />}
-                  />
-                  <span className="matterPersonAvatar">{person.initials}</span>
-                  <div>
-                    <h3>{person.name}</h3>
-                    <strong>{person.role}</strong>
-                    <p>{person.description}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <Button
-              type="button"
-              className="matterPeopleEmptyAdd"
-              disabled={!activeMatter}
-              onClick={() => setIsPeopleDialogOpen(true)}
-              text="Add relevant people manually"
-              showImage
-              image={<Plus size={22} />}
-            />
-          )}
-        </section>
+            {people.length ? (
+              <div className="matterPeopleGrid">
+                {people.map((person) => (
+                  <article className="matterPersonCard" key={person.id}>
+                    <Button
+                      type="button"
+                      className="matterPersonRemoveBtn"
+                      aria-label={`Remove ${person.name}`}
+                      onClick={() =>
+                        activeMatter &&
+                        removePersonFromMatter(activeMatter.id, person.id)
+                      }
+                      showImage
+                      image={<X size={14} />}
+                    />
+                    <span className="matterPersonAvatar">
+                      {person.initials}
+                    </span>
+                    <div>
+                      <h3>{person.name}</h3>
+                      <strong>{person.role}</strong>
+                      <p>{person.description}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <p className="matterPeopleInfo">
+                  No parties have been confirmed in the matter view yet.
+                </p>
+                <Button
+                  type="button"
+                  className="matterPeopleEmptyAdd"
+                  disabled={!activeMatter}
+                  onClick={() => setIsPeopleDialogOpen(true)}
+                  text="Add relevant people manually"
+                  showImage
+                  image={<Plus size={22} />}
+                />
+              </div>
+            )}
+          </section>
         ) : null}
 
-        {activeMatterTab === "overview" ? (
-        <div className="matterMetaGrid">
-          <article className="matterMetaCard">
-            <span className="matterMetaIcon">
-              <FolderOpen size={16} />
-            </span>
-            <div>
-              <h3>File name</h3>
-              <p>{activeMatter?.fileName || "Upload a file to start."}</p>
-            </div>
-          </article>
-          <article className="matterMetaCard">
-            <span className="matterMetaIcon">
-              <CalendarClock size={16} />
-            </span>
-            <div>
-              <h3>Uploaded</h3>
-              <p>
-                {activeMatter?.uploadedAt
-                  ? formatUploadedAt(activeMatter.uploadedAt)
-                  : "Not available"}
-              </p>
-            </div>
-          </article>
-        </div>
+        {activeMatter && activeMatterTab === "overview" ? (
+          !activePrimarySummary &&
+          (shouldShowWorkflowConfirmationState ||
+            shouldShowClarificationState ||
+            shouldShowProgressThread) ? (
+            <section className="matterAnalysisWorkspace matterAnalysisWorkspaceBlocking">
+              {activeSummaryRunState.error ? (
+                <article className="matterAnalysisPanel matterAnalysisWarningPanel">
+                  <div className="matterAnalysisPanelHead">
+                    <div>
+                      <p className="matterEyebrow">Summary Status</p>
+                      <h3>Summary generation needs attention</h3>
+                    </div>
+                  </div>
+                  <p>{activeSummaryRunState.error}</p>
+                </article>
+              ) : null}
+
+              {!shouldShowClarificationState ? (
+                <article className="matterResearchModePanel matterResearchModePanelBlocking">
+                  <div className="matterResearchModeHero">
+                    <div>
+                      <p className="matterEyebrow">Active Research</p>
+                      <h3>{researchWorkspaceTitle}</h3>
+                      <p className="matterResearchModeSummary">
+                        {researchWorkspaceSummary}
+                      </p>
+                    </div>
+                    <div className="matterResearchModeMeta">
+                      <span className="matterResearchModeStatus">
+                        {researchWorkspaceStatusLabel}
+                      </span>
+                      {isMatterResearchRunning && activeMatter ? (
+                        <button
+                          type="button"
+                          className="matterResearchCancelBtn"
+                          onClick={() =>
+                            void cancelMatterAtlasResearch(activeMatter.id)
+                          }
+                        >
+                          Cancel research
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  {activeProgressMessage ? (
+                    <article className="matterResearchCurrentStage">
+                      <div className="matterResearchCurrentStageTop">
+                        <div>
+                          <span className="matterResearchCurrentStageLabel">
+                            Research in progress
+                          </span>
+                          <h4>Associate is researching in the background</h4>
+                        </div>
+                        <div className="matterResearchPulse" aria-hidden="true">
+                          <span />
+                          <span />
+                          <span />
+                        </div>
+                      </div>
+                      <p>{activeProgressDisplayText}</p>
+                      {isMatterStatePolling ? (
+                        <div className="matterResearchPollingRow">
+                          <div
+                            className="matterResearchPulse"
+                            aria-hidden="true"
+                          >
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                          <span>Refreshing live research state</span>
+                        </div>
+                      ) : null}
+                    </article>
+                  ) : null}
+                  <div className="matterResearchFootnote">
+                    You can do something else. Associate will notify you once
+                    the brief is ready.
+                  </div>
+                </article>
+              ) : null}
+            </section>
+          ) : (
+            <section className="matterAnalysisWorkspace">
+              <div className="matterAnalysisGrid">
+                <div className="matterAnalysisMainColumn">
+                  {activeSummaryRunState.error ? (
+                    <article className="matterAnalysisPanel matterAnalysisWarningPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Summary Status</p>
+                          <h3>Summary generation needs attention</h3>
+                        </div>
+                      </div>
+                      <p>{activeSummaryRunState.error}</p>
+                    </article>
+                  ) : null}
+
+                  {activePrimarySummary ? (
+                    <>
+                      <article className="matterAnalysisPanel matterSummaryPanel">
+                        <div className="matterAnalysisPanelHead">
+                          <div>
+                            <p className="matterEyebrow">Executive Summary</p>
+                            <h3>{activeSummaryTitle}</h3>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="matterSummaryPreviewCard"
+                          onClick={() => setIsBriefDetailModalOpen(true)}
+                        >
+                          <p className="matterSummaryLead">
+                            {buildHighlightedSummary(
+                              shouldAnimateBriefSections
+                                ? typedPrimarySummary || activePrimarySummary
+                                : activePrimarySummary,
+                              summaryHighlightTerms,
+                            )}
+                            {shouldAnimateBriefSections &&
+                            typedPrimarySummary.length <
+                              activePrimarySummary.length ? (
+                              <span
+                                className="matterTypewriterCursor"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                          </p>
+                          <span className="matterSummaryPreviewHint">
+                            Click to open the research detail
+                          </span>
+                        </button>
+                        {isMatterStatePolling ? (
+                          <div className="matterResearchPollingRow">
+                            <div
+                              className="matterResearchPulse"
+                              aria-hidden="true"
+                            >
+                              <span />
+                              <span />
+                              <span />
+                            </div>
+                            <span>Refreshing live research state</span>
+                          </div>
+                        ) : null}
+                      </article>
+
+                      {missingProofItems.length ||
+                      activeAtlasNextSteps?.draftQueue?.length ? (
+                        <div className="matterAnalysisSecondaryGrid">
+                          {missingProofItems.length &&
+                          (!shouldAnimateBriefSections ||
+                            briefRevealStage >= 2) ? (
+                            <article className="matterAnalysisPanel">
+                              <div className="matterAnalysisPanelHead">
+                                <div>
+                                  <p className="matterEyebrow">Missing Proof</p>
+                                  <h3>What still needs support</h3>
+                                </div>
+                              </div>
+                              <ul className="matterChecklist">
+                                {(shouldAnimateBriefSections
+                                  ? typedMissingProofItems
+                                  : missingProofItems
+                                )
+                                  .filter((item) => item.trim().length > 0)
+                                  .map((item, index, array) => (
+                                    <li
+                                      key={item}
+                                      className="is-warning matterChecklistActionItem"
+                                    >
+                                      <ShieldAlert size={15} />
+                                      <span className="matterChecklistActionText">
+                                        {item}
+                                        {shouldAnimateBriefSections &&
+                                        index === array.length - 1 &&
+                                        item.length <
+                                          (missingProofItems[index] || "")
+                                            .length ? (
+                                          <span
+                                            className="matterTypewriterCursor"
+                                            aria-hidden="true"
+                                          />
+                                        ) : null}
+                                      </span>
+                                      <span className="matterChecklistActionButtonWrap">
+                                        <button
+                                          type="button"
+                                          className="matterChecklistAskAiButton"
+                                          onClick={() =>
+                                            openMissingProofInMatterChat(
+                                              missingProofItems[index] || item,
+                                            )
+                                          }
+                                          aria-label="Ask AI for help"
+                                        >
+                                          Ask AI
+                                        </button>
+                                        <span
+                                          className="matterChecklistTooltip"
+                                          role="tooltip"
+                                        >
+                                          Ask AI for help
+                                        </span>
+                                      </span>
+                                    </li>
+                                  ))}
+                              </ul>
+                            </article>
+                          ) : null}
+
+                          <article className="matterAnalysisPanel">
+                            <div className="matterAnalysisPanelHead">
+                              <div>
+                                <p className="matterEyebrow">
+                                  Next Steps and Drafts
+                                </p>
+                                <h3>What likely comes next</h3>
+                              </div>
+                            </div>
+                            {renderAtlasNextSteps()}
+                          </article>
+                        </div>
+                      ) : null}
+
+                      {activeAtlasCaseResearch?.similarCases?.length &&
+                      (!shouldAnimateBriefSections || briefRevealStage >= 3) ? (
+                        <article className="matterAnalysisPanel">
+                          <div className="matterAnalysisPanelHead">
+                            <div>
+                              <p className="matterEyebrow">
+                                Referred and Similar Cases
+                              </p>
+                              <h3>Comparable sources and references</h3>
+                            </div>
+                          </div>
+                          {renderAtlasSimilarCases(
+                            activeAtlasCaseResearch.similarCases,
+                          )}
+                        </article>
+                      ) : null}
+
+                      {summaryIssues.length ? (
+                        <article className="matterAnalysisPanel">
+                          <div className="matterAnalysisPanelHead">
+                            <div>
+                              <p className="matterEyebrow">Issue Analysis</p>
+                              <h3>Issues, conditions, and proof gaps</h3>
+                            </div>
+                          </div>
+                          <div className="matterIssueAccordion">
+                            {summaryIssues.map((issue) => {
+                              const isExpanded = Boolean(
+                                expandedSummaryIssueIds[issue.id],
+                              );
+                              return (
+                                <article
+                                  className="matterIssueCard"
+                                  key={issue.id}
+                                >
+                                  <button
+                                    type="button"
+                                    className="matterIssueCardToggle"
+                                    onClick={() =>
+                                      setExpandedSummaryIssueIds((current) => ({
+                                        ...current,
+                                        [issue.id]: !current[issue.id],
+                                      }))
+                                    }
+                                  >
+                                    <div className="matterIssueCardHead">
+                                      <div>
+                                        <h4>{issue.title}</h4>
+                                        <span className="matterIssueKey">
+                                          {issue.id.replace(/_/g, " ")}
+                                        </span>
+                                      </div>
+                                      <div className="matterIssueCardToggleMeta">
+                                        <span
+                                          className={`matterIssueSupportBadge is-${issue.supportLevel}`}
+                                        >
+                                          {formatSupportLevelLabel(
+                                            issue.supportLevel,
+                                          )}
+                                        </span>
+                                        {isExpanded ? (
+                                          <ChevronDown size={18} />
+                                        ) : (
+                                          <ChevronRight size={18} />
+                                        )}
+                                      </div>
+                                    </div>
+                                    <p className="matterIssueCardPreview">
+                                      {issue.shortAnswer}
+                                    </p>
+                                  </button>
+                                  {isExpanded ? (
+                                    <div className="matterIssueCardBody">
+                                      <p>{issue.detailedAnalysis}</p>
+                                      {issue.requiredPredicates.length ? (
+                                        <ul className="matterBulletList">
+                                          {issue.requiredPredicates.map(
+                                            (predicate) => (
+                                              <li
+                                                key={`${issue.id}-${predicate}`}
+                                              >
+                                                {predicate}
+                                              </li>
+                                            ),
+                                          )}
+                                        </ul>
+                                      ) : null}
+                                      {issue.linkedEvidenceIds.length ? (
+                                        <div className="matterIssueCitationList">
+                                          {activeEvidenceReference?.evidenceItems
+                                            .filter((citation) =>
+                                              issue.linkedEvidenceIds.includes(
+                                                citation.evidenceAnswerId,
+                                              ),
+                                            )
+                                            .slice(0, 2)
+                                            .map((citation) => (
+                                              <article
+                                                className="matterIssueCitation"
+                                                key={`${issue.id}-${citation.id}`}
+                                              >
+                                                <strong>
+                                                  {citation.documentName}
+                                                  {citation.pageNumber
+                                                    ? ` · p.${citation.pageNumber}`
+                                                    : ""}
+                                                  {citation.section
+                                                    ? ` · ${citation.section}`
+                                                    : ""}
+                                                </strong>
+                                                <p>{citation.excerpt}</p>
+                                              </article>
+                                            ))}
+                                        </div>
+                                      ) : (
+                                        <p className="matterIssueCitationEmpty">
+                                          No direct citation is exposed for this
+                                          issue yet.
+                                        </p>
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </article>
+                              );
+                            })}
+                          </div>
+                        </article>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {!activePrimarySummary ? (
+                    <article className="matterResearchModePanel">
+                      <div className="matterResearchModeHero">
+                        <div>
+                          <p className="matterEyebrow">Active Research</p>
+                          <h3>{researchWorkspaceTitle}</h3>
+                          <p className="matterResearchModeSummary">
+                            {researchWorkspaceSummary}
+                          </p>
+                        </div>
+                        <div className="matterResearchModeMeta">
+                          <span className="matterResearchModeStatus">
+                            {researchWorkspaceStatusLabel}
+                          </span>
+                          {isMatterResearchRunning && activeMatter ? (
+                            <button
+                              type="button"
+                              className="matterResearchCancelBtn"
+                              onClick={() =>
+                                void cancelMatterAtlasResearch(activeMatter.id)
+                              }
+                            >
+                              Cancel research
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {shouldShowProgressThread && activeProgressMessage ? (
+                        <article className="matterResearchCurrentStage">
+                          <div className="matterResearchCurrentStageTop">
+                            <div>
+                              <span className="matterResearchCurrentStageLabel">
+                                Research in progress
+                              </span>
+                              <h4>
+                                Associate is researching in the background
+                              </h4>
+                            </div>
+                            <div
+                              className="matterResearchPulse"
+                              aria-hidden="true"
+                            >
+                              <span />
+                              <span />
+                              <span />
+                            </div>
+                          </div>
+                          <p>{activeProgressDisplayText}</p>
+                          {isMatterStatePolling ? (
+                            <div className="matterResearchPollingRow">
+                              <div
+                                className="matterResearchPulse"
+                                aria-hidden="true"
+                              >
+                                <span />
+                                <span />
+                                <span />
+                              </div>
+                              <span>Refreshing live research state</span>
+                            </div>
+                          ) : null}
+                        </article>
+                      ) : null}
+
+                      <div className="matterResearchFootnote">
+                        You can do something else. Associate will notify you
+                        once the brief is ready.
+                      </div>
+                    </article>
+                  ) : null}
+
+                  {!activePrimarySummary &&
+                  activeAnalysisState?.whatWeFound?.length ? (
+                    <article className="matterResearchFindingsPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">What We Found</p>
+                          <h3>Current understanding of the record</h3>
+                        </div>
+                      </div>
+                      <div className="matterResearchFindingsGrid">
+                        {activeAnalysisState.whatWeFound.map((item) => (
+                          <article
+                            className={`matterResearchFindingCard ${
+                              item.state === "attention"
+                                ? "is-warning"
+                                : "is-ready"
+                            }`}
+                            key={`${item.id || item.label}-${item.value}`}
+                          >
+                            <div className="matterResearchFindingIcon">
+                              {item.state === "attention" ? (
+                                <AlertTriangle size={16} />
+                              ) : (
+                                <CheckCircle2 size={16} />
+                              )}
+                            </div>
+                            <div>
+                              <strong>{item.label}</strong>
+                              <p>{item.value}</p>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </article>
+                  ) : null}
+                </div>
+
+                <aside className="matterAnalysisSidebar" />
+              </div>
+            </section>
+          )
         ) : null}
 
         {activeMatter ? (
           <>
-            {activeMatterTab === "overview" ? (
-            <article className="matterBriefLoopPanel">
-              <div className="matterBriefLoopHead">
-                <p className="matterEyebrow">
-                  Agent Brief ·{" "}
-                  {activeMatter.intelligence_statuses?.brief_generation ===
-                  "ready"
-                    ? "Generated"
-                    : activeMatter.intelligence_statuses?.brief_generation ===
-                        "query_required"
-                      ? "Needs Input"
-                      : "Pending"}{" "}
-                  · {uploadedDocumentCount} file
-                  {uploadedDocumentCount === 1 ? "" : "s"}
-                </p>
-                <span
-                  className={`matterBriefStatus is-${activeMatter.intelligence_statuses?.brief_generation || "not_started"}`}
-                >
-                  {activeMatter.intelligence_statuses?.brief_generation ||
-                    "not started"}
-                </span>
-              </div>
+            {activeMatterTab === "overview" && false ? (
+              <article className="matterBriefLoopPanel">
+                <div className="matterBriefLoopHead">
+                  <p className="matterEyebrow">
+                    Agent Brief ·{" "}
+                    {activeMatter?.intelligence_statuses?.brief_generation ===
+                    "ready"
+                      ? "Generated"
+                      : activeMatter?.intelligence_statuses
+                            ?.brief_generation === "query_required"
+                        ? "Needs Input"
+                        : "Pending"}{" "}
+                    · {uploadedDocumentCount} file
+                    {uploadedDocumentCount === 1 ? "" : "s"}
+                  </p>
+                  <span
+                    className={`matterBriefStatus is-${activeMatter?.intelligence_statuses?.brief_generation || "not_started"}`}
+                  >
+                    {activeMatter?.intelligence_statuses?.brief_generation ||
+                      "not started"}
+                  </span>
+                </div>
 
-              {activeMatter.intelligence_statuses?.brief_generation ===
-                "not_started" &&
-              activeMatterContextCore?.status === "ready" ? (
-                <div className="matterBriefQuestionBox">
-                  <p>
-                    Context extraction is complete. Continue to generate the
-                    grounded matter brief and extract people from the indexed
-                    documents.
-                  </p>
-                  {briefAnswerError ? (
-                    <p className="matterBriefError">{briefAnswerError}</p>
-                  ) : null}
-                  {isContinuingContextCore ? (
-                    <div className="matterInlineLoaderWrap">
-                      <Loader
-                        mode="inline"
-                        variant="spinner"
-                        eyebrow="ContextCore"
-                        title="Generating grounded brief"
-                        message="Searching the indexed matter, grounding evidence, and extracting participants."
-                      />
-                    </div>
-                  ) : null}
-                  <div className="matterBriefActions">
-                    <Button
-                      type="button"
-                      disabled={isContinuingContextCore}
-                      onClick={() => void handleContinueContextCore()}
-                    >
-                      {isContinuingContextCore ? "Continuing..." : "Continue"}
-                    </Button>
-                  </div>
-                </div>
-              ) : isBriefIndexReadinessPending ? (
-                <div className="matterBriefQuestionBox">
-                  <p>
-                    ContextCore finished indexing the matter files, but search
-                    is not returning results yet. Brief generation cannot
-                    proceed until retrieval is ready.
-                  </p>
-                  {briefDisplayPayload?.warning ? (
-                    <p className="matterBriefError">
-                      {briefDisplayPayload.warning}
+                {activeMatter?.intelligence_statuses?.brief_generation ===
+                  "not_started" &&
+                activeMatterContextCore?.status === "ready" ? (
+                  <div className="matterBriefQuestionBox">
+                    <p>
+                      Context extraction is complete. Continue to generate the
+                      grounded matter brief and extract people from the indexed
+                      documents.
                     </p>
-                  ) : null}
-                  {briefAnswerError ? (
-                    <p className="matterBriefError">{briefAnswerError}</p>
-                  ) : null}
-                  {isContinuingContextCore ? (
-                    <div className="matterInlineLoaderWrap">
-                      <Loader
-                        mode="inline"
-                        variant="spinner"
-                        eyebrow="ContextCore"
-                        title="Retrying brief generation"
-                        message="Waiting for retrieval and grounded brief assembly to complete."
-                      />
-                    </div>
-                  ) : null}
-                  <div className="matterBriefActions">
-                    <Button
-                      type="button"
-                      disabled={isContinuingContextCore}
-                      onClick={() => void handleContinueContextCore()}
-                    >
-                      {isContinuingContextCore
-                        ? "Retrying..."
-                        : "Retry brief generation"}
-                    </Button>
-                  </div>
-                </div>
-              ) : isContextCoreEvidenceGap ? (
-                <div className="matterBriefQuestionBox">
-                  <p>
-                    ContextCore search completed, but the current retrieval did
-                    not produce grounded evidence for this brief. This is not a
-                    manual clarification loop.
-                  </p>
-                  {briefQuestions.length ? (
-                    <ul>
-                      {briefQuestions.map((question) => (
-                        <li key={question}>{question}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {briefDisplayPayload?.warning ? (
-                    <p className="matterBriefError">
-                      {briefDisplayPayload.warning}
-                    </p>
-                  ) : null}
-                  {briefAnswerError ? (
-                    <p className="matterBriefError">{briefAnswerError}</p>
-                  ) : null}
-                  {isContinuingContextCore ? (
-                    <div className="matterInlineLoaderWrap">
-                      <Loader
-                        mode="inline"
-                        variant="spinner"
-                        eyebrow="ContextCore"
-                        title="Regenerating grounded brief"
-                        message="Refreshing retrieval sweeps and rebuilding the matter brief."
-                      />
-                    </div>
-                  ) : null}
-                  <div className="matterBriefActions">
-                    <Button
-                      type="button"
-                      disabled={isContinuingContextCore}
-                      onClick={() => void handleContinueContextCore()}
-                    >
-                      {isContinuingContextCore
-                        ? "Retrying..."
-                        : "Retry grounded brief generation"}
-                    </Button>
-                  </div>
-                </div>
-              ) : isBriefQueryRequired ? (
-                <div className="matterBriefQuestionBox">
-                  <p>
-                    The agent does not yet have enough grounded information to
-                    generate the matter brief. Answer the questions below to
-                    continue the loop.
-                  </p>
-                  {briefQuestions.length ? (
-                    <ul>
-                      {briefQuestions.map((question) => (
-                        <li key={question}>{question}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {briefAnswerError ? (
-                    <p className="matterBriefError">{briefAnswerError}</p>
-                  ) : null}
-                  <div className="matterBriefActions">
-                    <Button
-                      type="button"
-                      disabled={isSubmittingBriefAnswers}
-                      onClick={() => setIsMatterChatOpen(true)}
-                    >
-                      Answer in matter chat
-                    </Button>
-                  </div>
-                </div>
-              ) : briefDisplayPayload?.decision === "generate_brief" ? (
-                <>
-                  {briefPoints.length ? (
-                    <div className="matterBriefPoints">
-                      {briefPoints.map((point) => (
-                        <article className="matterBriefPoint" key={point.id}>
-                          <div
-                            className={`matterBriefPointHeading tone-${point.tone || "neutral"}`}
-                          >
-                            <span className="matterBriefPointHeadingText">
-                              {point.heading}
-                            </span>
-                            <span className="matterBriefPointHeadingMeta">
-                              <span className="matterBriefPointHeadingMetaItem">
-                                <span className="matterBriefPointHeadingMetaLabel">
-                                  Source file:
-                                </span>
-                                {getBriefPointSourceNames(point).length ? (
-                                  <span className="matterSourceFileList">
-                                    {getBriefPointSourceNames(point).map(
-                                      (sourceName) => {
-                                        const sourceRef = point.sourceRefs.find(
-                                          (ref) => ref.fileName === sourceName,
-                                        );
-                                        const pageLabel =
-                                          sourceRef?.pageStart &&
-                                          Number.isFinite(sourceRef.pageStart)
-                                            ? ` p.${sourceRef.pageStart}${
-                                                sourceRef.pageEnd &&
-                                                sourceRef.pageEnd !==
-                                                  sourceRef.pageStart
-                                                  ? `-${sourceRef.pageEnd}`
-                                                  : ""
-                                              }`
-                                            : "";
-                                        return (
-                                          <Button
-                                            type="button"
-                                            className="matterSourceFileButton"
-                                            key={`${point.id}-${sourceName}`}
-                                            onClick={() =>
-                                              openSourceViewer({
-                                                sourceName,
-                                                fallbackText: `${point.heading} ${point.detail}`,
-                                              })
-                                            }
-                                        >
-                                            {sourceName}
-                                            {pageLabel}
-                                          </Button>
-                                        );
-                                      },
-                                    )}
-                                  </span>
-                                ) : (
-                                  <span className="matterBriefPointHeadingMetaValue">
-                                    Uploaded document set
-                                  </span>
-                                )}
-                              </span>
-                              {point.pointType ? (
-                                <span className="matterBriefPointHeadingMetaItem">
-                                  <span className="matterBriefPointHeadingMetaLabel">
-                                    Type:
-                                  </span>
-                                  <span className="matterBriefPointHeadingMetaValue">
-                                    {formatBriefTaxonomyLabel(point.pointType)}
-                                  </span>
-                                </span>
-                              ) : null}
-                              {point.sourcePosture ? (
-                                <span className="matterBriefPointHeadingMetaItem">
-                                  <span className="matterBriefPointHeadingMetaLabel">
-                                    Posture:
-                                  </span>
-                                  <span className="matterBriefPointHeadingMetaValue">
-                                    {formatBriefTaxonomyLabel(
-                                      point.sourcePosture,
-                                    )}
-                                  </span>
-                                </span>
-                              ) : null}
-                              {point.certainty ? (
-                                <span className="matterBriefPointHeadingMetaItem">
-                                  <span className="matterBriefPointHeadingMetaLabel">
-                                    Certainty:
-                                  </span>
-                                  <span className="matterBriefPointHeadingMetaValue">
-                                    {formatBriefTaxonomyLabel(point.certainty)}
-                                  </span>
-                                </span>
-                              ) : null}
-                            </span>
-                          </div>
-                          <p className="matterBriefPointDetail">
-                            {point.detail}
-                          </p>
-                          {point.reason ? (
-                            <p className="matterBriefPointReason">
-                              {point.reason}
-                            </p>
-                          ) : null}
-                        </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="matterBriefText">
-                      {briefDisplayPayload?.accumulated_brief ||
-                        "Brief generated."}
-                    </p>
-                  )}
-                  {briefDisplayPayload?.warning ? (
-                    <p className="matterBriefError">
-                      {briefDisplayPayload.warning}
-                    </p>
-                  ) : null}
-                  <div className="matterBriefSourceRow">
-                    <span>
-                      {activeMatter.classification?.classification_name ||
-                        "Matter classification"}
-                    </span>
-                    <span>
-                      {uploadedDocumentCount} linked document
-                      {uploadedDocumentCount === 1 ? "" : "s"}
-                    </span>
-                    <span>Facts only</span>
-                  </div>
-                  {!activeMatter?.acceptedBrief?.accepted_at ? (
+                    {briefAnswerError ? (
+                      <p className="matterBriefError">{briefAnswerError}</p>
+                    ) : null}
+                    {isContinuingContextCore ? (
+                      <div className="matterInlineLoaderWrap">
+                        <Loader
+                          mode="inline"
+                          variant="spinner"
+                          eyebrow="ContextCore"
+                          title="Generating grounded brief"
+                          message="Searching the indexed matter, grounding evidence, and extracting participants."
+                        />
+                      </div>
+                    ) : null}
                     <div className="matterBriefActions">
                       <Button
                         type="button"
-                        disabled={isAcceptingBrief}
-                        onClick={() => void handleAcceptBrief()}
+                        disabled={isContinuingContextCore}
+                        onClick={() => void handleContinueContextCore()}
                       >
-                        {isAcceptingBrief ? "Accepting..." : "Accept Brief"}
+                        {isContinuingContextCore ? "Continuing..." : "Continue"}
                       </Button>
                     </div>
-                  ) : null}
-                  {activeMatter?.acceptedBrief?.accepted_at ? (
-                    <p className="matterBriefAcceptedMeta">
-                      Accepted on{" "}
-                      {formatUploadedAt(activeMatter.acceptedBrief.accepted_at)}
+                  </div>
+                ) : isBriefIndexReadinessPending ? (
+                  <div className="matterBriefQuestionBox">
+                    <p>
+                      ContextCore finished indexing the matter files, but search
+                      is not returning results yet. Brief generation cannot
+                      proceed until retrieval is ready.
                     </p>
-                  ) : null}
-                  {activeMatter?.acceptedBrief?.accepted_at &&
-                  secondaryClassification ? (
-                    <div className="matterSecondaryClassificationBox">
-                      <p className="matterBriefPointHeadingText">
-                        {secondaryStatus ===
-                        "classification_pending_confirmation"
-                          ? "Confirm matter classification"
-                          : "Matter classification confirmed"}
+                    {briefDisplayPayload?.warning ? (
+                      <p className="matterBriefError">
+                        {briefDisplayPayload?.warning}
                       </p>
-                      <p className="matterBriefPointDetail">
-                        {formatBriefTaxonomyLabel(
-                          String(
-                            secondaryClassification.primary_domain || "unknown",
-                          ),
-                        )}{" "}
-                        /{" "}
-                        {formatBriefTaxonomyLabel(
-                          String(
-                            secondaryClassification.primary_subdomain ||
-                              "unknown",
-                          ),
-                        )}{" "}
-                        before{" "}
-                        {formatBriefTaxonomyLabel(
-                          String(
-                            (secondaryClassification.forum as {
-                              court?: string;
-                            })?.court || "unknown",
-                          ),
-                        )}
-                        . Stage:{" "}
-                        {formatBriefTaxonomyLabel(
-                          String(
-                            secondaryClassification.procedural_stage ||
-                              "unknown",
-                          ),
-                        )}
-                        . Client posture:{" "}
-                        {formatBriefTaxonomyLabel(
-                          String(
-                            secondaryClassification.client_posture ||
-                              "unknown",
-                          ),
-                        )}
-                        .
+                    ) : null}
+                    {briefAnswerError ? (
+                      <p className="matterBriefError">{briefAnswerError}</p>
+                    ) : null}
+                    {isContinuingContextCore ? (
+                      <div className="matterInlineLoaderWrap">
+                        <Loader
+                          mode="inline"
+                          variant="spinner"
+                          eyebrow="ContextCore"
+                          title="Retrying brief generation"
+                          message="Waiting for retrieval and grounded brief assembly to complete."
+                        />
+                      </div>
+                    ) : null}
+                    <div className="matterBriefActions">
+                      <Button
+                        type="button"
+                        disabled={isContinuingContextCore}
+                        onClick={() => void handleContinueContextCore()}
+                      >
+                        {isContinuingContextCore
+                          ? "Retrying..."
+                          : "Retry brief generation"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : isContextCoreEvidenceGap ? (
+                  <div className="matterBriefQuestionBox">
+                    <p>
+                      ContextCore search completed, but the current retrieval
+                      did not produce grounded evidence for this brief. This is
+                      not a manual clarification loop.
+                    </p>
+                    {briefQuestions.length ? (
+                      <ul>
+                        {briefQuestions.map((question) => (
+                          <li key={question}>{question}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {briefDisplayPayload?.warning ? (
+                      <p className="matterBriefError">
+                        {briefDisplayPayload?.warning}
                       </p>
-                      {secondaryClassificationMarkers.length ? (
-                        <div className="matterSecondaryTagSection">
-                          <div className="matterSecondaryTagList">
-                            {secondaryClassificationMarkers.map((marker) => (
-                              <span
-                                key={marker}
-                                className={`matterSecondaryTag ${
-                                  secondaryUserDefinedTags.some(
-                                    (tag) =>
-                                      tag.toLowerCase() ===
-                                      marker.toLowerCase(),
-                                  )
-                                    ? "isUserTag"
-                                    : ""
-                                }`}
-                              >
-                                {marker}
+                    ) : null}
+                    {briefAnswerError ? (
+                      <p className="matterBriefError">{briefAnswerError}</p>
+                    ) : null}
+                    {isContinuingContextCore ? (
+                      <div className="matterInlineLoaderWrap">
+                        <Loader
+                          mode="inline"
+                          variant="spinner"
+                          eyebrow="ContextCore"
+                          title="Regenerating grounded brief"
+                          message="Refreshing retrieval sweeps and rebuilding the matter brief."
+                        />
+                      </div>
+                    ) : null}
+                    <div className="matterBriefActions">
+                      <Button
+                        type="button"
+                        disabled={isContinuingContextCore}
+                        onClick={() => void handleContinueContextCore()}
+                      >
+                        {isContinuingContextCore
+                          ? "Retrying..."
+                          : "Retry grounded brief generation"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : isBriefQueryRequired ? (
+                  <div className="matterBriefQuestionBox">
+                    <p>
+                      The agent does not yet have enough grounded information to
+                      generate the matter brief. Answer the questions below to
+                      continue the loop.
+                    </p>
+                    {briefQuestions.length ? (
+                      <ul>
+                        {briefQuestions.map((question) => (
+                          <li key={question}>{question}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {briefAnswerError ? (
+                      <p className="matterBriefError">{briefAnswerError}</p>
+                    ) : null}
+                    <div className="matterBriefActions">
+                      <Button
+                        type="button"
+                        disabled={isSubmittingBriefAnswers}
+                        onClick={() => setIsMatterChatOpen(true)}
+                      >
+                        Answer in matter chat
+                      </Button>
+                    </div>
+                  </div>
+                ) : briefDisplayPayload?.decision === "generate_brief" ? (
+                  <>
+                    {briefPoints.length ? (
+                      <div className="matterBriefPoints">
+                        {briefPoints.map((point) => (
+                          <article className="matterBriefPoint" key={point.id}>
+                            <div
+                              className={`matterBriefPointHeading tone-${point.tone || "neutral"}`}
+                            >
+                              <span className="matterBriefPointHeadingText">
+                                {point.heading}
                               </span>
+                              <span className="matterBriefPointHeadingMeta">
+                                <span className="matterBriefPointHeadingMetaItem">
+                                  <span className="matterBriefPointHeadingMetaLabel">
+                                    Source file:
+                                  </span>
+                                  {getBriefPointSourceNames(point).length ? (
+                                    <span className="matterSourceFileList">
+                                      {getBriefPointSourceNames(point).map(
+                                        (sourceName) => {
+                                          const sourceRef =
+                                            point.sourceRefs.find(
+                                              (ref) =>
+                                                ref.fileName === sourceName,
+                                            );
+                                          const pageLabel =
+                                            sourceRef?.pageStart &&
+                                            Number.isFinite(sourceRef.pageStart)
+                                              ? ` p.${sourceRef.pageStart}${
+                                                  sourceRef.pageEnd &&
+                                                  sourceRef.pageEnd !==
+                                                    sourceRef.pageStart
+                                                    ? `-${sourceRef.pageEnd}`
+                                                    : ""
+                                                }`
+                                              : "";
+                                          return (
+                                            <Button
+                                              type="button"
+                                              className="matterSourceFileButton"
+                                              key={`${point.id}-${sourceName}`}
+                                              onClick={() =>
+                                                openSourceViewer({
+                                                  sourceName,
+                                                  fallbackText: `${point.heading} ${point.detail}`,
+                                                })
+                                              }
+                                            >
+                                              {sourceName}
+                                              {pageLabel}
+                                            </Button>
+                                          );
+                                        },
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="matterBriefPointHeadingMetaValue">
+                                      Uploaded document set
+                                    </span>
+                                  )}
+                                </span>
+                                {point.pointType ? (
+                                  <span className="matterBriefPointHeadingMetaItem">
+                                    <span className="matterBriefPointHeadingMetaLabel">
+                                      Type:
+                                    </span>
+                                    <span className="matterBriefPointHeadingMetaValue">
+                                      {formatBriefTaxonomyLabel(
+                                        point.pointType,
+                                      )}
+                                    </span>
+                                  </span>
+                                ) : null}
+                                {point.sourcePosture ? (
+                                  <span className="matterBriefPointHeadingMetaItem">
+                                    <span className="matterBriefPointHeadingMetaLabel">
+                                      Posture:
+                                    </span>
+                                    <span className="matterBriefPointHeadingMetaValue">
+                                      {formatBriefTaxonomyLabel(
+                                        point.sourcePosture,
+                                      )}
+                                    </span>
+                                  </span>
+                                ) : null}
+                                {point.certainty ? (
+                                  <span className="matterBriefPointHeadingMetaItem">
+                                    <span className="matterBriefPointHeadingMetaLabel">
+                                      Certainty:
+                                    </span>
+                                    <span className="matterBriefPointHeadingMetaValue">
+                                      {formatBriefTaxonomyLabel(
+                                        point.certainty,
+                                      )}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </span>
+                            </div>
+                            <p className="matterBriefPointDetail">
+                              {point.detail}
+                            </p>
+                            {point.reason ? (
+                              <p className="matterBriefPointReason">
+                                {point.reason}
+                              </p>
+                            ) : null}
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="matterBriefText">
+                        {briefDisplayPayload?.accumulated_brief ||
+                          "Brief generated."}
+                      </p>
+                    )}
+                    {briefDisplayPayload?.warning ? (
+                      <p className="matterBriefError">
+                        {briefDisplayPayload?.warning}
+                      </p>
+                    ) : null}
+                    <div className="matterBriefSourceRow">
+                      <span>
+                        {activeMatter?.classification?.classification_name ||
+                          "Matter classification"}
+                      </span>
+                      <span>
+                        {uploadedDocumentCount} linked document
+                        {uploadedDocumentCount === 1 ? "" : "s"}
+                      </span>
+                      <span>Facts only</span>
+                    </div>
+                    {!activeMatter?.acceptedBrief?.accepted_at ? (
+                      <div className="matterBriefActions">
+                        <Button
+                          type="button"
+                          disabled={isAcceptingBrief}
+                          onClick={() => void handleAcceptBrief()}
+                        >
+                          {isAcceptingBrief ? "Accepting..." : "Accept Brief"}
+                        </Button>
+                      </div>
+                    ) : null}
+                    {activeMatter?.acceptedBrief?.accepted_at ? (
+                      <p className="matterBriefAcceptedMeta">
+                        Accepted on{" "}
+                        {formatUploadedAt(
+                          activeMatter?.acceptedBrief?.accepted_at || "",
+                        )}
+                      </p>
+                    ) : null}
+                    {activeMatter?.acceptedBrief?.accepted_at &&
+                    secondaryClassification ? (
+                      <div className="matterSecondaryClassificationBox">
+                        <p className="matterBriefPointHeadingText">
+                          {secondaryStatus ===
+                          "classification_pending_confirmation"
+                            ? "Confirm matter classification"
+                            : "Matter classification confirmed"}
+                        </p>
+                        <p className="matterBriefPointDetail">
+                          {formatBriefTaxonomyLabel(
+                            String(
+                              secondaryClassification?.primary_domain ||
+                                "unknown",
+                            ),
+                          )}{" "}
+                          /{" "}
+                          {formatBriefTaxonomyLabel(
+                            String(
+                              secondaryClassification?.primary_subdomain ||
+                                "unknown",
+                            ),
+                          )}{" "}
+                          before{" "}
+                          {formatBriefTaxonomyLabel(
+                            String(
+                              (
+                                secondaryClassification?.forum as {
+                                  court?: string;
+                                }
+                              )?.court || "unknown",
+                            ),
+                          )}
+                          . Stage:{" "}
+                          {formatBriefTaxonomyLabel(
+                            String(
+                              secondaryClassification?.procedural_stage ||
+                                "unknown",
+                            ),
+                          )}
+                          . Client posture:{" "}
+                          {formatBriefTaxonomyLabel(
+                            String(
+                              secondaryClassification?.client_posture ||
+                                "unknown",
+                            ),
+                          )}
+                          .
+                        </p>
+                        {secondaryClassificationMarkers.length ? (
+                          <div className="matterSecondaryTagSection">
+                            <div className="matterSecondaryTagList">
+                              {secondaryClassificationMarkers.map((marker) => (
+                                <span
+                                  key={marker}
+                                  className={`matterSecondaryTag ${
+                                    secondaryUserDefinedTags.some(
+                                      (tag) =>
+                                        tag.toLowerCase() ===
+                                        marker.toLowerCase(),
+                                    )
+                                      ? "isUserTag"
+                                      : ""
+                                  }`}
+                                >
+                                  {marker}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {!isActiveMockMatter && secondaryClassification ? (
+                          <form
+                            className="matterSecondaryTagForm"
+                            onSubmit={(event) =>
+                              void handleAddClassificationTag(event)
+                            }
+                          >
+                            <input
+                              type="text"
+                              value={classificationTagInput}
+                              onChange={(event) =>
+                                setClassificationTagInput(event.target.value)
+                              }
+                              placeholder="Add classification tag"
+                              maxLength={80}
+                            />
+                            <Button
+                              type="submit"
+                              disabled={
+                                isSavingClassificationTag ||
+                                !classificationTagInput.trim()
+                              }
+                            >
+                              {isSavingClassificationTag
+                                ? "Saving..."
+                                : "Add tag"}
+                            </Button>
+                          </form>
+                        ) : null}
+                        {String(
+                          secondaryClassification?.document_set_summary || "",
+                        ).trim() ? (
+                          <p className="matterBriefPointReason">
+                            {String(
+                              secondaryClassification?.document_set_summary ||
+                                "",
+                            ).trim()}
+                          </p>
+                        ) : secondaryDocumentTypes.length ? (
+                          <p className="matterBriefPointReason">
+                            Documents:{" "}
+                            {secondaryDocumentTypes
+                              .map((documentType) =>
+                                formatBriefTaxonomyLabel(documentType),
+                              )
+                              .join(", ")}
+                          </p>
+                        ) : null}
+                        {secondaryDocumentProfiles.length ? (
+                          <div className="matterSecondaryDocumentProfileGrid">
+                            {secondaryDocumentProfiles.map((profile, index) => (
+                              <div
+                                className="matterSecondaryDocumentProfile"
+                                key={`${profile.fileName}-${index}`}
+                              >
+                                <span>
+                                  {formatBriefTaxonomyLabel(
+                                    profile.documentType || "unknown",
+                                  )}
+                                </span>
+                                <strong>
+                                  {profile.fileName || `Document ${index + 1}`}
+                                </strong>
+                                {profile.confidence != null ? (
+                                  <small>
+                                    {Math.round(profile.confidence * 100)}%
+                                  </small>
+                                ) : null}
+                              </div>
                             ))}
                           </div>
-                        </div>
-                      ) : null}
-                      {!isActiveMockMatter && secondaryClassification ? (
-                        <form
-                          className="matterSecondaryTagForm"
-                          onSubmit={(event) =>
-                            void handleAddClassificationTag(event)
-                          }
-                        >
-                          <input
-                            type="text"
-                            value={classificationTagInput}
-                            onChange={(event) =>
-                              setClassificationTagInput(event.target.value)
-                            }
-                            placeholder="Add classification tag"
-                            maxLength={80}
-                          />
-                          <Button
-                            type="submit"
-                            disabled={
-                              isSavingClassificationTag ||
-                              !classificationTagInput.trim()
-                            }
-                          >
-                            {isSavingClassificationTag ? "Saving..." : "Add tag"}
-                          </Button>
-                        </form>
-                      ) : null}
-                      {String(
-                        secondaryClassification.document_set_summary || "",
-                      ).trim() ? (
-                        <p className="matterBriefPointReason">
-                          {String(
-                            secondaryClassification.document_set_summary || "",
-                          ).trim()}
-                        </p>
-                      ) : secondaryDocumentTypes.length ? (
-                        <p className="matterBriefPointReason">
-                          Documents:{" "}
-                          {secondaryDocumentTypes
-                            .map((documentType) =>
-                              formatBriefTaxonomyLabel(documentType),
-                            )
-                            .join(", ")}
-                        </p>
-                      ) : null}
-                      {secondaryDocumentProfiles.length ? (
-                        <div className="matterSecondaryDocumentProfileGrid">
-                          {secondaryDocumentProfiles.map((profile, index) => (
-                            <div
-                              className="matterSecondaryDocumentProfile"
-                              key={`${profile.fileName}-${index}`}
+                        ) : null}
+                        {secondaryStatus ===
+                        "classification_pending_confirmation" ? (
+                          <div className="matterBriefActions">
+                            <Button
+                              type="button"
+                              disabled={isConfirmingSecondaryClassification}
+                              onClick={() =>
+                                void handleConfirmSecondaryClassification()
+                              }
                             >
-                              <span>
-                                {formatBriefTaxonomyLabel(
-                                  profile.documentType || "unknown",
-                                )}
-                              </span>
-                              <strong>
-                                {profile.fileName || `Document ${index + 1}`}
-                              </strong>
-                              {profile.confidence != null ? (
-                                <small>
-                                  {Math.round(profile.confidence * 100)}%
-                                </small>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {secondaryStatus ===
-                      "classification_pending_confirmation" ? (
-                        <div className="matterBriefActions">
-                          <Button
-                            type="button"
-                            disabled={isConfirmingSecondaryClassification}
-                            onClick={() =>
-                              void handleConfirmSecondaryClassification()
-                            }
-                          >
-                            {isConfirmingSecondaryClassification
-                              ? "Confirming..."
-                              : "Confirm classification"}
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="matterBriefPointReason">
-                          {secondaryFactChecklistCount} fact slots,{" "}
-                          {secondaryVerifiedFactCount} verified facts,{" "}
-                          {secondaryGapCount} gaps.
-                        </p>
-                      )}
-                      {isConfirmingSecondaryClassification ? (
-                        <div className="matterInlineLoaderWrap">
-                          <Loader
-                            mode="inline"
-                            variant="spinner"
-                            eyebrow="Ground Analysis"
-                            title="Confirming classification"
-                            message="Generating fact cards, law bindings, inferences, and draft recommendations."
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {briefAcceptError ? (
-                    <p className="matterBriefError">{briefAcceptError}</p>
-                  ) : null}
-                </>
-              ) : (
-                <p className="matterBriefText">
-                  Upload and extraction are complete. The matter brief agent
-                  will either generate a facts-only brief or ask for missing
-                  information.
-                </p>
-              )}
-            </article>
+                              {isConfirmingSecondaryClassification
+                                ? "Confirming..."
+                                : "Confirm classification"}
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="matterBriefPointReason">
+                            {secondaryFactChecklistCount} fact slots,{" "}
+                            {secondaryVerifiedFactCount} verified facts,{" "}
+                            {secondaryGapCount} gaps.
+                          </p>
+                        )}
+                        {isConfirmingSecondaryClassification ? (
+                          <div className="matterInlineLoaderWrap">
+                            <Loader
+                              mode="inline"
+                              variant="spinner"
+                              eyebrow="Ground Analysis"
+                              title="Confirming classification"
+                              message="Generating fact cards, law bindings, inferences, and draft recommendations."
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {briefAcceptError ? (
+                      <p className="matterBriefError">{briefAcceptError}</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="matterBriefText">
+                    Upload and extraction are complete. The matter brief agent
+                    will either generate a facts-only brief or ask for missing
+                    information.
+                  </p>
+                )}
+              </article>
             ) : null}
 
-            {activeMatterTab === "facts" ? (
+            {activeMatterTab === "evidence" ? (
               <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
                 <div className="matterWorkspacePanelHead">
                   <div>
-                    <p className="matterEyebrow">Facts</p>
-                    <h2>Grounded fact map</h2>
+                    <p className="matterEyebrow">Evidence</p>
+                    <h2>Evidence reference</h2>
                   </div>
-                  <span className={`matterBriefStatus is-${groundAnalysisStatus}`}>
-                    {groundAnalysisStatus || "not started"}
+                  <span className="matterBriefStatus is-ready">
+                    {activeEvidenceReference?.evidenceItems?.length || 0} items
                   </span>
                 </div>
-                {briefDisplayPayload?.warning ? (
-                  <p className="matterWorkspaceWarning">
-                    {briefDisplayPayload.warning}
-                  </p>
-                ) : null}
-                {isMatterStepBusy || isGroundAnalysisProcessing ? (
-                  <div className="matterInlineLoaderWrap">
-                    <Loader
-                      mode="inline"
-                      variant="spinner"
-                      eyebrow="Ground Analysis"
-                      title={
-                        isConfirmingSecondaryClassification
-                          ? "Building fact cards"
-                          : activeMatter.intelligence_statuses?.inference_generation ===
-                                "processing" ||
-                              activeMatter.intelligence_statuses?.inference_verification ===
-                                "processing"
-                            ? "Generating inferences"
-                            : activeMatter.intelligence_statuses?.law_generation ===
-                                  "processing" ||
-                                activeMatter.intelligence_statuses?.law_verification ===
-                                  "processing"
-                              ? "Attaching law support"
-                              : "Updating grounded analysis"
-                      }
-                      message="This matter is still being enriched in the background. Completed cards appear below as soon as they are ready."
-                    />
+                {activeEvidenceReference?.citationGroups?.length ? (
+                  <div className="matterFrameworkCardGrid">
+                    {activeEvidenceReference.citationGroups.map((group) => (
+                      <article className="matterFrameworkCard" key={group.id}>
+                        <strong>{group.title}</strong>
+                        <p>
+                          {group.evidenceIds.length} citation
+                          {group.evidenceIds.length === 1 ? "" : "s"} linked
+                        </p>
+                      </article>
+                    ))}
                   </div>
                 ) : null}
-                {groundAnalysisCards.length ? (
-                  <div className="matterCompactFactList">
-                    {groundAnalysisCards.map((card) => {
-                      const isExpanded = Boolean(expandedFactIds[card.id]);
-                      const factDotStatus = card.factText ? "ready" : "queued";
-                      const lawDotStatus =
-                        card.lawText || card.lawCard
+                {activeEvidenceReference?.evidenceItems?.length ? (
+                  <div className="matterIssueCardGrid">
+                    {activeEvidenceReference.evidenceItems.map((item) => (
+                      <article className="matterIssueCard" key={item.id}>
+                        <div className="matterIssueCardHead">
+                          <div>
+                            <h4>{item.documentName}</h4>
+                            <span className="matterIssueKey">
+                              {item.section || item.slot}
+                              {item.pageNumber ? ` · p.${item.pageNumber}` : ""}
+                            </span>
+                          </div>
+                          <span
+                            className={`matterIssueSupportBadge is-${item.confidence}`}
+                          >
+                            {item.confidence}
+                          </span>
+                        </div>
+                        <p>{item.excerpt}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : activeAtlasCaseResearch?.similarCases?.length ? (
+                  renderAtlasSimilarCases(activeAtlasCaseResearch.similarCases)
+                ) : (
+                  <p className="matterDebriefEmpty">
+                    Evidence excerpts will appear here once a summary is
+                    generated.
+                  </p>
+                )}
+              </article>
+            ) : null}
+
+            {activeMatterTab === "facts" ? (
+              activeBriefArtifact ? (
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                  <div className="matterWorkspacePanelHead">
+                    <div>
+                      <p className="matterEyebrow">Analysis</p>
+                      <h2>Detailed legal brief</h2>
+                    </div>
+                    <span
+                      className={`matterBriefStatus is-${activeBriefArtifact.summaryType}`}
+                    >
+                      {formatSummaryTypeLabel(activeBriefArtifact.summaryType)}
+                    </span>
+                  </div>
+                  {activeDetailedBrief?.contractualFramework?.length ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Framework</p>
+                          <h3>Contractual framework</h3>
+                        </div>
+                      </div>
+                      <div className="matterFrameworkCardGrid">
+                        {activeDetailedBrief.contractualFramework.map(
+                          (item) => (
+                            <article
+                              className="matterFrameworkCard"
+                              key={item.id}
+                            >
+                              <strong>{item.topic}</strong>
+                              <p>{item.summary}</p>
+                              <small>{item.legalEffect}</small>
+                            </article>
+                          ),
+                        )}
+                      </div>
+                    </section>
+                  ) : null}
+                  {activeDetailedBrief?.issueAnalysis?.length ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Issue Analysis</p>
+                          <h3>Structured legal issues</h3>
+                        </div>
+                      </div>
+                      <div className="matterIssueCardGrid">
+                        {activeDetailedBrief.issueAnalysis.map((issue) => (
+                          <article className="matterIssueCard" key={issue.id}>
+                            <div className="matterIssueCardHead">
+                              <div>
+                                <h4>{issue.title}</h4>
+                                <span className="matterIssueKey">
+                                  {issue.id.replace(/_/g, " ")}
+                                </span>
+                              </div>
+                              <span
+                                className={`matterIssueSupportBadge is-${issue.supportLevel}`}
+                              >
+                                {formatSupportLevelLabel(issue.supportLevel)}
+                              </span>
+                            </div>
+                            <p>{issue.shortAnswer}</p>
+                            <p>{issue.detailedAnalysis}</p>
+                            {issue.missingProof.length ? (
+                              <ul className="matterBulletList">
+                                {issue.missingProof.map((item) => (
+                                  <li key={`${issue.id}-${item}`}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {activeDetailedBrief?.recommendedActions?.length ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Recommended Actions</p>
+                          <h3>Next legal steps</h3>
+                        </div>
+                      </div>
+                      <div className="matterNextStepCardGrid">
+                        {activeDetailedBrief.recommendedActions.map((item) => (
+                          <article className="matterNextStepCard" key={item.id}>
+                            <div className="matterNextStepCardHead">
+                              <strong>{item.action}</strong>
+                              <span
+                                className={`matterPriorityBadge is-${item.priority}`}
+                              >
+                                {item.priority}
+                              </span>
+                            </div>
+                            <p>{item.whyItMatters}</p>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {activeDetailedBrief?.limitations?.length ? (
+                    <section className="matterAnalysisPanel matterAnalysisWarningPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Limitations</p>
+                          <h3>Visible proof boundaries</h3>
+                        </div>
+                      </div>
+                      <ul className="matterBulletList">
+                        {activeDetailedBrief.limitations.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+                </article>
+              ) : activeAtlasMatterBrief ? (
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                  <div className="matterWorkspacePanelHead">
+                    <div>
+                      <p className="matterEyebrow">Analysis</p>
+                      <h2>Atlas research detail</h2>
+                    </div>
+                    <span className="matterBriefStatus is-ready">
+                      {activeAtlasMatterBrief.confidence}
+                    </span>
+                  </div>
+                  {activeAtlasDeciderResearch ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Grounding</p>
+                          <h3>Workflow and document grounding</h3>
+                        </div>
+                      </div>
+                      <div className="matterReadableTextBlock">
+                        {splitReadableParagraphs(
+                          activeAtlasDeciderResearch.agentBrief,
+                        ).map((paragraph, index) => (
+                          <p key={`facts-atlas-agent-${index}`}>{paragraph}</p>
+                        ))}
+                      </div>
+                      {activeAtlasDeciderResearch.workflowGrounding.length ? (
+                        <ul className="matterBulletList">
+                          {activeAtlasDeciderResearch.workflowGrounding.map(
+                            (item) => (
+                              <li key={`facts-workflow-${item}`}>{item}</li>
+                            ),
+                          )}
+                        </ul>
+                      ) : null}
+                      {activeAtlasDeciderResearch.documentGrounding.length ? (
+                        <ul className="matterBulletList">
+                          {activeAtlasDeciderResearch.documentGrounding.map(
+                            (item) => (
+                              <li key={`facts-document-${item}`}>{item}</li>
+                            ),
+                          )}
+                        </ul>
+                      ) : null}
+                    </section>
+                  ) : null}
+                  {activeAtlasCaseResearch ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Procedure</p>
+                          <h3>Procedural patterns</h3>
+                        </div>
+                      </div>
+                      {activeAtlasCaseResearch.procedurePatterns.length ? (
+                        <ul className="matterBulletList">
+                          {activeAtlasCaseResearch.procedurePatterns.map(
+                            (item) => (
+                              <li key={`facts-pattern-${item}`}>{item}</li>
+                            ),
+                          )}
+                        </ul>
+                      ) : null}
+                    </section>
+                  ) : null}
+                </article>
+              ) : (
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                  <div className="matterWorkspacePanelHead">
+                    <div>
+                      <p className="matterEyebrow">Facts</p>
+                      <h2>Grounded fact map</h2>
+                    </div>
+                    <span
+                      className={`matterBriefStatus is-${groundAnalysisStatus}`}
+                    >
+                      {groundAnalysisStatus || "not started"}
+                    </span>
+                  </div>
+                  {briefDisplayPayload?.warning ? (
+                    <p className="matterWorkspaceWarning">
+                      {briefDisplayPayload.warning}
+                    </p>
+                  ) : null}
+                  {isMatterStepBusy || isGroundAnalysisProcessing ? (
+                    <div className="matterInlineLoaderWrap">
+                      <Loader
+                        mode="inline"
+                        variant="spinner"
+                        eyebrow="Ground Analysis"
+                        title={
+                          isConfirmingSecondaryClassification
+                            ? "Building fact cards"
+                            : activeMatter.intelligence_statuses
+                                  ?.inference_generation === "processing" ||
+                                activeMatter.intelligence_statuses
+                                  ?.inference_verification === "processing"
+                              ? "Generating inferences"
+                              : activeMatter.intelligence_statuses
+                                    ?.law_generation === "processing" ||
+                                  activeMatter.intelligence_statuses
+                                    ?.law_verification === "processing"
+                                ? "Attaching law support"
+                                : "Updating grounded analysis"
+                        }
+                        message="This matter is still being enriched in the background. Completed cards appear below as soon as they are ready."
+                      />
+                    </div>
+                  ) : null}
+                  {groundAnalysisCards.length ? (
+                    <div className="matterCompactFactList">
+                      {groundAnalysisCards.map((card) => {
+                        const isExpanded = Boolean(expandedFactIds[card.id]);
+                        const factDotStatus = card.factText
                           ? "ready"
-                          : activeMatter.intelligence_statuses?.law_generation ===
-                                "processing" ||
-                              activeMatter.intelligence_statuses?.law_verification ===
-                                "processing"
-                            ? "processing"
-                            : "queued";
-                      const inferenceDotStatus =
-                        card.inferenceText
+                          : "queued";
+                        const lawDotStatus =
+                          card.lawText || card.lawCard
+                            ? "ready"
+                            : activeMatter.intelligence_statuses
+                                  ?.law_generation === "processing" ||
+                                activeMatter.intelligence_statuses
+                                  ?.law_verification === "processing"
+                              ? "processing"
+                              : "queued";
+                        const inferenceDotStatus = card.inferenceText
                           ? "ready"
                           : activeMatter.intelligence_statuses
                                 ?.inference_generation === "processing" ||
@@ -4861,139 +7444,244 @@ const MatterSection = ({
                                 ?.inference_verification === "processing"
                             ? "processing"
                             : "queued";
-                      return (
-                        <article
-                          className={`matterCompactFactCard ${isExpanded ? "isExpanded" : ""}`}
-                          key={card.id}
-                        >
-                          <button
-                            type="button"
-                            className="matterCompactFactToggle"
-                            onClick={() =>
-                              setExpandedFactIds((prev) => ({
-                                ...prev,
-                                [card.id]: !prev[card.id],
-                              }))
-                            }
+                        return (
+                          <article
+                            className={`matterCompactFactCard ${isExpanded ? "isExpanded" : ""}`}
+                            key={card.id}
                           >
-                            <div className="matterCompactFactLead">
-                              <div className="matterCompactFactTitleRow">
-                                <strong>{card.title}</strong>
-                                <span className="matterCompactFactScore">
-                                  {typeof card.supportScore === "number"
-                                    ? Math.round(card.supportScore * 100)
-                                    : card.confidencePercent}
-                                  %
+                            <button
+                              type="button"
+                              className="matterCompactFactToggle"
+                              onClick={() =>
+                                setExpandedFactIds((prev) => ({
+                                  ...prev,
+                                  [card.id]: !prev[card.id],
+                                }))
+                              }
+                            >
+                              <div className="matterCompactFactLead">
+                                <div className="matterCompactFactTitleRow">
+                                  <strong>{card.title}</strong>
+                                  <span className="matterCompactFactScore">
+                                    {typeof card.supportScore === "number"
+                                      ? Math.round(card.supportScore * 100)
+                                      : card.confidencePercent}
+                                    %
+                                  </span>
+                                </div>
+                                <p>{clipText(card.factText, 165)}</p>
+                              </div>
+                              <div className="matterCompactFactSignals">
+                                <span
+                                  className={`matterSignalDot fact is-${factDotStatus}`}
+                                >
+                                  F
+                                </span>
+                                <span
+                                  className={`matterSignalDot law is-${lawDotStatus}`}
+                                >
+                                  L
+                                </span>
+                                <span
+                                  className={`matterSignalDot inference is-${inferenceDotStatus}`}
+                                >
+                                  I
                                 </span>
                               </div>
-                              <p>{clipText(card.factText, 165)}</p>
-                            </div>
-                            <div className="matterCompactFactSignals">
-                              <span className={`matterSignalDot fact is-${factDotStatus}`}>F</span>
-                              <span className={`matterSignalDot law is-${lawDotStatus}`}>L</span>
-                              <span className={`matterSignalDot inference is-${inferenceDotStatus}`}>I</span>
-                            </div>
-                          </button>
-                          {isExpanded ? (
-                            <div className="matterCompactFactBody">
-                              <div className="matterCompactFactDetailGrid">
-                                <div className="matterCompactFactPanel fact">
-                                  <span>Fact</span>
-                                  <p>{card.factText}</p>
-                                </div>
-                                <div className="matterCompactFactPanel law">
-                                  <span>Law</span>
-                                  <p>
-                                    {card.lawText ||
-                                      card.lawCard?.bindingExplanation ||
-                                      "No supported legal rule extracted yet."}
-                                  </p>
-                                </div>
-                                <div className="matterCompactFactPanel inference">
-                                  <span>Inference</span>
-                                  <p>
-                                    {card.inferenceText ||
-                                      "Inference is pending or intentionally withheld until stronger support is available."}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="matterCompactFactMeta">
-                                {card.sourceFiles.length ? (
-                                  <div className="matterCompactFactMetaGroup">
-                                    <strong>Source files:</strong>
-                                    <div className="matterSourceFileChipRow">
-                                      {card.sourceFiles.map((sourceFile) => {
-                                        const sourceRef =
-                                          card.sourceRefs.find((ref) =>
-                                            sourceRefMatchesFile(ref, sourceFile),
-                                          ) || card.sourceRefs[0] || null;
-                                        return (
-                                          <button
-                                            type="button"
-                                            key={`${card.id}-${sourceFile}`}
-                                            className="matterSourceFileChip"
-                                            onClick={() =>
-                                              openSourceViewer({
-                                                sourceName: sourceFile,
-                                                sourceRef,
-                                                fallbackText: card.factText,
-                                              })
-                                            }
-                                          >
-                                            {sourceFile}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
+                            </button>
+                            {isExpanded ? (
+                              <div className="matterCompactFactBody">
+                                <div className="matterCompactFactDetailGrid">
+                                  <div className="matterCompactFactPanel fact">
+                                    <span>Fact</span>
+                                    <p>{card.factText}</p>
                                   </div>
-                                ) : null}
-                                {card.researchGaps.length ? (
-                                  <p>
-                                    <strong>Gaps:</strong>{" "}
-                                    {card.researchGaps.join(" ")}
-                                  </p>
-                                ) : null}
+                                  <div className="matterCompactFactPanel law">
+                                    <span>Law</span>
+                                    <p>
+                                      {card.lawText ||
+                                        card.lawCard?.bindingExplanation ||
+                                        "No supported legal rule extracted yet."}
+                                    </p>
+                                  </div>
+                                  <div className="matterCompactFactPanel inference">
+                                    <span>Inference</span>
+                                    <p>
+                                      {card.inferenceText ||
+                                        "Inference is pending or intentionally withheld until stronger support is available."}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="matterCompactFactMeta">
+                                  {card.sourceFiles.length ? (
+                                    <div className="matterCompactFactMetaGroup">
+                                      <strong>Source files:</strong>
+                                      <div className="matterSourceFileChipRow">
+                                        {card.sourceFiles.map((sourceFile) => {
+                                          const sourceRef =
+                                            card.sourceRefs.find((ref) =>
+                                              sourceRefMatchesFile(
+                                                ref,
+                                                sourceFile,
+                                              ),
+                                            ) ||
+                                            card.sourceRefs[0] ||
+                                            null;
+                                          return (
+                                            <button
+                                              type="button"
+                                              key={`${card.id}-${sourceFile}`}
+                                              className="matterSourceFileChip"
+                                              onClick={() =>
+                                                openSourceViewer({
+                                                  sourceName: sourceFile,
+                                                  sourceRef,
+                                                  fallbackText: card.factText,
+                                                })
+                                              }
+                                            >
+                                              {sourceFile}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                  {card.researchGaps.length ? (
+                                    <p>
+                                      <strong>Gaps:</strong>{" "}
+                                      {card.researchGaps.join(" ")}
+                                    </p>
+                                  ) : null}
+                                </div>
                               </div>
-                            </div>
-                          ) : null}
-                        </article>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="matterDebriefEmpty">
-                    Grounded fact extraction has not populated yet for this matter.
-                  </p>
-                )}
-              </article>
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="matterDebriefEmpty">
+                      Grounded fact extraction has not populated yet for this
+                      matter.
+                    </p>
+                  )}
+                </article>
+              )
             ) : null}
-
             {activeMatterTab === "drafts" ? (
               <article className="matterWorkspacePanel matterWorkspaceDraftsPanel">
                 <div className="matterWorkspacePanelHead">
                   <div>
                     <p className="matterEyebrow">Drafts</p>
-                    <h2>Drafting catalogue</h2>
+                    <h2>
+                      {isAtlasMatterFlow
+                        ? "Drafts to prepare"
+                        : "Drafting catalogue"}
+                    </h2>
                   </div>
                   <div className="matterDraftRecommendationsActions">
-                    {activeDraftRecommendations?.counts ? (
+                    {isAtlasMatterFlow ? (
+                      <span className="matterBriefStatus is-ready">
+                        {atlasDraftQueue.length} drafts
+                      </span>
+                    ) : activeDraftRecommendations?.counts ? (
                       <span className="matterBriefStatus is-ready">
                         {activeDraftRecommendations.counts.ready || 0} ready
                       </span>
                     ) : null}
-                    {!isActiveMockMatter ? (
+                    {!isAtlasMatterFlow && !isActiveMockMatter ? (
                       <Button
                         type="button"
                         className="matterDraftRefreshBtn"
                         onClick={() => void handleRefreshDraftRecommendations()}
                         disabled={isLoadingDraftRecommendations}
                       >
-                        {isLoadingDraftRecommendations ? "Refreshing..." : "Refresh"}
+                        {isLoadingDraftRecommendations
+                          ? "Refreshing..."
+                          : "Refresh"}
                       </Button>
                     ) : null}
                   </div>
                 </div>
-                {readyDraftRecommendations.length ? (
+                {isAtlasMatterFlow ? (
+                  atlasDraftQueue.length ? (
+                    <div className="matterNextStepsStack">
+                      {atlasDraftQueue.map((item) => (
+                        <article
+                          className="matterNextStepsPanel matterNextStepsAccordion isDraft"
+                          key={item.id}
+                        >
+                          <button
+                            type="button"
+                            className="matterNextStepsAccordionToggle"
+                            onClick={() =>
+                              setExpandedNextStepIds((current) => ({
+                                ...current,
+                                [item.id]: !current[item.id],
+                              }))
+                            }
+                            aria-expanded={Boolean(expandedNextStepIds[item.id])}
+                          >
+                            <div className="matterNextStepCardHead">
+                              <strong>{item.title}</strong>
+                              <div className="matterNextStepsAccordionMeta">
+                                {Boolean(expandedNextStepIds[item.id]) ? (
+                                  <ChevronDown size={18} />
+                                ) : (
+                                  <ChevronRight size={18} />
+                                )}
+                              </div>
+                            </div>
+                            <p className="matterNextStepsPreview">
+                              {renderEmphasizedInlineText(item.description, [
+                                "termination",
+                                "notice",
+                                "refund",
+                                "cure period",
+                                "material default",
+                                "proof",
+                                "upload",
+                                activeAtlasMatterBrief?.usedWorkflow?.name || "",
+                              ])}
+                            </p>
+                          </button>
+                          {Boolean(expandedNextStepIds[item.id]) ? (
+                            <div className="matterNextStepsAccordionBody">
+                              <p>
+                                {renderEmphasizedInlineText(item.description, [
+                                  "termination",
+                                  "notice",
+                                  "refund",
+                                  "cure period",
+                                  "material default",
+                                  "proof",
+                                  "upload",
+                                  activeAtlasMatterBrief?.usedWorkflow?.name ||
+                                    "",
+                                ])}
+                              </p>
+                              {item.unblocksWhen.length ? (
+                                <ul className="matterBulletList">
+                                  {item.unblocksWhen.map((dependency) => (
+                                    <li key={`${item.id}-${dependency}`}>
+                                      {dependency}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="matterDebriefEmpty">
+                      Drafts that need to be prepared will appear here once the
+                      workflow research pass is complete.
+                    </p>
+                  )
+                ) : readyDraftRecommendations.length ? (
                   <>
                     {startingDraftKey ? (
                       <div className="matterInlineLoaderWrap">
@@ -5015,24 +7703,36 @@ const MatterSection = ({
                           <div className="matterDraftRecommendationTop">
                             <h3>{recommendation.title}</h3>
                             <span>
-                              {Math.round(Number(recommendation.readiness_score || 0) * 100)}%
+                              {Math.round(
+                                Number(recommendation.readiness_score || 0) *
+                                  100,
+                              )}
+                              %
                             </span>
                           </div>
-                          <p>{recommendation.purpose || recommendation.reason}</p>
+                          <p>
+                            {recommendation.purpose || recommendation.reason}
+                          </p>
                           <small>
-                            {recommendation.reason || "Ready because the current matter already contains the required source material."}
+                            {recommendation.reason ||
+                              "Ready because the current matter already contains the required source material."}
                           </small>
                           <div className="matterDraftRecommendationFooter">
                             <span>
-                              {recommendation.priority || "medium"} · {recommendation.risk_level || "medium"} risk
+                              {recommendation.priority || "medium"} ·{" "}
+                              {recommendation.risk_level || "medium"} risk
                             </span>
                             <Button
                               type="button"
                               className="matterStartDraftingBtn"
                               onClick={() =>
-                                void handleStartDraftRecommendation(recommendation)
+                                void handleStartDraftRecommendation(
+                                  recommendation,
+                                )
                               }
-                              disabled={startingDraftKey === recommendation.draft_key}
+                              disabled={
+                                startingDraftKey === recommendation.draft_key
+                              }
                             >
                               {startingDraftKey === recommendation.draft_key
                                 ? "Starting..."
@@ -5052,32 +7752,49 @@ const MatterSection = ({
                   <section className="matterDraftRecommendationGroup">
                     <div className="matterDraftRecommendationGroupHead">
                       <span>Unlock with more support</span>
-                      <small>These templates match the matter, but key inputs are missing.</small>
+                      <small>
+                        These templates match the matter, but key inputs are
+                        missing.
+                      </small>
                     </div>
                     <div className="matterDraftRecommendationGrid">
-                      {primaryLockedDraftRecommendations.map((recommendation) => (
-                        <article
-                          className="matterDraftRecommendationCard isLocked"
-                          key={recommendation.draft_key}
-                        >
-                          <div className="matterDraftRecommendationTop">
-                            <h3>{recommendation.title}</h3>
-                            <span>
-                              {Math.round(Number(recommendation.readiness_score || 0) * 100)}%
-                            </span>
-                          </div>
-                          <p>{recommendation.purpose || recommendation.reason}</p>
-                          {recommendation.missing_inputs?.length ? (
-                            <div className="matterDraftMissingList">
-                              {recommendation.missing_inputs.slice(0, 4).map((input) => (
-                                <span key={`${recommendation.draft_key}-${input.input_key}`}>
-                                  {input.label || input.input_label || input.input_key.replace(/_/g, " ")}
-                                </span>
-                              ))}
+                      {primaryLockedDraftRecommendations.map(
+                        (recommendation) => (
+                          <article
+                            className="matterDraftRecommendationCard isLocked"
+                            key={recommendation.draft_key}
+                          >
+                            <div className="matterDraftRecommendationTop">
+                              <h3>{recommendation.title}</h3>
+                              <span>
+                                {Math.round(
+                                  Number(recommendation.readiness_score || 0) *
+                                    100,
+                                )}
+                                %
+                              </span>
                             </div>
-                          ) : null}
-                        </article>
-                      ))}
+                            <p>
+                              {recommendation.purpose || recommendation.reason}
+                            </p>
+                            {recommendation.missing_inputs?.length ? (
+                              <div className="matterDraftMissingList">
+                                {recommendation.missing_inputs
+                                  .slice(0, 4)
+                                  .map((input) => (
+                                    <span
+                                      key={`${recommendation.draft_key}-${input.input_key}`}
+                                    >
+                                      {input.label ||
+                                        input.input_label ||
+                                        input.input_key.replace(/_/g, " ")}
+                                    </span>
+                                  ))}
+                              </div>
+                            ) : null}
+                          </article>
+                        ),
+                      )}
                     </div>
                   </section>
                 ) : null}
@@ -5086,32 +7803,46 @@ const MatterSection = ({
                     <button
                       type="button"
                       className="matterLowRelevanceToggle"
-                      onClick={() => setShowLowRelevanceDrafts((current) => !current)}
+                      onClick={() =>
+                        setShowLowRelevanceDrafts((current) => !current)
+                      }
                     >
                       <span>Low-confidence matches</span>
                       <small>
-                        {lowRelevanceDraftRecommendations.length} hidden until expanded
+                        {lowRelevanceDraftRecommendations.length} hidden until
+                        expanded
                       </small>
                     </button>
                     {showLowRelevanceDrafts ? (
                       <div className="matterDraftRecommendationGrid">
-                        {lowRelevanceDraftRecommendations.map((recommendation) => (
-                          <article
-                            className="matterDraftRecommendationCard isLocked"
-                            key={recommendation.draft_key}
-                          >
-                            <div className="matterDraftRecommendationTop">
-                              <h3>{recommendation.title}</h3>
-                              <span>
-                                {Math.round(Number(recommendation.readiness_score || 0) * 100)}%
-                              </span>
-                            </div>
-                            <p>{recommendation.purpose || recommendation.reason}</p>
-                            <small>
-                              This match is currently weak and should be reviewed before use.
-                            </small>
-                          </article>
-                        ))}
+                        {lowRelevanceDraftRecommendations.map(
+                          (recommendation) => (
+                            <article
+                              className="matterDraftRecommendationCard isLocked"
+                              key={recommendation.draft_key}
+                            >
+                              <div className="matterDraftRecommendationTop">
+                                <h3>{recommendation.title}</h3>
+                                <span>
+                                  {Math.round(
+                                    Number(
+                                      recommendation.readiness_score || 0,
+                                    ) * 100,
+                                  )}
+                                  %
+                                </span>
+                              </div>
+                              <p>
+                                {recommendation.purpose ||
+                                  recommendation.reason}
+                              </p>
+                              <small>
+                                This match is currently weak and should be
+                                reviewed before use.
+                              </small>
+                            </article>
+                          ),
+                        )}
                       </div>
                     ) : null}
                   </section>
@@ -5124,7 +7855,11 @@ const MatterSection = ({
                 <div className="matterWorkspacePanelHead">
                   <div>
                     <p className="matterEyebrow">Timeline</p>
-                    <h2>Matter sequence</h2>
+                    <h2>
+                      {isAtlasMatterFlow
+                        ? "What action needs to happen when"
+                        : "Matter sequence"}
+                    </h2>
                   </div>
                 </div>
                 {timelineItems.length ? (
@@ -5144,7 +7879,9 @@ const MatterSection = ({
                   </div>
                 ) : (
                   <p className="matterDebriefEmpty">
-                    A chronology will appear here once fact extraction has enough material.
+                    {isAtlasMatterFlow
+                      ? "Action timing will appear here once the workflow sequence is fully assembled."
+                      : "A chronology will appear here once fact extraction has enough material."}
                   </p>
                 )}
               </article>
@@ -5307,188 +8044,193 @@ const MatterSection = ({
                   <div className="matterDebriefCards">
                     {visibleGroundAnalysisCards.map((card) => (
                       <Fragment key={card.id}>
-                      <article className="matterDebriefCard">
-                        <div className="matterDebriefCardTop">
-                          <h3>{card.title}</h3>
-                          <div className="matterDebriefScore">
-                            <span>Source match</span>
-                            <strong>
-                              {typeof card.supportScore === "number"
-                                ? Math.round(card.supportScore * 100)
-                                : card.confidencePercent}
-                              %
-                            </strong>
-                          </div>
-                        </div>
-                        <div
-                          className="matterDebriefBarTrack"
-                          aria-hidden="true"
-                        >
-                          <span
-                            className={`matterDebriefBarFill is-${card.status}`}
-                            style={{
-                              width: `${
-                                typeof card.supportScore === "number"
+                        <article className="matterDebriefCard">
+                          <div className="matterDebriefCardTop">
+                            <h3>{card.title}</h3>
+                            <div className="matterDebriefScore">
+                              <span>Source match</span>
+                              <strong>
+                                {typeof card.supportScore === "number"
                                   ? Math.round(card.supportScore * 100)
-                                  : card.confidencePercent
-                              }%`,
-                            }}
-                          />
-                        </div>
-                        <div className="matterDebriefFactGrid">
-                          <div className="matterDebriefFactBlock">
-                            <span>Fact</span>
-                            <p>{card.factText}</p>
+                                  : card.confidencePercent}
+                                %
+                              </strong>
+                            </div>
                           </div>
-                          <div className="matterDebriefFactBlock matterDebriefLawBlock">
-                            <span>Law Status</span>
-                            {card.lawText ? (
-                              <p>{card.lawText}</p>
-                            ) : card.lawVerificationStatus === "failed" ||
-                              activeMatter?.intelligence_statuses
-                                ?.law_generation === "failed" ||
-                              activeMatter?.intelligence_statuses
-                                ?.law_verification === "failed" ? (
-                              <p>No supported legal rule extracted yet.</p>
-                            ) : groundAnalysisCards.length > 0 ? (
-                              <div className="matterShimmerParagraph matterDebriefInlineShimmer">
-                                <div className="matterShimmerLine" />
-                                <div className="matterShimmerLine matterShimmerLineShort" />
+                          <div
+                            className="matterDebriefBarTrack"
+                            aria-hidden="true"
+                          >
+                            <span
+                              className={`matterDebriefBarFill is-${card.status}`}
+                              style={{
+                                width: `${
+                                  typeof card.supportScore === "number"
+                                    ? Math.round(card.supportScore * 100)
+                                    : card.confidencePercent
+                                }%`,
+                              }}
+                            />
+                          </div>
+                          <div className="matterDebriefFactGrid">
+                            <div className="matterDebriefFactBlock">
+                              <span>Fact</span>
+                              <p>{card.factText}</p>
+                            </div>
+                            <div className="matterDebriefFactBlock matterDebriefLawBlock">
+                              <span>Law Status</span>
+                              {card.lawText ? (
+                                <p>{card.lawText}</p>
+                              ) : card.lawVerificationStatus === "failed" ||
+                                activeMatter?.intelligence_statuses
+                                  ?.law_generation === "failed" ||
+                                activeMatter?.intelligence_statuses
+                                  ?.law_verification === "failed" ? (
+                                <p>No supported legal rule extracted yet.</p>
+                              ) : groundAnalysisCards.length > 0 ? (
+                                <div className="matterShimmerParagraph matterDebriefInlineShimmer">
+                                  <div className="matterShimmerLine" />
+                                  <div className="matterShimmerLine matterShimmerLineShort" />
+                                </div>
+                              ) : (
+                                <p>
+                                  Verified law citation will appear below when
+                                  available.
+                                </p>
+                              )}
+                            </div>
+                            <div className="matterDebriefFactBlock matterDebriefInferenceBlock">
+                              <span>Inference</span>
+                              {card.inferenceText ? (
+                                <p>{card.inferenceText}</p>
+                              ) : card.inferenceMetaError ||
+                                activeMatter?.intelligence_statuses
+                                  ?.inference_generation === "failed" ||
+                                activeMatter?.intelligence_statuses
+                                  ?.inference_verification === "failed" ? (
+                                <p>Inference generated with review required.</p>
+                              ) : groundAnalysisCards.length > 0 ? (
+                                <div className="matterShimmerParagraph matterDebriefInlineShimmer">
+                                  <div className="matterShimmerLine" />
+                                  <div className="matterShimmerLine matterShimmerLineShort" />
+                                </div>
+                              ) : (
+                                <p>Inference pipeline pending.</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="matterDebriefMeta">
+                            {card.lawSources.length ? (
+                              <div className="matterDebriefLawSourcesBlock">
+                                <strong>Sources referred:</strong>
+                                <div className="matterDebriefLawSources">
+                                  {card.lawSources.map((source) => (
+                                    <a
+                                      key={`${card.id}-${source.source_id}`}
+                                      href={String(source?.url || "#")}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="matterDebriefLawSourceLink"
+                                    >
+                                      {String(source?.title || "Authority")}
+                                    </a>
+                                  ))}
+                                </div>
                               </div>
-                            ) : (
-                              <p>Verified law citation will appear below when available.</p>
-                            )}
+                            ) : null}
+                            <p>
+                              <strong>Source files:</strong>{" "}
+                              {card.sourceFiles.length ? (
+                                <span className="matterSourceFileList">
+                                  {card.sourceFiles.map((sourceName) => {
+                                    const matchingRef =
+                                      card.sourceRefs.find(
+                                        (ref) =>
+                                          normalizeSourceName(
+                                            ref.file_name || "",
+                                          ) === normalizeSourceName(sourceName),
+                                      ) ||
+                                      card.sourceRefs[0] ||
+                                      null;
+                                    return (
+                                      <Button
+                                        type="button"
+                                        className="matterSourceFileButton"
+                                        key={`${card.id}-${sourceName}`}
+                                        onClick={() =>
+                                          openSourceViewer({
+                                            sourceName,
+                                            sourceRef: matchingRef,
+                                            fallbackText: `${card.title} ${card.factText}`,
+                                          })
+                                        }
+                                      >
+                                        {sourceName}
+                                      </Button>
+                                    );
+                                  })}
+                                </span>
+                              ) : (
+                                "Uploaded document set"
+                              )}
+                            </p>
+                            {card.researchGaps.length ? (
+                              <p>
+                                <strong>Research gaps:</strong>{" "}
+                                {card.researchGaps.join(" ")}
+                              </p>
+                            ) : null}
                           </div>
-                          <div className="matterDebriefFactBlock matterDebriefInferenceBlock">
-                            <span>Inference</span>
-                            {card.inferenceText ? (
-                              <p>{card.inferenceText}</p>
-                            ) : card.inferenceMetaError ||
-                              activeMatter?.intelligence_statuses
-                                ?.inference_generation === "failed" ||
-                              activeMatter?.intelligence_statuses
-                                ?.inference_verification === "failed" ? (
-                              <p>Inference generated with review required.</p>
-                            ) : groundAnalysisCards.length > 0 ? (
-                              <div className="matterShimmerParagraph matterDebriefInlineShimmer">
-                                <div className="matterShimmerLine" />
-                                <div className="matterShimmerLine matterShimmerLineShort" />
+                        </article>
+                        {card.lawCard ? (
+                          <article className="matterDebriefCard matterDebriefVerifiedLawCard">
+                            <div className="matterDebriefCardTop">
+                              <h3>
+                                {card.lawCard.title || "Verified law citation"}
+                              </h3>
+                              <div className="matterDebriefScore">
+                                <span>Binding</span>
+                                <strong>
+                                  {card.lawCard.bindingStrength || "verified"}
+                                </strong>
                               </div>
-                            ) : (
-                              <p>Inference pipeline pending.</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="matterDebriefMeta">
-                          {card.lawSources.length ? (
-                            <div className="matterDebriefLawSourcesBlock">
-                              <strong>Sources referred:</strong>
-                              <div className="matterDebriefLawSources">
-                                {card.lawSources.map((source) => (
+                            </div>
+                            <div className="matterDebriefFactGrid">
+                              <div className="matterDebriefFactBlock matterDebriefLawBlock">
+                                <span>Verified Law</span>
+                                <p>{card.lawCard.bindingExplanation}</p>
+                              </div>
+                              {card.lawCard.application ? (
+                                <div className="matterDebriefFactBlock matterDebriefInferenceBlock">
+                                  <span>Application</span>
+                                  <p>{card.lawCard.application}</p>
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="matterDebriefMeta">
+                              <p>
+                                <strong>Source:</strong>{" "}
+                                {card.lawCard.sourceUrl ? (
                                   <a
-                                    key={`${card.id}-${source.source_id}`}
-                                    href={String(source?.url || "#")}
+                                    href={card.lawCard.sourceUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="matterDebriefLawSourceLink"
                                   >
-                                    {String(source?.title || "Authority")}
+                                    {card.lawCard.sourceDomain ||
+                                      card.lawCard.sourceUrl}
                                   </a>
-                                ))}
-                              </div>
+                                ) : (
+                                  card.lawCard.sourceDomain || "Verified source"
+                                )}
+                              </p>
+                              <p>
+                                <strong>Verification:</strong>{" "}
+                                {card.lawCard.verificationStatus || "verified"}
+                              </p>
                             </div>
-                          ) : null}
-                          <p>
-                            <strong>Source files:</strong>{" "}
-                            {card.sourceFiles.length ? (
-                              <span className="matterSourceFileList">
-                                {card.sourceFiles.map((sourceName) => {
-                                  const matchingRef =
-                                    card.sourceRefs.find(
-                                      (ref) =>
-                                        normalizeSourceName(
-                                          ref.file_name || "",
-                                        ) === normalizeSourceName(sourceName),
-                                    ) ||
-                                    card.sourceRefs[0] ||
-                                    null;
-                                  return (
-                                    <Button
-                                      type="button"
-                                      className="matterSourceFileButton"
-                                      key={`${card.id}-${sourceName}`}
-                                      onClick={() =>
-                                        openSourceViewer({
-                                          sourceName,
-                                          sourceRef: matchingRef,
-                                          fallbackText: `${card.title} ${card.factText}`,
-                                        })
-                                      }
-                                    >
-                                      {sourceName}
-                                    </Button>
-                                  );
-                                })}
-                              </span>
-                            ) : (
-                              "Uploaded document set"
-                            )}
-                          </p>
-                          {card.researchGaps.length ? (
-                            <p>
-                              <strong>Research gaps:</strong>{" "}
-                              {card.researchGaps.join(" ")}
-                            </p>
-                          ) : null}
-                        </div>
-                      </article>
-                      {card.lawCard ? (
-                        <article className="matterDebriefCard matterDebriefVerifiedLawCard">
-                          <div className="matterDebriefCardTop">
-                            <h3>{card.lawCard.title || "Verified law citation"}</h3>
-                            <div className="matterDebriefScore">
-                              <span>Binding</span>
-                              <strong>
-                                {card.lawCard.bindingStrength || "verified"}
-                              </strong>
-                            </div>
-                          </div>
-                          <div className="matterDebriefFactGrid">
-                            <div className="matterDebriefFactBlock matterDebriefLawBlock">
-                              <span>Verified Law</span>
-                              <p>{card.lawCard.bindingExplanation}</p>
-                            </div>
-                            {card.lawCard.application ? (
-                              <div className="matterDebriefFactBlock matterDebriefInferenceBlock">
-                                <span>Application</span>
-                                <p>{card.lawCard.application}</p>
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="matterDebriefMeta">
-                            <p>
-                              <strong>Source:</strong>{" "}
-                              {card.lawCard.sourceUrl ? (
-                                <a
-                                  href={card.lawCard.sourceUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="matterDebriefLawSourceLink"
-                                >
-                                  {card.lawCard.sourceDomain ||
-                                    card.lawCard.sourceUrl}
-                                </a>
-                              ) : (
-                                card.lawCard.sourceDomain || "Verified source"
-                              )}
-                            </p>
-                            <p>
-                              <strong>Verification:</strong>{" "}
-                              {card.lawCard.verificationStatus || "verified"}
-                            </p>
-                          </div>
-                        </article>
-                      ) : null}
+                          </article>
+                        ) : null}
                       </Fragment>
                     ))}
                     {hasHiddenGroundAnalysisCards ? (
@@ -5522,7 +8264,8 @@ const MatterSection = ({
                           <div className="matterDraftRecommendationsActions">
                             {activeDraftRecommendations?.counts ? (
                               <span className="matterBriefStatus is-ready">
-                                {activeDraftRecommendations.counts.ready || 0} ready ·{" "}
+                                {activeDraftRecommendations.counts.ready || 0}{" "}
+                                ready ·{" "}
                                 {activeDraftRecommendations.counts
                                   .needs_more_inputs || 0}{" "}
                                 need inputs
@@ -5742,328 +8485,353 @@ const MatterSection = ({
                 )}
               </article>
             ) : null}
+            {blankFieldHits.length > 0 ? (
+              <article className="matterBlankBanner">
+                <Button
+                  type="button"
+                  className="matterBlankBannerToggle"
+                  onClick={() => setIsBlankFieldBannerOpen((prev) => !prev)}
+                  aria-expanded={isBlankFieldBannerOpen}
+                  aria-controls="matter-blank-fields-list"
+                  showImage
+                  image={
+                    isBlankFieldBannerOpen ? (
+                      <ChevronDown size={16} />
+                    ) : (
+                      <ChevronRight size={16} />
+                    )
+                  }
+                  imagePosition="right"
+                >
+                  <strong>
+                    {blankFieldHits.length} unfilled fields detected
+                  </strong>
+                </Button>
+
+                {isBlankFieldBannerOpen ? (
+                  <div
+                    className="matterBlankBannerBody"
+                    id="matter-blank-fields-list"
+                  >
+                    {blankFieldsBySection.map(([sectionLabel, hits]) => (
+                      <section key={sectionLabel} className="matterBlankGroup">
+                        <h3>{sectionLabel}</h3>
+                        <ul>
+                          {hits.map((hit) => (
+                            <li key={hit.id}>
+                              <Button
+                                type="button"
+                                onClick={() => handleJumpToBlankField(hit)}
+                              >
+                                {titleCase(hit.label)} (Page {hit.page})
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            ) : null}
+
+            {MATTER_AI_ENABLED ? (
+              <>
+                <aside
+                  className={`matterObligationPanel ${
+                    isObligationPanelOpen ? "isOpen" : "isClosed"
+                  }`}
+                  role="complementary"
+                  aria-hidden={!isObligationPanelOpen}
+                >
+                  <div className="matterObligationPanelHead">
+                    <div>
+                      <p className="matterEyebrow">Obligation Mapper</p>
+                      <h3>Obligation balance</h3>
+                    </div>
+                    <Button
+                      type="button"
+                      className="matterObligationClose"
+                      onClick={() => onCloseObligationPanel?.()}
+                      aria-label="Close obligation mapper panel"
+                      showImage
+                      image={<X size={16} />}
+                    />
+                  </div>
+
+                  {obligationMapStatus === "loading" ? (
+                    <Loader
+                      mode="inline"
+                      eyebrow="Obligation Mapper"
+                      title="Mapping Obligations"
+                      fileName={activeMatter?.fileName || "Current matter"}
+                      message="Classifying clause summaries and building obligation balance."
+                      stage="Analyzing obligation allocation"
+                      progress={62}
+                      steps={obligationLoaderSteps}
+                    />
+                  ) : obligationMapStatus === "error" ? (
+                    <div className="matterObligationState">
+                      <p>
+                        {obligationMapError || "Obligation mapping failed."}
+                      </p>
+                      <Button
+                        type="button"
+                        onClick={() => void fetchObligationMap()}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  ) : obligationMapStatus === "ready" && obligationMapResult ? (
+                    <>
+                      <div
+                        className={`matterObligationScore matterObligationScore-${obligationMapResult.imbalance.level}`}
+                      >
+                        <strong>
+                          IPPB: {obligationMapResult.counts.ippb} obligations
+                        </strong>
+                        <span>
+                          Service Provider:{" "}
+                          {obligationMapResult.counts.service_provider}{" "}
+                          obligations
+                        </span>
+                      </div>
+
+                      <div className="matterObligationColumns">
+                        <section>
+                          <h4>IPPB obligations</h4>
+                          {obligationColumns.ippb.length ? (
+                            <ul>
+                              {obligationColumns.ippb.map((item) => {
+                                const source = obligationClauseById.get(
+                                  item.clause_id,
+                                );
+                                if (!source) return null;
+                                return (
+                                  <li key={`ippb-${item.clause_id}`}>
+                                    <Button
+                                      type="button"
+                                      className="matterObligationLink"
+                                      onClick={() =>
+                                        handleJumpToClauseById(item.clause_id)
+                                      }
+                                    >
+                                      {source.display_text}
+                                    </Button>
+                                    <div className="matterObligationMeta">
+                                      <span>{source.heading}</span>
+                                      {item.party === "mutual" ? (
+                                        <span className="matterObligationMutual">
+                                          Mutual
+                                        </span>
+                                      ) : null}
+                                      <Button
+                                        type="button"
+                                        onClick={() =>
+                                          handleJumpToClausePage(
+                                            item.clause_id,
+                                            true,
+                                          )
+                                        }
+                                      >
+                                        Page{" "}
+                                        {source.source_page ||
+                                          source.page_start}
+                                      </Button>
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <p className="matterObligationEmpty">
+                              No obligations detected.
+                            </p>
+                          )}
+                        </section>
+
+                        <section>
+                          <h4>Service Provider obligations</h4>
+                          {obligationColumns.serviceProvider.length ? (
+                            <ul>
+                              {obligationColumns.serviceProvider.map((item) => {
+                                const source = obligationClauseById.get(
+                                  item.clause_id,
+                                );
+                                if (!source) return null;
+                                return (
+                                  <li key={`sp-${item.clause_id}`}>
+                                    <Button
+                                      type="button"
+                                      className="matterObligationLink"
+                                      onClick={() =>
+                                        handleJumpToClauseById(item.clause_id)
+                                      }
+                                    >
+                                      {source.display_text}
+                                    </Button>
+                                    <div className="matterObligationMeta">
+                                      <span>{source.heading}</span>
+                                      {item.party === "mutual" ? (
+                                        <span className="matterObligationMutual">
+                                          Mutual
+                                        </span>
+                                      ) : null}
+                                      <Button
+                                        type="button"
+                                        onClick={() =>
+                                          handleJumpToClausePage(
+                                            item.clause_id,
+                                            true,
+                                          )
+                                        }
+                                      >
+                                        Page{" "}
+                                        {source.source_page ||
+                                          source.page_start}
+                                      </Button>
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <p className="matterObligationEmpty">
+                              No obligations detected.
+                            </p>
+                          )}
+                        </section>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="matterObligationState">
+                      Open the mapper to classify obligations from clause
+                      summaries.
+                    </p>
+                  )}
+                </aside>
+
+                <aside
+                  className={`matterObligationPanel matterPlaybookPanel ${
+                    isPlaybookPanelOpen ? "isOpen" : "isClosed"
+                  }`}
+                  role="complementary"
+                  aria-hidden={!isPlaybookPanelOpen}
+                >
+                  <div className="matterObligationPanelHead">
+                    <div>
+                      <p className="matterEyebrow">Playbook</p>
+                      <h3>Accepted redlines</h3>
+                    </div>
+                    <Button
+                      type="button"
+                      className="matterObligationClose"
+                      onClick={() => onClosePlaybookPanel?.()}
+                      aria-label="Close playbook panel"
+                      showImage
+                      image={<X size={16} />}
+                    />
+                  </div>
+                  {acceptedRedlines.length ? (
+                    <div className="matterPlaybookList">
+                      {acceptedRedlines.map((item: AcceptedRedline) => (
+                        <article className="matterPlaybookItem" key={item.id}>
+                          <header>
+                            <div className="matterPlaybookHeaderRow">
+                              <input
+                                className="matterPlaybookTitleInput"
+                                value={item.title || item.clauseHeading}
+                                onChange={(event) =>
+                                  activeMatter &&
+                                  updateAcceptedRedline(
+                                    activeMatter.id,
+                                    item.id,
+                                    {
+                                      title: event.target.value,
+                                    },
+                                  )
+                                }
+                                onBlur={() => {
+                                  void patchAcceptedRedlineRemote(item.id, {
+                                    title: item.title || item.clauseHeading,
+                                  });
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                className="matterPlaybookDeleteButton"
+                                onClick={() => {
+                                  if (
+                                    window.confirm(
+                                      "Delete this accepted redline from playbook?",
+                                    )
+                                  ) {
+                                    void deleteAcceptedRedlineRemote(item.id);
+                                  }
+                                }}
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                            <span>
+                              {item.position} ·{" "}
+                              {item.representedParty === "ippb"
+                                ? "Representing IPPB"
+                                : "Representing Service Provider"}
+                            </span>
+                          </header>
+                          <p className="matterPlaybookMeta">
+                            {item.sectionLabel} · Accepted{" "}
+                            {new Date(item.acceptedAt).toLocaleString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: true,
+                              timeZone: "Asia/Kolkata",
+                            })}
+                          </p>
+                          <div className="matterPlaybookText">
+                            <label>Original</label>
+                            <p>{item.originalText}</p>
+                            <label>Suggested</label>
+                            <textarea
+                              className="matterPlaybookTextArea"
+                              value={item.rewrittenText}
+                              rows={5}
+                              onChange={(event) =>
+                                activeMatter &&
+                                updateAcceptedRedline(
+                                  activeMatter.id,
+                                  item.id,
+                                  {
+                                    rewrittenText: event.target.value,
+                                  },
+                                )
+                              }
+                              onBlur={() => {
+                                void patchAcceptedRedlineRemote(item.id, {
+                                  rewrittenText: item.rewrittenText,
+                                });
+                              }}
+                            />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="matterObligationState">
+                      No accepted redlines yet. Open a clause and click Accept
+                      redline to add it here.
+                    </p>
+                  )}
+                </aside>
+              </>
+            ) : null}
           </>
         ) : null}
       </header>
-
-      {blankFieldHits.length > 0 ? (
-        <article className="matterBlankBanner">
-          <Button
-            type="button"
-            className="matterBlankBannerToggle"
-            onClick={() => setIsBlankFieldBannerOpen((prev) => !prev)}
-            aria-expanded={isBlankFieldBannerOpen}
-            aria-controls="matter-blank-fields-list"
-            showImage
-            image={
-              isBlankFieldBannerOpen ? (
-                <ChevronDown size={16} />
-              ) : (
-                <ChevronRight size={16} />
-              )
-            }
-            imagePosition="right"
-          >
-            <strong>{blankFieldHits.length} unfilled fields detected</strong>
-          </Button>
-
-          {isBlankFieldBannerOpen ? (
-            <div
-              className="matterBlankBannerBody"
-              id="matter-blank-fields-list"
-            >
-              {blankFieldsBySection.map(([sectionLabel, hits]) => (
-                <section key={sectionLabel} className="matterBlankGroup">
-                  <h3>{sectionLabel}</h3>
-                  <ul>
-                    {hits.map((hit) => (
-                      <li key={hit.id}>
-                        <Button
-                          type="button"
-                          onClick={() => handleJumpToBlankField(hit)}
-                        >
-                          {titleCase(hit.label)} (Page {hit.page})
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </div>
-          ) : null}
-        </article>
-      ) : null}
-
-      {MATTER_AI_ENABLED ? (
-        <>
-          <aside
-            className={`matterObligationPanel ${
-              isObligationPanelOpen ? "isOpen" : "isClosed"
-            }`}
-            role="complementary"
-            aria-hidden={!isObligationPanelOpen}
-          >
-            <div className="matterObligationPanelHead">
-              <div>
-                <p className="matterEyebrow">Obligation Mapper</p>
-                <h3>Obligation balance</h3>
-              </div>
-              <Button
-                type="button"
-                className="matterObligationClose"
-                onClick={() => onCloseObligationPanel?.()}
-                aria-label="Close obligation mapper panel"
-                showImage
-                image={<X size={16} />}
-              />
-            </div>
-
-            {obligationMapStatus === "loading" ? (
-              <Loader
-                mode="inline"
-                eyebrow="Obligation Mapper"
-                title="Mapping Obligations"
-                fileName={activeMatter?.fileName || "Current matter"}
-                message="Classifying clause summaries and building obligation balance."
-                stage="Analyzing obligation allocation"
-                progress={62}
-                steps={obligationLoaderSteps}
-              />
-            ) : obligationMapStatus === "error" ? (
-              <div className="matterObligationState">
-                <p>{obligationMapError || "Obligation mapping failed."}</p>
-                <Button type="button" onClick={() => void fetchObligationMap()}>
-                  Retry
-                </Button>
-              </div>
-            ) : obligationMapStatus === "ready" && obligationMapResult ? (
-              <>
-                <div
-                  className={`matterObligationScore matterObligationScore-${obligationMapResult.imbalance.level}`}
-                >
-                  <strong>
-                    IPPB: {obligationMapResult.counts.ippb} obligations
-                  </strong>
-                  <span>
-                    Service Provider:{" "}
-                    {obligationMapResult.counts.service_provider} obligations
-                  </span>
-                </div>
-
-                <div className="matterObligationColumns">
-                  <section>
-                    <h4>IPPB obligations</h4>
-                    {obligationColumns.ippb.length ? (
-                      <ul>
-                        {obligationColumns.ippb.map((item) => {
-                          const source = obligationClauseById.get(
-                            item.clause_id,
-                          );
-                          if (!source) return null;
-                          return (
-                            <li key={`ippb-${item.clause_id}`}>
-                              <Button
-                                type="button"
-                                className="matterObligationLink"
-                                onClick={() =>
-                                  handleJumpToClauseById(item.clause_id)
-                                }
-                              >
-                                {source.display_text}
-                              </Button>
-                              <div className="matterObligationMeta">
-                                <span>{source.heading}</span>
-                                {item.party === "mutual" ? (
-                                  <span className="matterObligationMutual">
-                                    Mutual
-                                  </span>
-                                ) : null}
-                                <Button
-                                  type="button"
-                                  onClick={() =>
-                                    handleJumpToClausePage(item.clause_id, true)
-                                  }
-                                >
-                                  Page {source.source_page || source.page_start}
-                                </Button>
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : (
-                      <p className="matterObligationEmpty">
-                        No obligations detected.
-                      </p>
-                    )}
-                  </section>
-
-                  <section>
-                    <h4>Service Provider obligations</h4>
-                    {obligationColumns.serviceProvider.length ? (
-                      <ul>
-                        {obligationColumns.serviceProvider.map((item) => {
-                          const source = obligationClauseById.get(
-                            item.clause_id,
-                          );
-                          if (!source) return null;
-                          return (
-                            <li key={`sp-${item.clause_id}`}>
-                              <Button
-                                type="button"
-                                className="matterObligationLink"
-                                onClick={() =>
-                                  handleJumpToClauseById(item.clause_id)
-                                }
-                              >
-                                {source.display_text}
-                              </Button>
-                              <div className="matterObligationMeta">
-                                <span>{source.heading}</span>
-                                {item.party === "mutual" ? (
-                                  <span className="matterObligationMutual">
-                                    Mutual
-                                  </span>
-                                ) : null}
-                                <Button
-                                  type="button"
-                                  onClick={() =>
-                                    handleJumpToClausePage(item.clause_id, true)
-                                  }
-                                >
-                                  Page {source.source_page || source.page_start}
-                                </Button>
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : (
-                      <p className="matterObligationEmpty">
-                        No obligations detected.
-                      </p>
-                    )}
-                  </section>
-                </div>
-              </>
-            ) : (
-              <p className="matterObligationState">
-                Open the mapper to classify obligations from clause summaries.
-              </p>
-            )}
-          </aside>
-
-          <aside
-            className={`matterObligationPanel matterPlaybookPanel ${
-              isPlaybookPanelOpen ? "isOpen" : "isClosed"
-            }`}
-            role="complementary"
-            aria-hidden={!isPlaybookPanelOpen}
-          >
-            <div className="matterObligationPanelHead">
-              <div>
-                <p className="matterEyebrow">Playbook</p>
-                <h3>Accepted redlines</h3>
-              </div>
-              <Button
-                type="button"
-                className="matterObligationClose"
-                onClick={() => onClosePlaybookPanel?.()}
-                aria-label="Close playbook panel"
-                showImage
-                image={<X size={16} />}
-              />
-            </div>
-            {acceptedRedlines.length ? (
-              <div className="matterPlaybookList">
-                {acceptedRedlines.map((item: AcceptedRedline) => (
-                  <article className="matterPlaybookItem" key={item.id}>
-                    <header>
-                      <div className="matterPlaybookHeaderRow">
-                        <input
-                          className="matterPlaybookTitleInput"
-                          value={item.title || item.clauseHeading}
-                          onChange={(event) =>
-                            activeMatter &&
-                            updateAcceptedRedline(activeMatter.id, item.id, {
-                              title: event.target.value,
-                            })
-                          }
-                          onBlur={() => {
-                            void patchAcceptedRedlineRemote(item.id, {
-                              title: item.title || item.clauseHeading,
-                            });
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          className="matterPlaybookDeleteButton"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                "Delete this accepted redline from playbook?",
-                              )
-                            ) {
-                              void deleteAcceptedRedlineRemote(item.id);
-                            }
-                          }}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                      <span>
-                        {item.position} ·{" "}
-                        {item.representedParty === "ippb"
-                          ? "Representing IPPB"
-                          : "Representing Service Provider"}
-                      </span>
-                    </header>
-                    <p className="matterPlaybookMeta">
-                      {item.sectionLabel} · Accepted{" "}
-                      {new Date(item.acceptedAt).toLocaleString("en-IN", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                        timeZone: "Asia/Kolkata",
-                      })}
-                    </p>
-                    <div className="matterPlaybookText">
-                      <label>Original</label>
-                      <p>{item.originalText}</p>
-                      <label>Suggested</label>
-                      <textarea
-                        className="matterPlaybookTextArea"
-                        value={item.rewrittenText}
-                        rows={5}
-                        onChange={(event) =>
-                          activeMatter &&
-                          updateAcceptedRedline(activeMatter.id, item.id, {
-                            rewrittenText: event.target.value,
-                          })
-                        }
-                        onBlur={() => {
-                          void patchAcceptedRedlineRemote(item.id, {
-                            rewrittenText: item.rewrittenText,
-                          });
-                        }}
-                      />
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="matterObligationState">
-                No accepted redlines yet. Open a clause and click Accept redline
-                to add it here.
-              </p>
-            )}
-          </aside>
-        </>
-      ) : null}
-
       {activeClause && activeClauseSection && isClauseJumpPanelVisible ? (
         <aside
           className={`matterClauseJumpPanel ${
@@ -6106,59 +8874,65 @@ const MatterSection = ({
         </aside>
       ) : null}
 
-      {activeMatterTab === "overview" ? (
-      <div className="matterContextCorePanel">
-        {isActiveMockMatter ? (
-          <p className="matterContextCoreMessage">
-            ContextCore retrieval is disabled for mock matters.
-          </p>
-        ) : activeMatter && activeMatterContextCore?.status !== "ready" ? (
-          <p className="matterContextCoreMessage">
-            {activeMatterContextCore?.status === "not_requested"
-              ? "This matter was not passed through ContextCore."
-              : activeMatterContextCore?.status === "stale"
-                ? "This matter has additional files that were uploaded without ContextCore re-indexing."
-                : activeMatterContextCore?.status === "processing"
-                  ? "ContextCore is still indexing this matter."
-                  : activeMatterContextCore?.error ||
-                    "ContextCore retrieval is unavailable for this matter."}
-          </p>
-        ) : null}
+      {activeMatterTab === "overview" && false ? (
+        <div className="matterContextCorePanel">
+          {isActiveMockMatter ? (
+            <p className="matterContextCoreMessage">
+              ContextCore retrieval is disabled for mock matters.
+            </p>
+          ) : activeMatter && activeMatterContextCore?.status !== "ready" ? (
+            <p className="matterContextCoreMessage">
+              {activeMatterContextCore?.status === "not_requested"
+                ? "This matter was not passed through ContextCore."
+                : activeMatterContextCore?.status === "stale"
+                  ? "This matter has additional files that were uploaded without ContextCore re-indexing."
+                  : activeMatterContextCore?.status === "processing"
+                    ? "ContextCore is still indexing this matter."
+                    : activeMatterContextCore?.error ||
+                      "ContextCore retrieval is unavailable for this matter."}
+            </p>
+          ) : null}
 
-        {matterSearchInfo ? (
-          <p className="matterContextCoreMessage">{matterSearchInfo}</p>
-        ) : null}
+          {matterSearchInfo ? (
+            <p className="matterContextCoreMessage">{matterSearchInfo}</p>
+          ) : null}
 
-        {matterSearchError ? (
-          <p className="matterContextCoreError">{matterSearchError}</p>
-        ) : null}
+          {matterSearchError ? (
+            <p className="matterContextCoreError">{matterSearchError}</p>
+          ) : null}
 
-        {matterSearchResults.length ? (
-          <div className="matterContextCoreResults">
-            {matterSearchResults.map((result) => (
-              <article className="matterContextCoreCard" key={result.chunk_id}>
-                <div className="matterContextCoreCardHead">
-                  <strong>{result.metadata?.file_name || "Source"}</strong>
-                  <span>
-                    {[result.metadata?.document_role, result.metadata?.assertion_mode]
-                      .filter(Boolean)
-                      .join(" • ")}
-                  </span>
-                </div>
-                <p className="matterContextCoreMeta">
-                  {result.metadata?.page_start
-                    ? `Page ${result.metadata.page_start}`
-                    : "Paragraph match"}
-                  {result.metadata?.party_side
-                    ? ` • ${String(result.metadata.party_side).replace(/_/g, " ")}`
-                    : ""}
-                </p>
-                <p className="matterContextCoreText">{result.text}</p>
-              </article>
-            ))}
-          </div>
-        ) : null}
-      </div>
+          {matterSearchResults.length ? (
+            <div className="matterContextCoreResults">
+              {matterSearchResults.map((result) => (
+                <article
+                  className="matterContextCoreCard"
+                  key={result.chunk_id}
+                >
+                  <div className="matterContextCoreCardHead">
+                    <strong>{result.metadata?.file_name || "Source"}</strong>
+                    <span>
+                      {[
+                        result.metadata?.document_role,
+                        result.metadata?.assertion_mode,
+                      ]
+                        .filter(Boolean)
+                        .join(" • ")}
+                    </span>
+                  </div>
+                  <p className="matterContextCoreMeta">
+                    {result.metadata?.page_start
+                      ? `Page ${result.metadata.page_start}`
+                      : "Paragraph match"}
+                    {result.metadata?.party_side
+                      ? ` • ${String(result.metadata.party_side).replace(/_/g, " ")}`
+                      : ""}
+                  </p>
+                  <p className="matterContextCoreText">{result.text}</p>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {!isMatterChatOpen && activeMatter ? (
@@ -6310,6 +9084,580 @@ const MatterSection = ({
         </div>
       )}
 
+      {shouldShowWorkflowConfirmationState &&
+      activeMatter &&
+      activeAtlasRecognition ? (
+        <div
+          className="matterDialogBackdrop matterClarificationOverlay"
+          role="presentation"
+        >
+          <section
+            className="matterClarificationModal"
+            role="dialog"
+            aria-modal="true"
+          >
+            <header className="matterClarificationModalHead">
+              <div>
+                <p className="matterEyebrow">Workflow Confirmation</p>
+                <h2>Associate has matched this matter to the atlas</h2>
+              </div>
+              <span className="matterResearchModeStatus">
+                workflow confirmation
+              </span>
+              <button
+                type="button"
+                className="matterClarificationCloseButton"
+                aria-label="Exit research and return to dashboard"
+                onClick={() =>
+                  activeMatter && isAtlasMatterFlow
+                    ? void cancelMatterAtlasResearch(activeMatter.id)
+                    : navigate("/")
+                }
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <div className="matterClarificationModalBody">
+              <article className="matterClarificationActiveCard uiCard">
+                <div className="matterClarificationQuestionHero">
+                  <span className="matterIssueKey">Atlas classification</span>
+                  <h3>
+                    {activeWorkflowDisplayName || "A workflow match is ready"}
+                  </h3>
+                  <p className="matterClarificationMeta">
+                    {activePracticeAreaDisplayName ||
+                      "Select the closest practice area and workflow."}
+                  </p>
+                </div>
+
+                <div className="matterClarificationOptionList">
+                  {activeAtlasRecognition.candidateWorkflows.map(
+                    (candidate: AtlasBaseRecognitionCandidate) => (
+                      <button
+                        type="button"
+                        key={candidate.workflowId}
+                        className={`matterClarificationOptionRow ${
+                          activeWorkflowSelectionId === candidate.workflowId
+                            ? "isSelected"
+                            : ""
+                        }`}
+                        onClick={() =>
+                          setWorkflowSelectionIdByMatterId((current) => ({
+                            ...current,
+                            [activeMatter.id]: candidate.workflowId,
+                          }))
+                        }
+                      >
+                        <span className="matterClarificationOptionCheck" />
+                        <span className="matterClarificationOptionContent">
+                          <strong>
+                            {candidate.workflowName ||
+                              formatAtlasLabel(candidate.workflowId)}
+                          </strong>
+                          <small>
+                            {candidate.areaName ||
+                              formatAtlasLabel(candidate.areaId)}
+                          </small>
+                        </span>
+                      </button>
+                    ),
+                  )}
+                </div>
+
+                <div className="matterClarificationChoiceFlow">
+                  <UiInput
+                    type="text"
+                    value={activeWorkflowOverrideNote}
+                    onChange={(event) =>
+                      setWorkflowOverrideNoteByMatterId((current) => ({
+                        ...current,
+                        [activeMatter.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="Optional: add a case-specific note to rerun categorization"
+                  />
+                  <div className="matterClarificationFooter">
+                    <div className="matterClarificationFooterActions">
+                      <UiButton
+                        variant="ghost"
+                        className="matterClarificationTextButton"
+                        disabled={activeWorkflowConfirmationState.submitting}
+                        onClick={() =>
+                          void retryMatterAtlasRecognition(
+                            activeMatter.id,
+                            activeWorkflowOverrideNote,
+                          )
+                        }
+                      >
+                        Retry categorization
+                      </UiButton>
+                    </div>
+                    <UiButton
+                      variant="primary"
+                      className="matterClarificationIconButton"
+                      disabled={activeWorkflowConfirmationState.submitting}
+                      onClick={() =>
+                        void confirmMatterAtlasWorkflow({
+                          matterId: activeMatter.id,
+                          selectedWorkflowId: activeWorkflowSelectionId,
+                          overrideNote: activeWorkflowOverrideNote,
+                        })
+                      }
+                    >
+                      <ArrowRight size={18} />
+                    </UiButton>
+                  </div>
+                  {activeWorkflowConfirmationState.error ? (
+                    <p className="matterBriefError">
+                      {activeWorkflowConfirmationState.error}
+                    </p>
+                  ) : null}
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {shouldShowClarificationState &&
+      (activeAtlasCheckpoint || activeClarificationCheckpoint) ? (
+        <div
+          className="matterDialogBackdrop matterClarificationOverlay"
+          role="presentation"
+        >
+          <section
+            className="matterClarificationModal"
+            role="dialog"
+            aria-modal="true"
+          >
+            <header className="matterClarificationModalHead">
+              <div>
+                <p className="matterEyebrow">Focused Clarification</p>
+                <h2>
+                  {isClarificationAdvancing
+                    ? "Associate is continuing the research"
+                    : activeClarificationQuestion
+                      ? "Associate needs one answer before continuing"
+                      : "Associate is ready for the next step"}
+                </h2>
+              </div>
+              <span className="matterResearchModeStatus">
+                {isClarificationAdvancing
+                  ? "live execution"
+                  : activeClarificationQuestion
+                    ? `question ${Math.min(
+                        activeClarificationQuestionIndex + 1,
+                        clarificationQuestions.length,
+                      )} of ${clarificationQuestions.length}`
+                    : "checkpoint ready"}
+              </span>
+              <button
+                type="button"
+                className="matterClarificationCloseButton"
+                aria-label="Exit research and return to dashboard"
+                onClick={() =>
+                  activeMatter && isAtlasMatterFlow
+                    ? void cancelMatterAtlasResearch(activeMatter.id)
+                    : navigate("/")
+                }
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            {isClarificationAdvancing ? (
+              <div className="matterClarificationModalBody">
+                <div className="matterClarificationStack">
+                  <div className="matterClarificationGhostCard is-back-two" />
+                  <div className="matterClarificationGhostCard is-back-one" />
+                  <article className="matterClarificationActiveCard uiCard">
+                    <div className="matterClarificationQuestionHero">
+                      <span className="matterIssueKey">
+                        Research is moving forward
+                      </span>
+                      <h3>{clarificationAdvanceMessage}</h3>
+                      <p>
+                        Associate is updating the matter state and preparing the
+                        next clarification or analysis step.
+                      </p>
+                    </div>
+                    <div className="matterClarificationAdvanceLoader">
+                      <div
+                        className="matterResearchPulse matterResearchPulseLarge"
+                        aria-hidden="true"
+                      >
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                      <div className="matterClarificationAdvanceLoaderText">
+                        <strong>
+                          {isMatterStatePolling
+                            ? "Checking live matter state"
+                            : "Finishing the current research step"}
+                        </strong>
+                        <span>
+                          {isMatterStatePolling
+                            ? "We are checking the saved matter state for the next available step."
+                            : "Associate is completing the current atlas step and will update this workspace as soon as it returns."}
+                        </span>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            ) : activeClarificationQuestion ? (
+              <div className="matterClarificationModalBody">
+                <div className="matterClarificationStack">
+                  <div className="matterClarificationGhostCard is-back-two" />
+                  <div className="matterClarificationGhostCard is-back-one" />
+                  <article
+                    className="matterClarificationActiveCard uiCard"
+                    key={activeClarificationQuestion.id}
+                  >
+                    <div className="matterClarificationQuestionHero">
+                      <span className="matterIssueKey">
+                        {activeClarificationQuestion.linkedIssue.replace(
+                          /_/g,
+                          " ",
+                        )}
+                      </span>
+                      <h3>{activeClarificationQuestion.question}</h3>
+                      <p>{activeClarificationQuestion.whyItMatters}</p>
+                    </div>
+
+                    {activeClarificationQuestion.answerType === "yes_no" ? (
+                      <div className="matterClarificationOptionList">
+                        {["yes", "no", "not_sure"].map((option) => (
+                          <button
+                            type="button"
+                            key={`${activeClarificationQuestion.id}-${option}`}
+                            className={`matterClarificationOptionRow ${
+                              clarificationDraftAnswers[
+                                activeClarificationQuestion.id
+                              ] === option
+                                ? "isSelected"
+                                : ""
+                            }`}
+                            onClick={() => {
+                              setClarificationDraftAnswers((current) => ({
+                                ...current,
+                                [activeClarificationQuestion.id]: option,
+                              }));
+                            }}
+                          >
+                            <span className="matterClarificationOptionCheck" />
+                            <span className="matterClarificationOptionContent">
+                              <strong>{option.replace(/_/g, " ")}</strong>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : activeClarificationQuestion.answerType === "choice" &&
+                      activeClarificationQuestion.options?.length ? (
+                      <div className="matterClarificationChoiceFlow">
+                        <div className="matterClarificationOptionList">
+                          {activeClarificationQuestion.options.map((option) => (
+                            <button
+                              type="button"
+                              key={`${activeClarificationQuestion.id}-${option}`}
+                              className={`matterClarificationOptionRow ${
+                                clarificationDraftAnswers[
+                                  activeClarificationQuestion.id
+                                ] === option
+                                  ? "isSelected"
+                                  : ""
+                              }`}
+                              onClick={() =>
+                                setClarificationDraftAnswers((current) => ({
+                                  ...current,
+                                  [activeClarificationQuestion.id]: option,
+                                }))
+                              }
+                            >
+                              <span className="matterClarificationOptionCheck" />
+                              <span className="matterClarificationOptionContent">
+                                <strong>{option}</strong>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="matterClarificationChoiceFlow">
+                        <UiInput
+                          type={
+                            activeClarificationQuestion.answerType === "date"
+                              ? "date"
+                              : activeClarificationQuestion.answerType ===
+                                  "amount"
+                                ? "number"
+                                : "text"
+                          }
+                          value={
+                            clarificationDraftAnswers[
+                              activeClarificationQuestion.id
+                            ] || ""
+                          }
+                          onChange={(event) =>
+                            setClarificationDraftAnswers((current) => ({
+                              ...current,
+                              [activeClarificationQuestion.id]:
+                                event.target.value,
+                            }))
+                          }
+                          placeholder="Type your answer"
+                        />
+                      </div>
+                    )}
+
+                    <div className="matterClarificationFooter">
+                      <div className="matterClarificationFooterActions">
+                        <UiButton
+                          variant="ghost"
+                          className="matterClarificationTextButton"
+                          onClick={handleClarificationSkip}
+                        >
+                          Skip
+                        </UiButton>
+                        <UiButton
+                          variant="ghost"
+                          className="matterClarificationTextButton"
+                          onClick={handleClarificationSkipAll}
+                        >
+                          Skip all
+                        </UiButton>
+                      </div>
+                      <UiButton
+                        variant="primary"
+                        className="matterClarificationIconButton"
+                        disabled={!canAdvanceClarificationQuestion}
+                        onClick={() => void handleClarificationAnswerAdvance()}
+                      >
+                        <ArrowRight size={18} />
+                      </UiButton>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            ) : (
+              <div className="matterClarificationModalBody">
+                <article className="matterClarificationActiveCard uiCard">
+                  <div className="matterClarificationQuestionHero">
+                    <h3>
+                      {activeAtlasCheckpoint?.messageToUser ||
+                        activeClarificationCheckpoint?.messageToUser}
+                    </h3>
+                    <p>
+                      {activeAtlasCheckpoint?.consequenceIfSkipped ||
+                        activeClarificationCheckpoint?.consequenceIfSkipped}
+                    </p>
+                  </div>
+
+                  {(
+                    activeAtlasCheckpoint?.requestedDocuments ||
+                    activeClarificationCheckpoint?.requestedDocuments ||
+                    []
+                  ).length ? (
+                    <div className="matterClarificationUploadGrid">
+                      {(
+                        activeAtlasCheckpoint?.requestedDocuments ||
+                        activeClarificationCheckpoint?.requestedDocuments ||
+                        []
+                      ).map((item) => (
+                        <article
+                          className="matterClarificationUploadCard uiCard"
+                          key={item.id}
+                        >
+                          <strong>{item.label}</strong>
+                          <p>{item.whyNeeded}</p>
+                          <small>{item.unlocks}</small>
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="matterClarificationActions">
+                    {clarificationQuestions.length ? (
+                      <UiButton
+                        variant="primary"
+                        onClick={() =>
+                          activeMatter &&
+                          void submitClarificationAnswers(activeMatter.id)
+                        }
+                        disabled={isSubmittingClarification}
+                      >
+                        {isSubmittingClarification
+                          ? "Submitting..."
+                          : "Use these answers"}
+                      </UiButton>
+                    ) : null}
+                    <UiButton
+                      variant="secondary"
+                      onClick={() => {
+                        setUploadPopupMode("append");
+                        setIsUploadPopupOpen(true);
+                      }}
+                    >
+                      Upload more documents
+                    </UiButton>
+                    {activeAtlasCheckpoint?.canContinueWithLimitedResearch ||
+                    activeClarificationCheckpoint?.canContinueWithoutAnswers ? (
+                      <UiButton
+                        variant="outline"
+                        onClick={() =>
+                          activeMatter &&
+                          void continueWithLimitedSummary(activeMatter.id)
+                        }
+                      >
+                        Continue with limited summary
+                      </UiButton>
+                    ) : null}
+                  </div>
+                </article>
+                {clarificationSubmitError ? (
+                  <p className="matterBriefError">{clarificationSubmitError}</p>
+                ) : null}
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {isBriefDetailModalOpen &&
+      (activeBriefArtifact || activeAtlasMatterBrief) ? (
+        <div className="matterDialogBackdrop" role="presentation">
+          <section
+            className="matterBriefDetailDialog"
+            role="dialog"
+            aria-modal="true"
+          >
+            <header className="matterBriefDetailHead">
+              <div>
+                <p className="matterEyebrow">Detailed Brief</p>
+                <h2>
+                  {activeSummaryTitle ||
+                    activeOverview?.headline ||
+                    "Detailed analysis"}
+                </h2>
+              </div>
+              <Button
+                type="button"
+                aria-label="Close detailed brief"
+                onClick={() => setIsBriefDetailModalOpen(false)}
+                showImage
+                image={<X size={18} />}
+              />
+            </header>
+            <div className="matterBriefDetailBody">
+              {activeAtlasMatterBrief ? (
+                <>
+                  {activeAtlasDeciderResearch ? (
+                    <section className="matterBriefDetailSection">
+                      <h3>Workflow grounding</h3>
+                      <div className="matterReadableTextBlock">
+                        {splitReadableParagraphs(
+                          activeAtlasDeciderResearch.agentBrief,
+                        ).map((paragraph, index) => (
+                          <p key={`atlas-agent-brief-${index}`}>{paragraph}</p>
+                        ))}
+                      </div>
+                      {activeAtlasDeciderResearch.workflowGrounding.length ? (
+                        <ul className="matterBulletList">
+                          {activeAtlasDeciderResearch.workflowGrounding.map(
+                            (item) => (
+                              <li key={`atlas-workflow-${item}`}>{item}</li>
+                            ),
+                          )}
+                        </ul>
+                      ) : null}
+                      {activeAtlasDeciderResearch.documentGrounding.length ? (
+                        <>
+                          <h3>Document grounding</h3>
+                          <ul className="matterBulletList">
+                            {activeAtlasDeciderResearch.documentGrounding.map(
+                              (item) => (
+                                <li key={`atlas-document-${item}`}>{item}</li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                    </section>
+                  ) : null}
+
+                  {activeAtlasCaseResearch ? (
+                    <section className="matterBriefDetailSection">
+                      <h3>Procedural patterns</h3>
+                      {activeAtlasCaseResearch.procedurePatterns.length ? (
+                        <ul className="matterBulletList">
+                          {activeAtlasCaseResearch.procedurePatterns.map(
+                            (item) => (
+                              <li key={`atlas-pattern-${item}`}>{item}</li>
+                            ),
+                          )}
+                        </ul>
+                      ) : null}
+                    </section>
+                  ) : null}
+                </>
+              ) : activeDetailedBrief?.contractualFramework?.length ? (
+                <section className="matterBriefDetailSection">
+                  <h3>Contractual Framework</h3>
+                  <div className="matterFrameworkCardGrid">
+                    {activeDetailedBrief.contractualFramework.map((item) => (
+                      <article className="matterFrameworkCard" key={item.id}>
+                        <strong>{item.topic}</strong>
+                        <p>{item.summary}</p>
+                        <small>{item.legalEffect}</small>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+              {activeDetailedBrief?.issueAnalysis?.length ? (
+                <section className="matterBriefDetailSection">
+                  <h3>Issue Analysis</h3>
+                  <div className="matterIssueAccordion">
+                    {activeDetailedBrief.issueAnalysis.map((issue) => (
+                      <article
+                        className="matterIssueCard"
+                        key={`modal-${issue.id}`}
+                      >
+                        <div className="matterIssueCardHead">
+                          <div>
+                            <h4>{issue.title}</h4>
+                            <span className="matterIssueKey">
+                              {issue.id.replace(/_/g, " ")}
+                            </span>
+                          </div>
+                          <span
+                            className={`matterIssueSupportBadge is-${issue.supportLevel}`}
+                          >
+                            {formatSupportLevelLabel(issue.supportLevel)}
+                          </span>
+                        </div>
+                        <div className="matterIssueCardBody isOpen">
+                          <p>{issue.shortAnswer}</p>
+                          <p>{issue.detailedAnalysis}</p>
+                          {issue.missingProof.length ? (
+                            <ul className="matterBulletList">
+                              {issue.missingProof.map((item) => (
+                                <li key={`${issue.id}-${item}`}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {sourceViewer ? (
         <div className="matterDialogBackdrop" role="presentation">
           <section
@@ -6410,6 +9758,65 @@ const MatterSection = ({
         </div>
       ) : null}
 
+      {caseViewer ? (
+        <div className="matterDialogBackdrop" role="presentation">
+          <section
+            className="matterSourceDialog matterCaseViewerDialog"
+            role="dialog"
+            aria-modal="true"
+          >
+            <header className="matterSourceDialogHead">
+              <div>
+                <p className="matterEyebrow">Official Case Source</p>
+                <h2>{caseViewer.title}</h2>
+              </div>
+              <div className="matterSourceDialogActions">
+                <Button
+                  type="button"
+                  className="matterStartDraftingBtn"
+                  onClick={() =>
+                    window.open(
+                      caseViewer.officialViewerUrl,
+                      "_blank",
+                      "noopener,noreferrer",
+                    )
+                  }
+                >
+                  Open in new tab
+                </Button>
+                <Button
+                  type="button"
+                  aria-label="Close case source"
+                  onClick={() => setCaseViewer(null)}
+                  showImage
+                  image={<X size={18} />}
+                />
+              </div>
+            </header>
+            <div className="matterSourceWorkspace matterCaseViewerWorkspace">
+              <div className="matterCaseViewerFrameWrap">
+                <iframe
+                  title={caseViewer.title}
+                  src={caseViewer.officialViewerUrl}
+                  className="matterCaseViewerFrame"
+                />
+              </div>
+              <aside className="matterSourceContextRail matterCaseViewerRail">
+                <span>Relevant excerpt</span>
+                <p>{caseViewer.relevantExcerpt}</p>
+                <small>
+                  {caseViewer.relevantExcerptTitle}
+                  {caseViewer.pageNumber
+                    ? ` · Page ${caseViewer.pageNumber}`
+                    : ""}
+                </small>
+                <small>{caseViewer.officialCitation}</small>
+                <small>{caseViewer.sourceCourt}</small>
+              </aside>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 };

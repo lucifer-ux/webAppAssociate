@@ -81,6 +81,7 @@ export type MatterUploadPayload = {
     field_extraction?: string;
     brief_generation?: string;
     brief_verification?: string;
+    executive_summary?: string;
     next_step_planner?: string;
     draft_review?: string;
     debrief_generation?: string;
@@ -90,6 +91,41 @@ export type MatterUploadPayload = {
     inference_generation?: string;
     inference_verification?: string;
   };
+  analysis_state?: {
+    status?: string;
+    currentStage?: string;
+    feed?: Array<{
+      id: string;
+      label: string;
+      state: "done" | "current" | "waiting" | "attention";
+      message: string;
+      rotationMessages?: string[];
+    }>;
+    whatWeFound?: Array<{
+      id?: string;
+      label: string;
+      value: string;
+      state?: string;
+    }>;
+    pendingClarification?: unknown;
+    canContinueWithLimitedSummary?: boolean;
+    latestArtifactIds?: Record<string, string | null>;
+    stageTimings?: Record<
+      string,
+      {
+        startedAt?: string;
+        completedAt?: string;
+        elapsedMs?: number;
+        reused?: boolean;
+        model?: string | null;
+        provider?: string | null;
+        error?: string | null;
+      }
+    >;
+    totalElapsedMs?: number | null;
+    updatedAt?: string;
+    error?: string | null;
+  } | null;
   documents?: Array<{
     index: number;
     file_name: string;
@@ -328,6 +364,34 @@ export type MatterRecord = MatterUploadPayload & {
   draftRecommendations?: MatterProcessedResult["draft_recommendations"];
   draftingContext?: MatterProcessedResult["drafting_context"];
   latestDraftReview?: MatterProcessedResult["latest_draft_review"];
+  executiveSummary?: MatterProcessedResult["executive_summary"];
+  latestExecutiveSummary?: MatterProcessedResult["latest_executive_summary"];
+  frontendBrief?: MatterProcessedResult["frontend_brief"];
+  latestFrontendBrief?: MatterProcessedResult["latest_frontend_brief"];
+  matterOrientation?: MatterProcessedResult["matter_orientation"];
+  latestMatterOrientation?: MatterProcessedResult["latest_matter_orientation"];
+  evidenceMatrix?: MatterProcessedResult["evidence_matrix"];
+  latestEvidenceMatrix?: MatterProcessedResult["latest_evidence_matrix"];
+  clarificationCheckpoint?: MatterProcessedResult["clarification_checkpoint"];
+  latestClarificationCheckpoint?: MatterProcessedResult["latest_clarification_checkpoint"];
+  userClarificationAnswers?: MatterProcessedResult["user_clarification_answers"];
+  briefValidation?: MatterProcessedResult["brief_validation"];
+  latestBriefValidation?: MatterProcessedResult["latest_brief_validation"];
+  atlasBaseRecognition?: MatterProcessedResult["atlas_base_recognition"];
+  latestAtlasBaseRecognition?: MatterProcessedResult["latest_atlas_base_recognition"];
+  atlasWorkflowConfirmation?: MatterProcessedResult["atlas_workflow_confirmation"];
+  latestAtlasWorkflowConfirmation?: MatterProcessedResult["latest_atlas_workflow_confirmation"];
+  atlasGapCheckpoint?: MatterProcessedResult["atlas_gap_checkpoint"];
+  latestAtlasGapCheckpoint?: MatterProcessedResult["latest_atlas_gap_checkpoint"];
+  atlasDeciderResearch?: MatterProcessedResult["atlas_decider_research"];
+  latestAtlasDeciderResearch?: MatterProcessedResult["latest_atlas_decider_research"];
+  atlasCaseResearch?: MatterProcessedResult["atlas_case_research"];
+  latestAtlasCaseResearch?: MatterProcessedResult["latest_atlas_case_research"];
+  atlasNextSteps?: MatterProcessedResult["atlas_next_steps"];
+  latestAtlasNextSteps?: MatterProcessedResult["latest_atlas_next_steps"];
+  atlasMatterBrief?: MatterProcessedResult["atlas_matter_brief"];
+  latestAtlasMatterBrief?: MatterProcessedResult["latest_atlas_matter_brief"];
+  atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
   groundAnalysis?: MatterProcessedResult["ground_analysis"];
   documentSignalPayloads?: MatterProcessedResult["document_signal_payloads"];
   documentSignalMeta?: MatterProcessedResult["document_signal_meta"];
@@ -407,6 +471,452 @@ export type MatterDraftRecommendations = {
     more_options?: string[];
   };
   recommendations?: MatterDraftRecommendation[];
+};
+
+export type ExecutiveSummarySupportLevel =
+  | "supported"
+  | "conditional"
+  | "unsupported"
+  | "unclear";
+
+export type ExecutiveSummaryCitation = {
+  evidenceAnswerId: string;
+  documentName: string;
+  pageNumber?: number | null;
+  section?: string | null;
+  excerpt: string;
+};
+
+export type ExecutiveSummaryIssue = {
+  issueKey: string;
+  heading: string;
+  analysis: string;
+  supportLevel: ExecutiveSummarySupportLevel;
+  evidenceAnswerIds: string[];
+  citations: ExecutiveSummaryCitation[];
+};
+
+export type MatterOverviewView = {
+  headline: string;
+  oneLineAnswer: string;
+  shortSummary: string;
+  fiveLineSummary: string[];
+  statusBadge: {
+    label: "Full Summary" | "Limited Summary" | "Blocked";
+    reason: string;
+  };
+  chips: string[];
+  riskSnapshot: Array<{
+    id: string;
+    label: string;
+    status:
+      | "strong"
+      | "supported"
+      | "conditional"
+      | "incomplete"
+      | "missing"
+      | "risky";
+    shortReason: string;
+    linkedIssueIds: string[];
+    linkedEvidenceIds: string[];
+  }>;
+  gapsToClose: Array<{
+    id: string;
+    label: string;
+    reason: string;
+    priority: "critical" | "important" | "helpful";
+    uploadPrompt: string;
+    unlocks: string;
+    linkedIssueIds: string[];
+  }>;
+  nextSteps: Array<{
+    id: string;
+    action: string;
+    rationale: string;
+    priority: "high" | "medium" | "low";
+    linkedGapIds: string[];
+  }>;
+  keyFacts: Array<{
+    label: string;
+    value: string;
+    linkedEvidenceIds: string[];
+  }>;
+};
+
+export type DetailedExecutiveBrief = {
+  documentsReviewed: Array<{
+    id: string;
+    name: string;
+    type: string;
+    role: string;
+    linkedEvidenceIds: string[];
+  }>;
+  parties: Array<{
+    id: string;
+    name: string;
+    role: string;
+    obligationsOrPosition: string;
+    linkedEvidenceIds: string[];
+  }>;
+  contractualFramework: Array<{
+    id: string;
+    topic: string;
+    summary: string;
+    legalEffect: string;
+    linkedEvidenceIds: string[];
+  }>;
+  issueAnalysis: Array<{
+    id: string;
+    title: string;
+    supportLevel:
+      | "supported"
+      | "conditional"
+      | "unsupported"
+      | "unclear"
+      | "record_gap";
+    shortAnswer: string;
+    detailedAnalysis: string;
+    requiredPredicates: string[];
+    missingProof: string[];
+    linkedEvidenceIds: string[];
+    linkedGapIds: string[];
+  }>;
+  limitations: string[];
+  recommendedActions: Array<{
+    id: string;
+    action: string;
+    whyItMatters: string;
+    priority: "high" | "medium" | "low";
+    linkedIssueIds: string[];
+    linkedGapIds: string[];
+  }>;
+};
+
+export type EvidenceReference = {
+  evidenceItems: Array<{
+    id: string;
+    evidenceAnswerId: string;
+    documentName: string;
+    pageNumber: number | null;
+    section: string | null;
+    excerpt: string;
+    slot: string;
+    confidence: "high" | "medium" | "low";
+  }>;
+  citationGroups: Array<{
+    id: string;
+    title: string;
+    evidenceIds: string[];
+  }>;
+};
+
+export type AgentReference = {
+  sourceAgent0?: {
+    orientationSnapshotId?: string;
+    proofPlan?: unknown;
+    retrievalBlueprint?: unknown;
+  };
+  sourceAgent1?: {
+    evidenceMatrixId?: string;
+    compactMatrixHash?: string;
+    readiness: unknown;
+    safeClaims: unknown[];
+    unsafeClaims: unknown[];
+  };
+  generationMeta: {
+    model: string;
+    provider: string;
+    createdAt: string;
+    version: number;
+  };
+};
+
+export type UserClarificationAnswer = {
+  id: string;
+  matterId: string;
+  questionId: string;
+  answer: string | boolean | number | null;
+  answerType: string;
+  source: "user_input";
+  verificationStatus: "unverified_by_record";
+  createdAt: string;
+};
+
+export type ClarificationCheckpoint = {
+  matterId: string;
+  status:
+    | "ready_to_summarize"
+    | "needs_user_input"
+    | "needs_more_documents"
+    | "blocked";
+  messageToUser: string;
+  whatWeUnderstood: Array<{
+    label: string;
+    value: string;
+    confidence: "high" | "medium" | "low";
+    evidenceAnswerIds?: string[];
+  }>;
+  questions: Array<{
+    id: string;
+    question: string;
+    whyItMatters: string;
+    answerType:
+      | "yes_no"
+      | "short_text"
+      | "date"
+      | "amount"
+      | "choice"
+      | "document_upload";
+    options?: string[];
+    priority: "critical" | "important" | "optional";
+    linkedIssue: string;
+    linkedMissingInputIds: string[];
+  }>;
+  requestedDocuments: Array<{
+    id: string;
+    label: string;
+    whyNeeded: string;
+    unlocks: string;
+    priority: "critical" | "important" | "optional";
+    linkedIssue: string;
+    acceptedTypes?: string[];
+  }>;
+  canContinueWithoutAnswers: boolean;
+  consequenceIfSkipped: string;
+  recommendedAction:
+    | "ask_user_now"
+    | "request_uploads"
+    | "continue_with_limited_summary"
+    | "block_until_better_documents";
+};
+
+export type LegalBriefArtifact = {
+  matterId: string;
+  summaryType: "full" | "limited" | "blocked";
+  confidence: "high" | "medium" | "low";
+  overview: MatterOverviewView;
+  detailedBrief: DetailedExecutiveBrief;
+  evidenceReference: EvidenceReference;
+  agentReference?: AgentReference;
+};
+
+export type FrontendBriefArtifact = {
+  matterId: string;
+  summaryType: "full" | "limited" | "blocked";
+  confidence: "high" | "medium" | "low";
+  title: string;
+  summary: string;
+  wordCount: number;
+  linkedIssueIds: string[];
+  linkedGapIds: string[];
+  linkedEvidenceIds: string[];
+  createdAt: string;
+  version: number;
+};
+
+export type AtlasBaseRecognitionCandidate = {
+  workflowId: string;
+  workflowName?: string;
+  areaId: string;
+  areaName?: string;
+  score: number;
+  confidence: "high" | "medium" | "low";
+  whyItMatches: string;
+  matchedSignals: string[];
+  missingSignals: string[];
+};
+
+export type AtlasRequirementsPreview = {
+  inputs: string[];
+  collected: string[];
+  stages: string[];
+  applications: string[];
+};
+
+export type AtlasBaseRecognitionResult = {
+  matterId: string;
+  status: "needs_confirmation" | "confirmed" | "needs_input" | "blocked";
+  primaryWorkflowId: string | null;
+  primaryWorkflowName?: string | null;
+  primaryAreaName?: string | null;
+  primaryReason: string | null;
+  candidateWorkflows: AtlasBaseRecognitionCandidate[];
+  atlasRequirementsPreview: AtlasRequirementsPreview | null;
+  checkpoint: {
+    type: "workflow_confirmation";
+    messageToUser: string;
+    primaryWorkflowId: string | null;
+    candidates: AtlasBaseRecognitionCandidate[];
+    canAcceptPrimary: boolean;
+  } | null;
+};
+
+export type AtlasWorkflowConfirmation = {
+  matterId: string;
+  status: "accepted" | "rejected" | "overridden";
+  selectedWorkflowId: string;
+  overrideNote?: string | null;
+  source?: "agent_primary" | "agent_alternate" | "user_override" | string;
+  rerankedCandidates?: AtlasBaseRecognitionCandidate[];
+};
+
+export type AtlasGapCheckpoint = {
+  matterId: string;
+  status:
+    | "ready_for_research"
+    | "needs_user_input"
+    | "needs_more_documents"
+    | "blocked";
+  messageToUser: string;
+  criticalQuestions: Array<{
+    id: string;
+    question: string;
+    whyItMatters: string;
+    answerType:
+      | "yes_no"
+      | "short_text"
+      | "date"
+      | "amount"
+      | "choice"
+      | "document_upload";
+    options?: string[];
+    priority: "critical" | "important" | "optional";
+    linkedIssue: string;
+    linkedMissingInputIds: string[];
+  }>;
+  requestedDocuments: Array<{
+    id: string;
+    label: string;
+    whyNeeded: string;
+    unlocks: string;
+    priority: "critical" | "important" | "optional";
+    linkedIssue: string;
+    acceptedTypes?: string[];
+  }>;
+  missingWorkflowRequirements: string[];
+  supportedWorkflowRequirements?: string[];
+  gapClassification?: {
+    supported: string[];
+    frameworkOnly: string[];
+    factualProofMissing: string[];
+    irrelevantToCurrentMatter: string[];
+  };
+  canContinueWithLimitedResearch: boolean;
+  consequenceIfSkipped: string;
+};
+
+export type AtlasDeciderResearchResult = {
+  workflowId: string;
+  agentBrief: string;
+  workflowGrounding: string[];
+  documentGrounding: string[];
+  webGrounding: Array<{
+    title: string;
+    url: string;
+    highlights: string[];
+  }>;
+  openQuestions: string[];
+};
+
+export type AtlasCaseResearchResult = {
+  workflowId: string;
+  similarCases: Array<{
+    title: string;
+    officialDocumentUrl: string;
+    officialViewerUrl: string;
+    officialSourceType: "pdf" | "html";
+    sourceCourt: string;
+    pageNumber?: number | null;
+    relevantExcerpt: string;
+    relevantExcerptTitle: string;
+    officialCitation: string;
+    note: string;
+    facts: string;
+    legalQuestion: string;
+    holding: string;
+    relevanceToMatter: string;
+    referenceUrl?: string;
+  }>;
+  procedurePatterns: string[];
+  sourceLinks: string[];
+  openQuestions: string[];
+  debugReferences?: Array<{
+    title: string;
+    officialUrl: string;
+    referenceUrl: string;
+    pageHint: number | null;
+    note: string;
+  }>;
+};
+
+export type AtlasNextStepsAnalysis = {
+  matterId: string;
+  workflowId: string;
+  doNow: Array<{
+    id: string;
+    title: string;
+    description: string;
+    priority: "high" | "medium" | "low";
+    unblocks: string[];
+    groundedInCases: string[];
+    groundedInWorkflow: string[];
+  }>;
+  draftQueue: Array<{
+    id: string;
+    title: string;
+    description: string;
+    draftType: string;
+    status: "ready" | "partially_ready" | "blocked" | "generated";
+    priority: "high" | "medium" | "low";
+    unblocksWhen: string[];
+    dependsOn: string[];
+  }>;
+  systemWorkingOn: Array<{
+    id: string;
+    title: string;
+    description: string;
+    status: "queued" | "running" | "completed";
+    groundedInWorkflow: string[];
+  }>;
+  whyTheseNext: string[];
+  blockingItems: string[];
+  confidence: "high" | "medium" | "low";
+  shouldContinueResearch: boolean;
+  followUpQueries: string[];
+  fallbackCases: string[];
+  researchTrace?: {
+    model?: string;
+    provider?: string;
+    loopsUsed?: number;
+    error?: string | null;
+  } | null;
+};
+
+export type AtlasMatterBrief = {
+  matterId: string;
+  workflowId: string;
+  brief: string;
+  wordCount: number;
+  confidence: "high" | "medium" | "low";
+  usedWorkflow: {
+    id: string;
+    name: string;
+    area?: string;
+  };
+  usedCaseResearch: {
+    sourceCount: number;
+    patternCount: number;
+  };
+  remainingGaps: string[];
+};
+
+export type LatestExecutiveSummaryRecord = {
+  version?: number;
+  artifact_id?: string | null;
+  artifact_type?: string;
+  created_at?: string;
+  summary_type?: "full" | "limited" | "blocked";
+  summary?: LegalBriefArtifact | null;
 };
 
 export type MatterProcessedResult = {
@@ -561,6 +1071,54 @@ export type MatterProcessedResult = {
   draft_recommendations?: MatterDraftRecommendations | null;
   drafting_context?: Record<string, unknown> | null;
   latest_draft_review?: Record<string, unknown> | null;
+  executive_summary?: LegalBriefArtifact | null;
+  latest_executive_summary?: LatestExecutiveSummaryRecord | null;
+  frontend_brief?: FrontendBriefArtifact | null;
+  latest_frontend_brief?: {
+    version?: number;
+    artifact_id?: string | null;
+    artifact_type?: string;
+    created_at?: string;
+    summary_type?: "full" | "limited" | "blocked";
+    summary?: FrontendBriefArtifact | null;
+  } | null;
+  matter_orientation?: Record<string, unknown> | null;
+  latest_matter_orientation?: Record<string, unknown> | null;
+  evidence_matrix?: Record<string, unknown> | null;
+  latest_evidence_matrix?: Record<string, unknown> | null;
+  clarification_checkpoint?: ClarificationCheckpoint | null;
+  latest_clarification_checkpoint?: Record<string, unknown> | null;
+  user_clarification_answers?: UserClarificationAnswer[] | null;
+  brief_validation?: Record<string, unknown> | null;
+  latest_brief_validation?: Record<string, unknown> | null;
+  atlas_base_recognition?: AtlasBaseRecognitionResult | null;
+  latest_atlas_base_recognition?: Record<string, unknown> | null;
+  atlas_workflow_confirmation?: AtlasWorkflowConfirmation | null;
+  latest_atlas_workflow_confirmation?: Record<string, unknown> | null;
+  atlas_gap_checkpoint?: AtlasGapCheckpoint | null;
+  latest_atlas_gap_checkpoint?: Record<string, unknown> | null;
+  atlas_decider_research?: AtlasDeciderResearchResult | null;
+  latest_atlas_decider_research?: Record<string, unknown> | null;
+  atlas_case_research?: AtlasCaseResearchResult | null;
+  latest_atlas_case_research?: Record<string, unknown> | null;
+  atlas_next_steps?: AtlasNextStepsAnalysis | null;
+  latest_atlas_next_steps?: Record<string, unknown> | null;
+  atlas_matter_brief?: AtlasMatterBrief | null;
+  latest_atlas_matter_brief?: Record<string, unknown> | null;
+  atlas_user_inputs?: Array<{
+    id: string;
+    questionId: string;
+    question?: string | null;
+    linkedIssue?: string | null;
+    priority?: string | null;
+    answer: string | boolean | number | null;
+    answerType: string;
+    source: "user_input";
+    verificationStatus: "unverified_by_record";
+    createdAt: string;
+    value?: string | boolean | number | null;
+    materialForResearch?: boolean;
+  }> | null;
   document_signal_payloads?: Array<{
     document_id: string;
     file_name: string;
@@ -1032,6 +1590,43 @@ const buildMatterRecord = (
     draftRecommendations: result.draft_recommendations || undefined,
     draftingContext: result.drafting_context || undefined,
     latestDraftReview: result.latest_draft_review || undefined,
+    executiveSummary: result.executive_summary || undefined,
+    latestExecutiveSummary: result.latest_executive_summary || undefined,
+    frontendBrief: result.frontend_brief || undefined,
+    latestFrontendBrief: result.latest_frontend_brief || undefined,
+    matterOrientation: result.matter_orientation || undefined,
+    latestMatterOrientation: result.latest_matter_orientation || undefined,
+    evidenceMatrix: result.evidence_matrix || undefined,
+    latestEvidenceMatrix: result.latest_evidence_matrix || undefined,
+    clarificationCheckpoint: result.clarification_checkpoint || undefined,
+    latestClarificationCheckpoint:
+      result.latest_clarification_checkpoint || undefined,
+    userClarificationAnswers: result.user_clarification_answers || undefined,
+    briefValidation: result.brief_validation || undefined,
+    latestBriefValidation: result.latest_brief_validation || undefined,
+    atlasBaseRecognition: result.atlas_base_recognition || undefined,
+    latestAtlasBaseRecognition:
+      result.latest_atlas_base_recognition || undefined,
+    atlasWorkflowConfirmation:
+      result.atlas_workflow_confirmation || undefined,
+    latestAtlasWorkflowConfirmation:
+      result.latest_atlas_workflow_confirmation || undefined,
+    atlasGapCheckpoint: result.atlas_gap_checkpoint || undefined,
+    latestAtlasGapCheckpoint:
+      result.latest_atlas_gap_checkpoint || undefined,
+    atlasDeciderResearch: result.atlas_decider_research || undefined,
+    latestAtlasDeciderResearch:
+      result.latest_atlas_decider_research || undefined,
+    atlasCaseResearch: result.atlas_case_research || undefined,
+    latestAtlasCaseResearch:
+      result.latest_atlas_case_research || undefined,
+    atlasNextSteps: result.atlas_next_steps || undefined,
+    latestAtlasNextSteps:
+      result.latest_atlas_next_steps || undefined,
+    atlasMatterBrief: result.atlas_matter_brief || undefined,
+    latestAtlasMatterBrief:
+      result.latest_atlas_matter_brief || undefined,
+    atlasUserInputs: result.atlas_user_inputs || undefined,
     groundAnalysis: result.ground_analysis || undefined,
     documentSignalPayloads: result.document_signal_payloads || undefined,
     documentSignalMeta: result.document_signal_meta || undefined,

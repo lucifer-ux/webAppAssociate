@@ -1,0 +1,99 @@
+.uiButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  border: 1px solid transparent;
+  background: #111827;
+  color: #fafaf9;
+  padding: 0.75rem 1rem;
+  font-family: "Work Sans", sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.uiButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.uiButton:focus-visible,
+.uiInput:focus-visible,
+.uiSelect:focus-visible {
+  outline: 2px solid rgba(112, 13, 13, 0.32);
+  outline-offset: 2px;
+}
+
+.uiButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.uiButton[data-variant="primary"] {
+  background: #4c0003;
+  border-color: #4c0003;
+  color: #fff8f4;
+}
+
+.uiButton[data-variant="secondary"] {
+  background: #fffdfa;
+  border-color: #d8cab7;
+  color: #2e241d;
+}
+
+.uiButton[data-variant="ghost"] {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: #e6dacb;
+  color: #6a5c51;
+}
+
+.uiButton[data-variant="outline"] {
+  background: transparent;
+  border-color: #ccbba7;
+  color: #3a2d26;
+}
+
+.uiInput,
+.uiSelect {
+  width: 100%;
+  min-height: 3.2rem;
+  border: 1px solid #d7c8b7;
+  background: rgba(255, 255, 255, 0.94);
+  color: #211913;
+  padding: 0.95rem 1rem;
+  font-family: "Newsreader", serif;
+  font-size: 1.1rem;
+  line-height: 1.4;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.uiInput::placeholder {
+  color: #85776a;
+}
+
+.uiInput:hover,
+.uiSelect:hover {
+  border-color: #c9b5a0;
+}
+
+.uiCard {
+  border: 1px solid #e0d1c0;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 246, 0.96) 0%, rgba(255, 248, 239, 0.98) 100%);
+  box-shadow:
+    0 20px 60px rgba(42, 30, 21, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
