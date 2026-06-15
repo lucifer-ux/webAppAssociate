@@ -430,6 +430,93 @@ const HeadingIdExtension = Extension.create({
   },
 });
 
+const BlockMetadataExtension = Extension.create({
+  name: "blockMetadata",
+
+  addGlobalAttributes() {
+    const sharedAttributes = {
+      blockId: {
+        default: null,
+        renderHTML: (attributes: Record<string, unknown>) =>
+          attributes.blockId
+            ? {
+                "data-block-id": String(attributes.blockId),
+              }
+            : {},
+      },
+      sectionId: {
+        default: null,
+        renderHTML: (attributes: Record<string, unknown>) =>
+          attributes.sectionId
+            ? {
+                "data-section-id": String(attributes.sectionId),
+              }
+            : {},
+      },
+      evidenceStatus: {
+        default: null,
+        renderHTML: (attributes: Record<string, unknown>) =>
+          attributes.evidenceStatus
+            ? {
+                "data-evidence-status": String(attributes.evidenceStatus),
+              }
+            : {},
+      },
+      sourceType: {
+        default: null,
+        renderHTML: (attributes: Record<string, unknown>) =>
+          attributes.sourceType
+            ? {
+                "data-source-type": String(attributes.sourceType),
+              }
+            : {},
+      },
+      confidence: {
+        default: null,
+        renderHTML: (attributes: Record<string, unknown>) =>
+          attributes.confidence != null
+            ? {
+                "data-confidence": String(attributes.confidence),
+              }
+            : {},
+      },
+      assertionKind: {
+        default: null,
+        renderHTML: (attributes: Record<string, unknown>) =>
+          attributes.assertionKind
+            ? {
+                "data-assertion-kind": String(attributes.assertionKind),
+              }
+            : {},
+      },
+      generatedByAi: {
+        default: null,
+        renderHTML: (attributes: Record<string, unknown>) =>
+          attributes.generatedByAi
+            ? {
+                "data-generated-by-ai": "true",
+              }
+            : {},
+      },
+    };
+
+    return [
+      {
+        types: [
+          "paragraph",
+          "heading",
+          "blockquote",
+          "title",
+          "bulletList",
+          "orderedList",
+          "listItem",
+        ],
+        attributes: sharedAttributes,
+      },
+    ];
+  },
+});
+
 const ShortcutExtension = Extension.create<{
   onSave?: () => void;
   onOpenFind?: () => void;
@@ -518,6 +605,7 @@ export const buildDraftingExtensions = (options: {
   }),
   FontSizeExtension,
   HeadingIdExtension,
+  BlockMetadataExtension,
   TitleNode,
   BlankFieldMark.configure({
     onCountChange: options.onBlankFieldCountChange,

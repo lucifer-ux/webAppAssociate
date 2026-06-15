@@ -56,9 +56,12 @@ import ChatBoxMatterSection, {
   type MatterChatMessage,
 } from "./ChatBoxMatterSection";
 import {
+  cancelMatterDraftGeneration,
+  continueMatterDraftGeneration,
   getDraftRecommendations,
   refreshDraftRecommendations,
   startDraftRecommendation,
+  type DraftGenerationCheckpoint,
 } from "./draftingApi";
 import { buildApiUrl } from "../lib/apiBase";
 import {
@@ -126,6 +129,9 @@ const sleep = (ms: number) =>
 
 const MATTER_AI_ENABLED = false;
 const MATTER_UPLOAD_SESSION_KEY = "open_matter_uploader";
+const MATTER_APPEND_UPLOAD_SESSION_KEY = "open_matter_append_uploader";
+const MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY =
+  "matter_uploader_prefill_context";
 const MATTER_READER_FONT_SESSION_KEY = "matter_reader_font";
 const MATTER_BRIEF_ANIMATION_KEY = "matter_brief_animation_signature";
 const MATTER_UPLOAD_MAX_FILES = 5;
@@ -142,6 +148,19 @@ const clipText = (value: string, limit = 180) => {
     .trim();
   if (normalized.length <= limit) return normalized;
   return `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+};
+
+const getDraftCheckpointEyebrow = (
+  checkpoint: DraftGenerationCheckpoint | null,
+) => {
+  const status = String(checkpoint?.status || checkpoint?.readinessStatus || "").trim();
+  if (status === "review_ready_with_optional_inputs" || status === "review_ready") {
+    return "Review draft available";
+  }
+  if (status === "blocked") {
+    return "Draft blocked";
+  }
+  return "Input required";
 };
 
 const normalizeInline = (value: string) =>
@@ -990,6 +1009,14 @@ const MatterSection = ({
   const [isSubmittingClarification, setIsSubmittingClarification] =
     useState(false);
   const [clarificationSubmitError, setClarificationSubmitError] = useState("");
+  const [draftGenerationCheckpoint, setDraftGenerationCheckpoint] =
+    useState<(DraftGenerationCheckpoint & { threadId: string }) | null>(null);
+  const [draftGenerationAnswers, setDraftGenerationAnswers] = useState<
+    Record<string, string>
+  >({});
+  const [isSubmittingDraftGeneration, setIsSubmittingDraftGeneration] =
+    useState(false);
+  const [draftGenerationError, setDraftGenerationError] = useState("");
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const lastMatterJobPollAtRef = useRef<Record<string, number>>({});
@@ -1693,6 +1720,12 @@ const MatterSection = ({
   const atlasSimilarCases = Array.isArray(activeAtlasCaseResearch?.similarCases)
     ? activeAtlasCaseResearch.similarCases
     : [];
+  const visibleDraftDependencies = (items: string[]) =>
+    (Array.isArray(items) ? items : []).filter((item) => {
+      const normalized = normalizeInline(item);
+      if (!normalized) return false;
+      return !/^(action|draft|system)_[0-9a-z_:-]+$/i.test(normalized);
+    });
   useEffect(() => {
     if (!activeMatter?.id || !activeBriefAnimationSignature) {
       setShouldAnimateBriefSections(false);
@@ -1958,60 +1991,6 @@ const MatterSection = ({
       "SOW",
       activeAtlasMatterBrief?.usedWorkflow?.name || "",
     ].filter(Boolean);
-    const renderNextStepAccordion = ({
-      id,
-      title,
-      badge,
-      preview,
-      body,
-      panelClassName = "",
-    }: {
-      id: string;
-      title: string;
-      badge?: ReactNode;
-      preview?: ReactNode;
-      body?: ReactNode;
-      panelClassName?: string;
-    }) => {
-      const isExpanded = Boolean(expandedNextStepIds[id]);
-      return (
-        <article
-          className={`matterNextStepsPanel matterNextStepsAccordion ${panelClassName}`.trim()}
-          key={id}
-        >
-          <button
-            type="button"
-            className="matterNextStepsAccordionToggle"
-            onClick={() =>
-              setExpandedNextStepIds((current) => ({
-                ...current,
-                [id]: !current[id],
-              }))
-            }
-            aria-expanded={isExpanded}
-          >
-            <div className="matterNextStepCardHead">
-              <strong>{title}</strong>
-              <div className="matterNextStepsAccordionMeta">
-                {badge}
-                {isExpanded ? (
-                  <ChevronDown size={18} />
-                ) : (
-                  <ChevronRight size={18} />
-                )}
-              </div>
-            </div>
-            {preview ? (
-              <p className="matterNextStepsPreview">{preview}</p>
-            ) : null}
-          </button>
-          {isExpanded && body ? (
-            <div className="matterNextStepsAccordionBody">{body}</div>
-          ) : null}
-        </article>
-      );
-    };
-
     return (
       <div className="matterNextStepsStack">
         {!draftQueue.length ? (
@@ -2055,62 +2034,104 @@ const MatterSection = ({
         {draftQueue.length ? (
           <article className="matterNextStepsPanel">
             <div className="matterNextStepsStack">
-              {draftQueue.map((item) =>
-                renderNextStepAccordion({
-                  id: item.id,
-                  title: item.title,
-                  preview: renderEmphasizedInlineText(
-                    item.description,
-                    nextStepHighlightTerms,
-                  ),
-                  body: (
-                    <>
-                      <p>
-                        {renderEmphasizedInlineText(
-                          item.description,
-                          nextStepHighlightTerms,
-                        )}
-                      </p>
-                      {item.unblocksWhen.length ? (
-                        <ul className="matterBulletList">
-                          {item.unblocksWhen.map((dependency) => (
-                            <li key={`${item.id}-${dependency}`}>
-                              {renderEmphasizedInlineText(
-                                dependency,
-                                nextStepHighlightTerms,
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </>
-                  ),
-                  panelClassName: "isDraft",
-                }),
-              )}
+              {draftQueue.map((item) => (
+                (() => {
+                  const dependencies = visibleDraftDependencies(item.unblocksWhen);
+                  return (
+                <article
+                  className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
+                  key={item.id}
+                >
+                  <div className="matterNextStepCardHead">
+                    <strong>{item.title}</strong>
+                    <Button
+                      type="button"
+                      className="matterStartDraftingBtn"
+                      onClick={() =>
+                        void startAtlasDraftGeneration(
+                          {
+                            id: item.id,
+                            draftType: item.draftType,
+                            title: item.title,
+                          },
+                          "overview",
+                        )
+                      }
+                    >
+                      Start drafting
+                    </Button>
+                  </div>
+                  <p className="matterNextStepsPreview">
+                    {renderEmphasizedInlineText(
+                      item.description,
+                      nextStepHighlightTerms,
+                    )}
+                  </p>
+                  {dependencies.length ? (
+                    <div className="matterNextStepsAccordionBody">
+                      <ul className="matterBulletList">
+                        {dependencies.map((dependency: string) => (
+                          <li key={`${item.id}-${dependency}`}>
+                            {renderEmphasizedInlineText(
+                              dependency,
+                              nextStepHighlightTerms,
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </article>
+                  );
+                })()
+              ))}
             </div>
           </article>
         ) : null}
         {whyTheseNext.length ? (
           <article className="matterNextStepsPanel">
-            {renderNextStepAccordion({
-              id: "why-these-steps-matter",
-              title: "Why these steps matter",
-              preview: (
-                <span className="matterNextStepsPreviewHint">
-                  Expand to see the reasoning behind the draft order.
-                </span>
-              ),
-              body: (
-                <ul className="matterBulletList">
-                  {whyTheseNext.map((item) => (
-                    <li key={`why-next-${item}`}>
-                      {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
-                    </li>
-                  ))}
-                </ul>
-              ),
-            })}
+            <article className="matterNextStepsPanel matterNextStepsAccordion">
+              <button
+                type="button"
+                className="matterNextStepsAccordionToggle"
+                onClick={() =>
+                  setExpandedNextStepIds((current) => ({
+                    ...current,
+                    ["why-these-steps-matter"]: !current["why-these-steps-matter"],
+                  }))
+                }
+                aria-expanded={Boolean(
+                  expandedNextStepIds["why-these-steps-matter"],
+                )}
+              >
+                <div className="matterNextStepCardHead">
+                  <strong>Why these steps matter</strong>
+                  <div className="matterNextStepsAccordionMeta">
+                    {Boolean(expandedNextStepIds["why-these-steps-matter"]) ? (
+                      <ChevronDown size={18} />
+                    ) : (
+                      <ChevronRight size={18} />
+                    )}
+                  </div>
+                </div>
+                <p className="matterNextStepsPreview">
+                  <span className="matterNextStepsPreviewHint">
+                    Expand to see the reasoning behind the draft order.
+                  </span>
+                </p>
+              </button>
+              {Boolean(expandedNextStepIds["why-these-steps-matter"]) ? (
+                <div className="matterNextStepsAccordionBody">
+                  <ul className="matterBulletList">
+                    {whyTheseNext.map((item) => (
+                      <li key={`why-next-${item}`}>
+                        {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </article>
           </article>
         ) : null}
       </div>
@@ -4169,14 +4190,50 @@ const MatterSection = ({
   }, []);
 
   useEffect(() => {
+    const shouldOpenAppendUploader = sessionStorage.getItem(
+      MATTER_APPEND_UPLOAD_SESSION_KEY,
+    );
+    if (shouldOpenAppendUploader !== "1" || !activeMatter) return;
+    const prefill = sessionStorage.getItem(
+      MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY,
+    );
+    sessionStorage.removeItem(MATTER_APPEND_UPLOAD_SESSION_KEY);
+    sessionStorage.removeItem(MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY);
+    resetUploadPopupState();
+    setUploadPopupMode("append");
+    setUploadQuery(prefill || "");
+    setIsUploadPopupOpen(true);
+  }, [activeMatter]);
+
+  useEffect(() => {
     const handleOpenUploader = () => {
       sessionStorage.removeItem(MATTER_UPLOAD_SESSION_KEY);
       openUploadPopup("create");
     };
+    const handleOpenAppendUploader = () => {
+      if (!activeMatter) return;
+      const prefill = sessionStorage.getItem(
+        MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY,
+      );
+      sessionStorage.removeItem(MATTER_APPEND_UPLOAD_SESSION_KEY);
+      sessionStorage.removeItem(MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY);
+      resetUploadPopupState();
+      setUploadPopupMode("append");
+      setUploadQuery(prefill || "");
+      setIsUploadPopupOpen(true);
+    };
 
     window.addEventListener("matter-uploader:open", handleOpenUploader);
+    window.addEventListener(
+      "matter-uploader:append-open",
+      handleOpenAppendUploader,
+    );
     return () => {
       window.removeEventListener("matter-uploader:open", handleOpenUploader);
+      window.removeEventListener(
+        "matter-uploader:append-open",
+        handleOpenAppendUploader,
+      );
     };
   }, [
     activeMatter?.id,
@@ -4522,6 +4579,94 @@ const MatterSection = ({
     }
   };
 
+  const startAtlasDraftGeneration = async (
+    draftItem: {
+      id?: string;
+      draftType?: string;
+      title: string;
+    },
+    requestedFrom: "overview" | "drafts",
+  ) => {
+    if (!activeMatter?.id) return;
+    setDraftGenerationError("");
+    navigate(
+      `/drafting?matter=${encodeURIComponent(activeMatter.id)}&startDraft=${encodeURIComponent(
+        draftItem.draftType || draftItem.title,
+      )}&draftLabel=${encodeURIComponent(draftItem.title)}&requestedFrom=${encodeURIComponent(
+        requestedFrom,
+      )}&draftKey=${encodeURIComponent(draftItem.id || "")}`,
+    );
+  };
+
+  const closeDraftGenerationCheckpoint = async () => {
+    if (!activeMatter?.id || !draftGenerationCheckpoint?.threadId) {
+      setDraftGenerationCheckpoint(null);
+      setDraftGenerationAnswers({});
+      return;
+    }
+    try {
+      await cancelMatterDraftGeneration({
+        matterId: activeMatter.id,
+        threadId: draftGenerationCheckpoint.threadId,
+      });
+    } catch {
+      // Best-effort cancel; local close should still succeed.
+    }
+    setDraftGenerationCheckpoint(null);
+    setDraftGenerationAnswers({});
+    setDraftGenerationError("");
+  };
+
+  const continueAtlasDraftGeneration = async (chosenAction: string) => {
+    if (!activeMatter?.id || !draftGenerationCheckpoint?.threadId) return;
+    try {
+      setIsSubmittingDraftGeneration(true);
+      setDraftGenerationError("");
+      const answers = draftGenerationCheckpoint.questions
+        .map((question) => {
+          const raw = String(draftGenerationAnswers[question.id] || "").trim();
+          if (!raw) return null;
+          const answer =
+            question.answerType === "yes_no"
+              ? raw === "yes"
+                ? true
+                : raw === "no"
+                  ? false
+                  : raw
+              : raw;
+          return {
+            questionId: question.id,
+            answer,
+            answerType: question.answerType,
+          };
+        })
+        .filter(Boolean) as Array<{
+        questionId: string;
+        answer: string | boolean;
+        answerType?: string;
+      }>;
+      const payload = await continueMatterDraftGeneration({
+        matterId: activeMatter.id,
+        threadId: draftGenerationCheckpoint.threadId,
+        chosenAction,
+        answers,
+      });
+      setDraftGenerationCheckpoint(null);
+      setDraftGenerationAnswers({});
+      navigate(
+        `/drafting?draft=${encodeURIComponent(payload.draft.id)}&matter=${encodeURIComponent(activeMatter.id)}&mode=edit`,
+      );
+    } catch (error) {
+      setDraftGenerationError(
+        error instanceof Error
+          ? error.message
+          : "Failed to continue draft generation.",
+      );
+    } finally {
+      setIsSubmittingDraftGeneration(false);
+    }
+  };
+
   const retryMatterAtlasRecognition = async (
     matterId: string,
     overrideNote = "",
@@ -4744,12 +4889,50 @@ const MatterSection = ({
         ...current,
         [matterId]: "post-clarification",
       }));
-      await runMatterAtlasResearch(matterId, {
-        continueWithLimitedResearch: true,
-      });
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(matterId)}/atlas-research/continue`,
+        ),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            answers: [],
+            continueWithLimitedResearch: true,
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !payload?.success) {
+        throw new Error(
+          payload?.error || "Failed to continue with a limited summary.",
+        );
+      }
+      setSummaryGenerationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: { running: true, error: "" },
+      }));
+      await refreshMattersFromServer();
     } catch {
       setIsClarificationAdvancing(false);
     }
+  };
+
+  const dismissAtlasOverlay = (
+    matterId: string,
+    transition: "post-confirm" | "post-clarification",
+  ) => {
+    setAtlasTransitionStateByMatterId((current) => ({
+      ...current,
+      [matterId]: transition,
+    }));
+    setIsClarificationAdvancing(false);
+    setClarificationSubmitError("");
   };
 
   const handleClarificationAnswerAdvance = async (
@@ -7608,71 +7791,60 @@ const MatterSection = ({
                   atlasDraftQueue.length ? (
                     <div className="matterNextStepsStack">
                       {atlasDraftQueue.map((item) => (
+                        (() => {
+                          const dependencies = visibleDraftDependencies(
+                            item.unblocksWhen,
+                          );
+                          return (
                         <article
-                          className="matterNextStepsPanel matterNextStepsAccordion isDraft"
+                          className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
                           key={item.id}
                         >
-                          <button
-                            type="button"
-                            className="matterNextStepsAccordionToggle"
-                            onClick={() =>
-                              setExpandedNextStepIds((current) => ({
-                                ...current,
-                                [item.id]: !current[item.id],
-                              }))
-                            }
-                            aria-expanded={Boolean(expandedNextStepIds[item.id])}
-                          >
-                            <div className="matterNextStepCardHead">
-                              <strong>{item.title}</strong>
-                              <div className="matterNextStepsAccordionMeta">
-                                {Boolean(expandedNextStepIds[item.id]) ? (
-                                  <ChevronDown size={18} />
-                                ) : (
-                                  <ChevronRight size={18} />
-                                )}
-                              </div>
-                            </div>
-                            <p className="matterNextStepsPreview">
-                              {renderEmphasizedInlineText(item.description, [
-                                "termination",
-                                "notice",
-                                "refund",
-                                "cure period",
-                                "material default",
-                                "proof",
-                                "upload",
-                                activeAtlasMatterBrief?.usedWorkflow?.name || "",
-                              ])}
-                            </p>
-                          </button>
-                          {Boolean(expandedNextStepIds[item.id]) ? (
+                          <div className="matterNextStepCardHead">
+                            <strong>{item.title}</strong>
+                            <Button
+                              type="button"
+                              className="matterStartDraftingBtn"
+                              onClick={() =>
+                                void startAtlasDraftGeneration(
+                                  {
+                                    id: item.id,
+                                    draftType: item.draftType,
+                                    title: item.title,
+                                  },
+                                  "drafts",
+                                )
+                              }
+                            >
+                              Start drafting
+                            </Button>
+                          </div>
+                          <p className="matterNextStepsPreview">
+                            {renderEmphasizedInlineText(item.description, [
+                              "termination",
+                              "notice",
+                              "refund",
+                              "cure period",
+                              "material default",
+                              "proof",
+                              "upload",
+                              activeAtlasMatterBrief?.usedWorkflow?.name || "",
+                            ])}
+                          </p>
+                          {dependencies.length ? (
                             <div className="matterNextStepsAccordionBody">
-                              <p>
-                                {renderEmphasizedInlineText(item.description, [
-                                  "termination",
-                                  "notice",
-                                  "refund",
-                                  "cure period",
-                                  "material default",
-                                  "proof",
-                                  "upload",
-                                  activeAtlasMatterBrief?.usedWorkflow?.name ||
-                                    "",
-                                ])}
-                              </p>
-                              {item.unblocksWhen.length ? (
-                                <ul className="matterBulletList">
-                                  {item.unblocksWhen.map((dependency) => (
-                                    <li key={`${item.id}-${dependency}`}>
-                                      {dependency}
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : null}
+                              <ul className="matterBulletList">
+                                {dependencies.map((dependency: string) => (
+                                  <li key={`${item.id}-${dependency}`}>
+                                    {dependency}
+                                  </li>
+                                ))}
+                              </ul>
                             </div>
                           ) : null}
                         </article>
+                          );
+                        })()
                       ))}
                     </div>
                   ) : (
@@ -9107,10 +9279,10 @@ const MatterSection = ({
               <button
                 type="button"
                 className="matterClarificationCloseButton"
-                aria-label="Exit research and return to dashboard"
+                aria-label="Close workflow confirmation"
                 onClick={() =>
-                  activeMatter && isAtlasMatterFlow
-                    ? void cancelMatterAtlasResearch(activeMatter.id)
+                  activeMatter
+                    ? dismissAtlasOverlay(activeMatter.id, "post-confirm")
                     : navigate("/")
                 }
               >
@@ -9220,7 +9392,280 @@ const MatterSection = ({
       ) : null}
 
       {shouldShowClarificationState &&
-      (activeAtlasCheckpoint || activeClarificationCheckpoint) ? (
+      draftGenerationCheckpoint ? (
+        <div
+          className="matterDialogBackdrop matterClarificationOverlay"
+          role="presentation"
+        >
+          <section
+            className="matterClarificationModal"
+            role="dialog"
+            aria-modal="true"
+          >
+            <header className="matterClarificationModalHead">
+              <div>
+                <p className="matterEyebrow">
+                  {getDraftCheckpointEyebrow(draftGenerationCheckpoint)}
+                </p>
+                <h2>{draftGenerationCheckpoint.title}</h2>
+              </div>
+              <span className="matterResearchModeStatus">
+                {draftGenerationCheckpoint.status ===
+                "review_ready_with_optional_inputs"
+                  ? "guarded draft available"
+                  : draftGenerationCheckpoint.questions.length ||
+                      draftGenerationCheckpoint.requestedDocuments.length
+                    ? "review before drafting"
+                    : "ready to draft"}
+              </span>
+              <button
+                type="button"
+                className="matterClarificationCloseButton"
+                aria-label="Close draft readiness checkpoint"
+                onClick={() => void closeDraftGenerationCheckpoint()}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <div className="matterClarificationModalBody">
+              <article className="matterClarificationActiveCard uiCard">
+                <div className="matterClarificationQuestionHero">
+                  <h3>{draftGenerationCheckpoint.messageToUser}</h3>
+                  <p>{draftGenerationCheckpoint.consequenceIfSkipped}</p>
+                </div>
+
+                {draftGenerationCheckpoint.blockingItems.length ? (
+                  <div className="matterClarificationUploadGrid">
+                    {draftGenerationCheckpoint.blockingItems.map((item) => (
+                      <article
+                        className="matterClarificationUploadCard uiCard"
+                        key={`draft-blocker-${item}`}
+                      >
+                        <strong>{item}</strong>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+
+                {draftGenerationCheckpoint.questions.length ? (
+                  <div className="matterClarificationChoiceFlow">
+                    {draftGenerationCheckpoint.questions.map((question) => (
+                      <div
+                        className="matterClarificationUploadCard uiCard"
+                        key={question.id}
+                      >
+                        <strong>{question.question}</strong>
+                        <p>{question.whyItMatters}</p>
+                        {question.answerType === "yes_no" ? (
+                          <div className="matterClarificationOptionList">
+                            {["yes", "no", "not_sure"].map((option) => (
+                              <button
+                                type="button"
+                                key={`${question.id}-${option}`}
+                                className={`matterClarificationOptionRow ${
+                                  draftGenerationAnswers[question.id] === option
+                                    ? "isSelected"
+                                    : ""
+                                }`}
+                                onClick={() =>
+                                  setDraftGenerationAnswers((current) => ({
+                                    ...current,
+                                    [question.id]: option,
+                                  }))
+                                }
+                              >
+                                <span className="matterClarificationOptionCheck" />
+                                <span className="matterClarificationOptionContent">
+                                  <strong>{option.replace(/_/g, " ")}</strong>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : question.answerType === "choice" &&
+                          question.options?.length ? (
+                          <div className="matterClarificationOptionList">
+                            {question.options.map((option) => (
+                              <button
+                                type="button"
+                                key={`${question.id}-${option}`}
+                                className={`matterClarificationOptionRow ${
+                                  draftGenerationAnswers[question.id] === option
+                                    ? "isSelected"
+                                    : ""
+                                }`}
+                                onClick={() =>
+                                  setDraftGenerationAnswers((current) => ({
+                                    ...current,
+                                    [question.id]: option,
+                                  }))
+                                }
+                              >
+                                <span className="matterClarificationOptionCheck" />
+                                <span className="matterClarificationOptionContent">
+                                  <strong>{option}</strong>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            {question.suggestedAnswer ? (
+                              <div className="matterClarificationOptionList">
+                                <button
+                                  type="button"
+                                  className={`matterClarificationOptionRow ${
+                                    draftGenerationAnswers[question.id] ===
+                                    question.suggestedAnswer
+                                      ? "isSelected"
+                                      : ""
+                                  }`}
+                                  onClick={() =>
+                                    setDraftGenerationAnswers((current) => ({
+                                      ...current,
+                                      [question.id]:
+                                        question.suggestedAnswer || "",
+                                    }))
+                                  }
+                                >
+                                  <span className="matterClarificationOptionCheck" />
+                                  <span className="matterClarificationOptionContent">
+                                    <strong>Use suggested answer</strong>
+                                    <small>{question.suggestedAnswer}</small>
+                                  </span>
+                                </button>
+                              </div>
+                            ) : null}
+                            <UiInput
+                              type={
+                                question.answerType === "date"
+                                  ? "date"
+                                  : question.answerType === "amount"
+                                    ? "number"
+                                    : "text"
+                              }
+                              value={draftGenerationAnswers[question.id] || ""}
+                              onChange={(event) =>
+                                setDraftGenerationAnswers((current) => ({
+                                  ...current,
+                                  [question.id]: event.target.value,
+                                }))
+                              }
+                              placeholder="Type your answer"
+                            />
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {draftGenerationCheckpoint.requestedDocuments.length ? (
+                  <div className="matterClarificationUploadGrid">
+                    {draftGenerationCheckpoint.requestedDocuments.map((item) => (
+                      <article
+                        className="matterClarificationUploadCard uiCard"
+                        key={item.id}
+                      >
+                        <strong>{item.label}</strong>
+                        <p>{item.whyNeeded}</p>
+                        <small>{item.unlocks}</small>
+                        <div className="matterClarificationActions">
+                          <UiButton
+                            variant="secondary"
+                            onClick={() => {
+                              const prefill = [
+                                `Add supporting files for: ${item.label}.`,
+                                item.whyNeeded
+                                  ? `Why needed: ${item.whyNeeded}.`
+                                  : "",
+                                `Target draft: ${draftGenerationCheckpoint.title}.`,
+                                "Upload the strongest supporting records you have and note any missing dates or disputed facts.",
+                              ]
+                                .filter(Boolean)
+                                .join(" ");
+                              sessionStorage.setItem(
+                                MATTER_APPEND_UPLOAD_SESSION_KEY,
+                                "1",
+                              );
+                              sessionStorage.setItem(
+                                MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY,
+                                prefill,
+                              );
+                              window.dispatchEvent(
+                                new Event("matter-uploader:append-open"),
+                              );
+                            }}
+                          >
+                            {item.interactionType === "either"
+                              ? "Answer or upload support"
+                              : "Upload supporting files"}
+                          </UiButton>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="matterClarificationActions">
+                  <UiButton
+                    variant="primary"
+                    onClick={() =>
+                      void continueAtlasDraftGeneration(
+                        "review_draft_with_placeholders",
+                      )
+                    }
+                    disabled={isSubmittingDraftGeneration}
+                  >
+                    {isSubmittingDraftGeneration
+                      ? "Starting..."
+                      : draftGenerationCheckpoint.status ===
+                          "review_ready_with_optional_inputs"
+                        ? "Generate guarded review draft"
+                        : "Generate review draft"}
+                  </UiButton>
+                  {draftGenerationCheckpoint.recommendedAlternativeDraftType ? (
+                    <UiButton
+                      variant="secondary"
+                      onClick={() =>
+                        void continueAtlasDraftGeneration(
+                          "generate_safer_first_draft",
+                        )
+                      }
+                      disabled={isSubmittingDraftGeneration}
+                    >
+                      {draftGenerationCheckpoint.recommendedAlternativeTitle
+                        ? `Generate ${draftGenerationCheckpoint.recommendedAlternativeTitle}`
+                        : "Generate safer first draft"}
+                    </UiButton>
+                  ) : null}
+                  <UiButton
+                    variant="outline"
+                    onClick={() =>
+                      void continueAtlasDraftGeneration("lawyer_review_draft")
+                    }
+                    disabled={isSubmittingDraftGeneration}
+                  >
+                    Continue as lawyer-review draft
+                  </UiButton>
+                  <UiButton
+                    variant="secondary"
+                    onClick={() => {
+                      setUploadPopupMode("append");
+                      setIsUploadPopupOpen(true);
+                    }}
+                  >
+                    Upload missing proof
+                  </UiButton>
+                </div>
+                {draftGenerationError ? (
+                  <p className="matterBriefError">{draftGenerationError}</p>
+                ) : null}
+              </article>
+            </div>
+          </section>
+        </div>
+      ) : shouldShowClarificationState &&
+        (activeAtlasCheckpoint || activeClarificationCheckpoint) ? (
         <div
           className="matterDialogBackdrop matterClarificationOverlay"
           role="presentation"
@@ -9254,10 +9699,10 @@ const MatterSection = ({
               <button
                 type="button"
                 className="matterClarificationCloseButton"
-                aria-label="Exit research and return to dashboard"
+                aria-label="Close clarification"
                 onClick={() =>
                   activeMatter && isAtlasMatterFlow
-                    ? void cancelMatterAtlasResearch(activeMatter.id)
+                    ? dismissAtlasOverlay(activeMatter.id, "post-clarification")
                     : navigate("/")
                 }
               >

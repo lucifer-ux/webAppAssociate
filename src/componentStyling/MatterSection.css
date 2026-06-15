@@ -4031,6 +4031,11 @@
   line-height: 1.72;
 }
 
+.matterNextStepsStaticCard .matterNextStepsAccordionBody {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .matterNextStepDraftType {
   display: inline-flex;
   margin-top: 10px;

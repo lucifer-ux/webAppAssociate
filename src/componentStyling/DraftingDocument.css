@@ -16,10 +16,33 @@
   top: 132px;
   right: 24px;
   width: min(420px, calc(100vw - 48px));
+  max-height: calc(100vh - 156px);
+  overflow-y: auto;
   padding: 20px;
   border: 1px solid #d7cbc0;
   background: #fffdf8;
   box-shadow: 0 18px 50px rgba(43, 26, 22, 0.18);
+}
+
+.draftFormatProposalClose {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d7cbc0;
+  background: rgba(255, 253, 248, 0.94);
+  color: #5d463e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.draftFormatProposalClose:hover {
+  border-color: #8b716e;
+  color: #4c0003;
+  background: #fff7ef;
 }
 
 .draftFormatProposal h2 {
@@ -34,6 +57,11 @@
   color: #685b52;
   font-size: 13px;
   line-height: 1.55;
+  white-space: pre-line;
+}
+
+.draftFormatLead {
+  margin-top: 2px;
 }
 
 .draftFormatSources {
@@ -52,9 +80,14 @@
 
 .draftFormatProposalActions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+  position: sticky;
+  bottom: 0;
+  padding-top: 12px;
+  background: linear-gradient(180deg, rgba(255, 253, 248, 0), #fffdf8 28%);
 }
 
 .draftFormatProposalActions button {
@@ -69,6 +102,58 @@
   border-color: #842d28;
   background: #842d28;
   color: #fff;
+}
+
+.draftFormatQuestionInput {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border: 1px solid #d8c6b8;
+  background: linear-gradient(180deg, #fffefb 0%, #fbf5ed 100%);
+  color: #2c231f;
+  padding: 12px 14px;
+  font-family: "Newsreader", serif;
+  font-size: 16px;
+  line-height: 1.45;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.draftFormatQuestionInput:focus {
+  outline: none;
+  border-color: #8b5b47;
+  box-shadow:
+    0 0 0 3px rgba(139, 91, 71, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.draftFormatLoaderHighlights {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.draftFormatLoaderHighlight {
+  border: 1px solid rgba(122, 94, 79, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86) 0%, rgba(250, 244, 236, 0.92) 100%);
+  padding: 12px 14px;
+}
+
+.draftFormatLoaderHighlight strong {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7d221d;
+}
+
+.draftFormatLoaderHighlight p {
+  color: #433630;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .draftingTemplateMain {
@@ -658,6 +743,206 @@
   position: relative;
   min-height: 1180px;
   padding-top: 14px;
+}
+
+.draftInsightStack {
+  position: sticky;
+  top: 14px;
+  z-index: 6;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.draftInsightCard {
+  border: 1px solid rgba(139, 113, 110, 0.2);
+  background: rgba(255, 253, 248, 0.96);
+  box-shadow: 0 12px 24px rgba(40, 27, 23, 0.06);
+  padding: 14px 16px;
+}
+
+.draftSourceDrawerBody {
+  display: grid;
+  gap: 14px;
+}
+
+.draftSourceDrawerHeader {
+  display: grid;
+  gap: 8px;
+}
+
+.draftSourceDrawerHeader strong {
+  color: #2c231f;
+  font-family: "Newsreader", serif;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.draftSourceBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.draftMetaBadge {
+  border: 1px solid #d7cbc0;
+  background: #f8f0e6;
+  color: #5d463e;
+  padding: 4px 8px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.draftMetaBadge.evidence-verified,
+.draftMetaBadge.evidence-legal_verified {
+  border-color: rgba(57, 110, 70, 0.26);
+  background: rgba(233, 243, 236, 0.96);
+  color: #2c6a3b;
+}
+
+.draftMetaBadge.evidence-guarded,
+.draftMetaBadge.evidence-unverified,
+.draftMetaBadge.evidence-user_supplied {
+  border-color: rgba(144, 93, 36, 0.24);
+  background: rgba(252, 243, 228, 0.96);
+  color: #8b5b12;
+}
+
+.draftSourceDrawerExcerpt,
+.draftInsightEmpty {
+  margin: 0;
+  color: #4b3d35;
+  font-family: "Newsreader", serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.draftInsightGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.draftInsightGroup h4 {
+  margin: 0;
+  color: #5f5048;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.draftSourceRefList,
+.draftProvisionList,
+.draftAiNotesList {
+  display: grid;
+  gap: 8px;
+}
+
+.draftSourceRefRow,
+.draftLegalSourceRow,
+.draftProvisionItem {
+  border: 1px solid rgba(139, 113, 110, 0.14);
+  background: rgba(249, 244, 238, 0.86);
+  padding: 10px 12px;
+}
+
+.draftSourceRefRow strong,
+.draftLegalSourceRow strong,
+.draftProvisionItem strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #312621;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.draftSourceRefRow span,
+.draftLegalSourceRow span,
+.draftProvisionItem span,
+.draftLegalSourceRow small {
+  display: block;
+  color: #64564d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.draftSourceRefRow p,
+.draftLegalSourceRow p {
+  margin: 6px 0 0;
+  color: #3d312b;
+  font-family: "Newsreader", serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.draftOpenIssueList {
+  margin: 0;
+  padding-left: 18px;
+  color: #463833;
+  font-family: "Newsreader", serif;
+  line-height: 1.55;
+}
+
+.draftAiNoteCard {
+  width: 100%;
+  border: 1px solid rgba(139, 113, 110, 0.18);
+  background: rgba(255, 251, 245, 0.96);
+  color: #2b2320;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.draftAiNoteCard:hover {
+  border-color: rgba(112, 13, 13, 0.28);
+  background: #fff7ef;
+}
+
+.draftAiNoteCard strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #5f5048;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.draftAiNoteCard blockquote {
+  margin: 0 0 8px;
+  padding-left: 8px;
+  border-left: 2px solid #dfbfbc;
+  color: #5c4d46;
+  font-family: "Newsreader", serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.draftAiNoteCard p {
+  margin: 0;
+  color: #332925;
+  font-family: "Newsreader", serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.draftAiNoteCard.severity-high {
+  border-color: rgba(152, 46, 38, 0.22);
+  background: rgba(253, 244, 242, 0.96);
+}
+
+.draftAiNoteCard.severity-review {
+  border-color: rgba(168, 131, 83, 0.2);
+  background: rgba(252, 248, 239, 0.96);
 }
 
 .draftCommentComposerInline {

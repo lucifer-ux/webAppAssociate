@@ -17,6 +17,8 @@ import { MessageSquarePlus, SmilePlus } from "lucide-react";
 import { buildDraftingExtensions } from "./draftingExtensions";
 import type {
   AccessRole,
+  DraftAiReviewNote,
+  DraftBlockMeta,
   DraftComment,
   DraftContext,
   DraftDetail,
@@ -80,7 +82,10 @@ type DraftingDocumentProps = {
   activeAnnotationId: string | null;
   pendingAnnotation: PendingAnnotation | null;
   commentDraft: string;
-  onDocumentChange: (contentJson: JSONContent) => void;
+  onDocumentChange: (
+    contentJson: JSONContent,
+    meta?: { userInitiated?: boolean },
+  ) => void;
   onDraftContextChange: (context: DraftContext) => void;
   onToolbarStateChange: (state: DraftingToolbarState) => void;
   onCommentDraftChange: (value: string) => void;
@@ -108,9 +113,12 @@ const roleCanEdit = (role: AccessRole) => role === "editor";
 
 const emptyHeaderFooter = {
   header: { left: "", center: "", right: "" },
-  footer: { left: "", center: "Page {page}", right: "" },
+  footer: { left: "", center: "Page 1", right: "" },
   differentFirstPage: false,
 };
+
+const renderPageNumberText = (value: string, pageNumber = 1) =>
+  String(value || "").replace(/\{page\}/gi, String(pageNumber)).trim();
 
 const findReplacePluginKey = new PluginKey("draftFindReplacePlugin");
 
@@ -162,6 +170,34 @@ const getSelectionExcerpt = (editor: Editor | null) => {
   const { from, to, empty } = editor.state.selection;
   if (empty) return "";
   return editor.state.doc.textBetween(from, to, " ").trim();
+};
+
+const getSelectedBlockId = (editor: Editor | null) => {
+  if (!editor) return null;
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth >= 0; depth -= 1) {
+    const blockId = String($from.node(depth)?.attrs?.blockId || "").trim();
+    if (blockId) return blockId;
+  }
+  return null;
+};
+
+const findBlockPosition = (editor: Editor | null, blockId: string) => {
+  if (!editor || !blockId) return null;
+  let found: number | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (String(node.attrs?.blockId || "").trim() === blockId) {
+      found = pos + 1;
+      return false;
+    }
+    return;
+  });
+  return found;
+};
+
+const formatConfidence = (value?: number) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return "Unknown";
+  return `${Math.round(value * 100)}%`;
 };
 
 const getToolbarParagraphStyle = (editor: Editor): ParagraphStyle => {
@@ -308,6 +344,7 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
     const [activeFindIndex, setActiveFindIndex] = useState(0);
     const [commentLayout, setCommentLayout] = useState<Record<string, number>>({});
     const [pendingTop, setPendingTop] = useState<number | null>(null);
+    const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
 
     commentsRef.current = comments;
     findReplaceStateRef.current = {
@@ -342,6 +379,27 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
           : [],
       [draft.context.templateProvenance],
     );
+
+    const generatedBlockMeta = useMemo(
+      () => draft.context.generatedBlockMeta || {},
+      [draft.context.generatedBlockMeta],
+    );
+
+    const aiGeneratedComments = useMemo(
+      () =>
+        Array.isArray(draft.context.aiGeneratedComments)
+          ? draft.context.aiGeneratedComments
+          : [],
+      [draft.context.aiGeneratedComments],
+    );
+
+    const selectedBlockMeta = useMemo(() => {
+      if (selectedBlockId && generatedBlockMeta[selectedBlockId]) {
+        return generatedBlockMeta[selectedBlockId];
+      }
+      const firstKey = Object.keys(generatedBlockMeta)[0];
+      return firstKey ? generatedBlockMeta[firstKey] : null;
+    }, [generatedBlockMeta, selectedBlockId]);
 
     const updateHeaderFooterSlot = useCallback(
       (
@@ -418,6 +476,7 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
     );
 
     const refreshSelectionMenu = useCallback((editorInstance: Editor | null) => {
+      setSelectedBlockId(getSelectedBlockId(editorInstance));
       if (!editorInstance || !roleCanEdit(currentRole)) {
         setSelectionMenuTop(null);
         return;
@@ -515,7 +574,9 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
         refreshSelectionMenu(editorInstance);
       },
       onUpdate: ({ editor: editorInstance }) => {
-        onDocumentChange(editorInstance.getJSON());
+        onDocumentChange(editorInstance.getJSON(), {
+          userInitiated: editorInstance.isFocused,
+        });
         syncToolbarState(editorInstance);
         measureCommentLayout(editorInstance);
       },
@@ -550,6 +611,7 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       if (hydratedKeyRef.current === hydrationKey) return;
       hydratedKeyRef.current = hydrationKey;
       editor.commands.setContent(draft.contentJson);
+      setSelectedBlockId(getSelectedBlockId(editor));
       syncToolbarState(editor);
       measureCommentLayout(editor);
     }, [draft.id, draft.contentHash, draft.contentJson, editor, measureCommentLayout, syncToolbarState]);
@@ -785,6 +847,48 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       (left, right) => (commentLayout[left.id] || 0) - (commentLayout[right.id] || 0),
     );
 
+    const jumpToBlock = (blockId?: string) => {
+      if (!editor || !blockId) return;
+      const position = findBlockPosition(editor, blockId);
+      if (!position) return;
+      editor.chain().focus().setTextSelection(position).scrollIntoView().run();
+      setSelectedBlockId(blockId);
+    };
+
+    const renderSourceRef = (
+      sourceRef: NonNullable<DraftBlockMeta["sourceRefs"]>[number],
+      index: number,
+    ) => (
+      <div key={`${sourceRef.chunk_id || sourceRef.file_name || "source"}-${index}`} className="draftSourceRefRow">
+        <strong>{sourceRef.file_name || sourceRef.document_role || "Matter source"}</strong>
+        <span>
+          {[
+            sourceRef.page_start != null ? `p. ${sourceRef.page_start}` : "",
+            sourceRef.page_end != null &&
+            sourceRef.page_end !== sourceRef.page_start
+              ? `-${sourceRef.page_end}`
+              : "",
+            sourceRef.chunk_id ? `chunk ${sourceRef.chunk_id}` : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        </span>
+        {sourceRef.verbatim_basis && <p>{sourceRef.verbatim_basis}</p>}
+      </div>
+    );
+
+    const renderLegalSourceRef = (
+      sourceRef: NonNullable<DraftBlockMeta["legalSourceRefs"]>[number],
+      index: number,
+    ) => (
+      <div key={`${sourceRef.source_id || sourceRef.title || "authority"}-${index}`} className="draftLegalSourceRow">
+        <strong>{sourceRef.title || sourceRef.source_id || "Legal authority"}</strong>
+        <span>{[sourceRef.court_or_body, sourceRef.citation].filter(Boolean).join(" · ")}</span>
+        {sourceRef.principle && <p>{sourceRef.principle}</p>}
+        {sourceRef.relevance && <small>{sourceRef.relevance}</small>}
+      </div>
+    );
+
     return (
       <section className="draftingCanvasShell">
         <main className="draftingCanvasArea soloCanvas">
@@ -858,11 +962,11 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
               {(["left", "center", "right"] as const).map((slot) => (
                 <input
                   key={`footer-${slot}`}
-                  value={headerFooter.footer[slot] || ""}
+                  value={renderPageNumberText(headerFooter.footer[slot] || "", 1)}
                   onChange={(event) =>
                     updateHeaderFooterSlot("footer", slot, event.target.value)
                   }
-                  placeholder={slot === "center" ? "Page {page}" : ""}
+                  placeholder={slot === "center" ? "Page 1" : ""}
                   aria-label={`Footer ${slot}`}
                   disabled={!roleCanEdit(currentRole)}
                 />
@@ -954,6 +1058,110 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
           </div>
 
           <aside className="draftCommentRail">
+            <div className="draftInsightStack">
+              <div className="draftInsightCard">
+                <p className="draftTemplateEyebrow">Source Drawer</p>
+                {selectedBlockMeta ? (
+                  <div className="draftSourceDrawerBody">
+                    <div className="draftSourceDrawerHeader">
+                      <strong>{selectedBlockMeta.sectionTitle || "Selected block"}</strong>
+                      <div className="draftSourceBadgeRow">
+                        <span className={`draftMetaBadge evidence-${selectedBlockMeta.evidenceStatus || "unknown"}`}>
+                          {selectedBlockMeta.evidenceStatus || "unknown"}
+                        </span>
+                        <span className="draftMetaBadge">{selectedBlockMeta.sourceType || "source-unspecified"}</span>
+                        <span className="draftMetaBadge">Confidence {formatConfidence(selectedBlockMeta.confidence)}</span>
+                      </div>
+                    </div>
+                    <p className="draftSourceDrawerExcerpt">
+                      {selectedBlockMeta.text ||
+                        (Array.isArray(selectedBlockMeta.items)
+                          ? selectedBlockMeta.items.join(" ")
+                          : "Select an AI-generated block to inspect its source support.")}
+                    </p>
+                    {Array.isArray(selectedBlockMeta.referencedProvisions) &&
+                      selectedBlockMeta.referencedProvisions.length > 0 && (
+                        <div className="draftInsightGroup">
+                          <h4>Referenced Provisions</h4>
+                          <div className="draftProvisionList">
+                            {selectedBlockMeta.referencedProvisions.map((item, index) => (
+                              <div
+                                key={`${item.reference_id || item.label || "provision"}-${index}`}
+                                className="draftProvisionItem"
+                              >
+                                <strong>{item.label || item.reference_id || "Provision"}</strong>
+                                {item.described_as && <span>{item.described_as}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    <div className="draftInsightGroup">
+                      <h4>Document Sources</h4>
+                      {selectedBlockMeta.sourceRefs.length > 0 ? (
+                        <div className="draftSourceRefList">
+                          {selectedBlockMeta.sourceRefs.map(renderSourceRef)}
+                        </div>
+                      ) : (
+                        <p className="draftInsightEmpty">
+                          This block is guarded or analytical and does not yet carry verified document citations.
+                        </p>
+                      )}
+                    </div>
+                    <div className="draftInsightGroup">
+                      <h4>Legal Authority</h4>
+                      {selectedBlockMeta.legalSourceRefs.length > 0 ? (
+                        <div className="draftSourceRefList">
+                          {selectedBlockMeta.legalSourceRefs.map(renderLegalSourceRef)}
+                        </div>
+                      ) : (
+                        <p className="draftInsightEmpty">
+                          No structured legal authority is attached to this block.
+                        </p>
+                      )}
+                    </div>
+                    {(selectedBlockMeta.warnings?.length || selectedBlockMeta.placeholders?.length) ? (
+                      <div className="draftInsightGroup">
+                        <h4>Open Issues</h4>
+                        <ul className="draftOpenIssueList">
+                          {(selectedBlockMeta.warnings || []).map((warning, index) => (
+                            <li key={`warning-${index}`}>{warning}</li>
+                          ))}
+                          {(selectedBlockMeta.placeholders || []).map((item, index) => (
+                            <li key={`placeholder-${index}`}>Open item: {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="draftInsightEmpty">
+                    Select an AI-generated paragraph or list to inspect supporting sources.
+                  </p>
+                )}
+              </div>
+
+              {aiGeneratedComments.length > 0 && (
+                <div className="draftInsightCard">
+                  <p className="draftTemplateEyebrow">AI Review Notes</p>
+                  <div className="draftAiNotesList">
+                    {aiGeneratedComments.map((note: DraftAiReviewNote) => (
+                      <button
+                        key={note.id}
+                        type="button"
+                        className={`draftAiNoteCard severity-${note.severity || "review"}`}
+                        onClick={() => jumpToBlock(note.blockId)}
+                      >
+                        <strong>{note.sectionTitle || note.classification || "Review note"}</strong>
+                        {note.excerpt ? <blockquote>{note.excerpt}</blockquote> : null}
+                        <p>{note.note}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {pendingAnnotation && (
               <div
                 className="draftCommentComposerInline"

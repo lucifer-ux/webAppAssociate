@@ -48,6 +48,67 @@ export type DraftTemplateProvenance = {
   acceptable_sources?: string[];
 };
 
+export type DraftSourceRef = {
+  chunk_id?: string;
+  file_name?: string;
+  page_start?: number | null;
+  page_end?: number | null;
+  document_role?: string;
+  assertion_mode?: string;
+  party_side?: string;
+  verbatim_basis?: string;
+  evidence_bundle_id?: string;
+};
+
+export type DraftLegalSourceRef = {
+  source_id?: string;
+  title?: string;
+  court_or_body?: string;
+  citation?: string;
+  url_or_locator?: string;
+  principle?: string;
+  relevance?: string;
+};
+
+export type DraftReferencedProvision = {
+  reference_id?: string;
+  label?: string;
+  described_as?: string;
+  evidence_bundle_id?: string;
+};
+
+export type DraftBlockMeta = {
+  blockId: string;
+  sectionId?: string;
+  sectionTitle?: string;
+  type: string;
+  text?: string;
+  items?: string[];
+  sourceRefs: DraftSourceRef[];
+  legalSourceRefs: DraftLegalSourceRef[];
+  evidenceStatus?: string;
+  sourceType?: string;
+  confidence?: number;
+  assertionKind?: string;
+  recommendationPosture?: string;
+  referencedProvisions?: DraftReferencedProvision[];
+  placeholders?: string[];
+  warnings?: string[];
+  createdByAi?: boolean;
+};
+
+export type DraftAiReviewNote = {
+  id: string;
+  blockId?: string;
+  sectionId?: string;
+  sectionTitle?: string;
+  classification?: string;
+  severity?: string;
+  excerpt?: string;
+  note: string;
+  sourcePointers?: Array<Record<string, unknown>>;
+};
+
 export type DraftContext = {
   matterId: string | null;
   partyA: string | null;
@@ -59,6 +120,8 @@ export type DraftContext = {
   templateProvenance?: DraftTemplateProvenance[];
   templateAuthenticity?: Record<string, unknown>;
   boilerplateMeta?: Record<string, unknown> | null;
+  generatedBlockMeta?: Record<string, DraftBlockMeta>;
+  aiGeneratedComments?: DraftAiReviewNote[];
   source?: string;
   recommendation?: MatterDraftRecommendation;
   [key: string]: unknown;
@@ -356,6 +419,131 @@ export type DraftFormatProposal = {
   meta?: Record<string, unknown>;
 };
 
+export type DraftGenerationQuestion = {
+  id: string;
+  question: string;
+  whyItMatters: string;
+  answerType:
+    | "yes_no"
+    | "short_text"
+    | "date"
+    | "amount"
+    | "choice"
+    | "document_upload"
+    | string;
+  options?: string[];
+  suggestedAnswer?: string | null;
+  priority?: string;
+  linkedIssue?: string;
+  linkedMissingInputIds?: string[];
+  interactionType?: string;
+};
+
+export type DraftGenerationRequestedDocument = {
+  id: string;
+  label: string;
+  whyNeeded: string;
+  unlocks: string;
+  priority?: string;
+  linkedIssue?: string;
+  linkedMissingInputIds?: string[];
+  acceptedTypes?: string[];
+  interactionType?: string;
+  strengthensClaims?: boolean;
+  blocks?: boolean;
+};
+
+export type DraftGenerationCheckpoint = {
+  matterId: string;
+  draftType: string;
+  title: string;
+  status:
+    | "needs_user_input"
+    | "review_ready_with_optional_inputs"
+    | "needs_user_action"
+    | "blocked"
+    | string;
+  readinessStatus?: "ready" | "review_ready" | "needs_user_input" | "blocked" | string;
+  messageToUser: string;
+  consequenceIfSkipped: string;
+  questions: DraftGenerationQuestion[];
+  requestedDocuments: DraftGenerationRequestedDocument[];
+  blockingItems: string[];
+  unsafeClaims: string[];
+  gapClusters?: Record<string, number>;
+  recommendedAlternativeDraftType?: string | null;
+  recommendedAlternativeTitle?: string | null;
+  recommendedActions: Array<{
+    id: string;
+    label: string;
+    description: string;
+  }>;
+};
+
+export type DraftGenerationThread = {
+  id: string;
+  ownerUserId: string;
+  matterId: string;
+  draftId: string | null;
+  selectedDraftType: string;
+  status: string;
+  graphState: Record<string, unknown>;
+  checkpointPayload: DraftGenerationCheckpoint | null;
+  uiSummary: {
+    threadId?: string;
+    matterId?: string;
+    draftId?: string | null;
+    selectedDraftType?: string;
+    readiness?: Record<string, unknown> | null;
+    sectionStatuses?: Array<{
+      sectionId: string;
+      title: string;
+      status: string;
+      sourceRefCount?: number;
+      warningCount?: number;
+    }>;
+    blockers?: string[];
+    riskFlags?: string[];
+    draftScope?: Record<string, unknown> | null;
+    format?: {
+      draftFamily?: string;
+      confidence?: string;
+      cacheStatus?: string;
+      sources?: Array<{
+        type?: string;
+        title?: string;
+        url?: string;
+        file_name?: string;
+      }>;
+    } | null;
+    gapOwnership?: Record<string, number>;
+    criticReport?: {
+      draft_quality_report?: string;
+      blocking_issues?: string[];
+      warnings?: string[];
+      suggested_fixes?: string[];
+      ready_for_lawyer_review?: boolean;
+    } | null;
+    sourceCoverage?: {
+      requirementCount?: number;
+      verifiedCount?: number;
+      userSuppliedCount?: number;
+    };
+  };
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DraftGenerationStartResponse =
+  {
+    success: true;
+    status: "started";
+    threadId: string;
+    draft: DraftDetail;
+    checkpoint?: DraftGenerationCheckpoint | null;
+  };
+
 export const generateDraftFormat = async (input: {
   matterId: string;
   draftKey: string;
@@ -374,6 +562,97 @@ export const generateDraftFormat = async (input: {
     proposal: DraftFormatProposal;
   }>(response);
   return payload.proposal;
+};
+
+export const startMatterDraftGeneration = async (input: {
+  matterId: string;
+  draftType: string;
+  draftKey?: string;
+  draftTitle?: string;
+  source?: "atlas_next_steps";
+  requestedFrom?: "overview" | "drafts";
+}) => {
+  const response = await fetch(
+    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/start`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({
+        draftType: input.draftType,
+        draftKey: input.draftKey || "",
+        draftTitle: input.draftTitle || "",
+        source: input.source || "atlas_next_steps",
+        requestedFrom: input.requestedFrom || "overview",
+      }),
+    },
+  );
+  return readJson<DraftGenerationStartResponse>(response);
+};
+
+export const continueMatterDraftGeneration = async (input: {
+  matterId: string;
+  threadId: string;
+  chosenAction: string;
+  answers: Array<{
+    questionId: string;
+    answer: string | boolean;
+    answerType?: string;
+  }>;
+}) => {
+  const response = await fetch(
+    buildApiUrl(
+      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}/continue`,
+    ),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({
+        chosenAction: input.chosenAction,
+        answers: input.answers,
+      }),
+    },
+  );
+  return readJson<{
+    success: true;
+    status: "started";
+    threadId: string;
+    draft: DraftDetail;
+  }>(response);
+};
+
+export const cancelMatterDraftGeneration = async (input: {
+  matterId: string;
+  threadId: string;
+}) => {
+  const response = await fetch(
+    buildApiUrl(
+      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}/cancel`,
+    ),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({}),
+    },
+  );
+  return readJson<{ success: true; thread: DraftGenerationThread }>(response);
+};
+
+export const getMatterDraftGenerationThread = async (input: {
+  matterId: string;
+  threadId: string;
+}) => {
+  const response = await fetch(
+    buildApiUrl(
+      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}`,
+    ),
+    {
+      headers: buildDraftHeaders(false),
+    },
+  );
+  const payload = await readJson<{ success: true; thread: DraftGenerationThread }>(
+    response,
+  );
+  return payload.thread;
 };
 
 export const getNextStepTemplate = async (input: {

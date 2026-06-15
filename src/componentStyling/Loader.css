@@ -130,6 +130,7 @@
   line-height: 1.45;
   color: #83766d;
   max-width: 520px;
+  white-space: pre-line;
 }
 
 .matterUploadLoaderStatusRow {
