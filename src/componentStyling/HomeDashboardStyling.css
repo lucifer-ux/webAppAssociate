@@ -982,3 +982,149 @@
     padding: 40px 16px 120px;
   }
 }
+
+.homeDashMain,
+.welcomeHeadingRow,
+.researchNudgeCard,
+.activeMatterCard,
+.researchDemoCard,
+.emailCardTrigger,
+.profileMenuPanel,
+.topBarLeft,
+.topBarRight {
+  min-width: 0;
+}
+
+.welcomeHeadingTitle,
+.welcomeBlock p,
+.activeMatterCard h3,
+.researchDemoCard h3,
+.emailCardTrigger h3,
+.profileMenuHead strong {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 960px) {
+  .homeDashTopBar {
+    padding: 0 14px;
+    gap: 10px;
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 64px;
+  }
+
+  .topBarLeft,
+  .topBarRight {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+
+  .searchWrap {
+    position: static;
+    left: auto;
+    transform: none;
+    order: 3;
+    width: 100%;
+    margin: 0 0 10px;
+  }
+
+  .rightToolsRail {
+    display: none;
+  }
+
+  .homeDashMain,
+  .homeDashMain.withRightPanel {
+    padding-right: 0;
+  }
+
+  .welcomeBlock {
+    padding: 32px 20px 12px;
+  }
+
+  .welcomeHeadingTitle {
+    font-size: clamp(2rem, 6vw, 2.6rem);
+  }
+
+  .welcomeBlock p {
+    font-size: 17px;
+  }
+
+  .researchNudgeCard {
+    width: auto;
+    margin-left: 20px;
+    margin-right: 20px;
+    grid-template-columns: 1fr;
+  }
+
+  .activeMatterCards,
+  .activeResearchesGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .homeDashMain {
+    padding-top: 88px;
+  }
+
+  .homeDashTopBar {
+    padding: 10px 12px;
+    align-items: flex-start;
+  }
+
+  .topBarLeft,
+  .topBarRight {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .welcomeBlock {
+    padding: 24px 16px 12px;
+  }
+
+  .welcomeHeadingRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .welcomeHeadingTitle {
+    width: 100%;
+    font-size: clamp(1.8rem, 8vw, 2.3rem);
+    padding-left: 12px;
+  }
+
+  .welcomeHeadingTitle::before {
+    height: auto;
+    bottom: 8px;
+  }
+
+  .welcomeCurrentTime {
+    white-space: normal;
+  }
+
+  .welcomeNameInput {
+    width: 100%;
+  }
+
+  .welcomeBlock p {
+    font-size: 16px;
+  }
+
+  .researchNudgeCard {
+    margin-left: 16px;
+    margin-right: 16px;
+    padding: 12px;
+  }
+
+  .activeMattersHead,
+  .activeResearchesHead {
+    align-items: flex-start;
+  }
+
+  .activeMattersSection h2,
+  .activeResearchesHead h2,
+  .draftBlankLoading h1,
+  .emailCardTrigger h3 {
+    font-size: clamp(1.45rem, 7vw, 1.9rem);
+  }
+}

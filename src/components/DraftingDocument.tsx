@@ -17,7 +17,6 @@ import { MessageSquarePlus, SmilePlus } from "lucide-react";
 import { buildDraftingExtensions } from "./draftingExtensions";
 import type {
   AccessRole,
-  DraftAiReviewNote,
   DraftBlockMeta,
   DraftComment,
   DraftContext,
@@ -182,17 +181,25 @@ const getSelectedBlockId = (editor: Editor | null) => {
   return null;
 };
 
-const findBlockPosition = (editor: Editor | null, blockId: string) => {
-  if (!editor || !blockId) return null;
-  let found: number | null = null;
+const getSelectedBlockIds = (editor: Editor | null) => {
+  if (!editor) return [];
+  const { from, to, empty } = editor.state.selection;
+  if (empty) {
+    const single = getSelectedBlockId(editor);
+    return single ? [single] : [];
+  }
+  const blockIds: string[] = [];
   editor.state.doc.descendants((node, pos) => {
-    if (String(node.attrs?.blockId || "").trim() === blockId) {
-      found = pos + 1;
-      return false;
+    const blockId = String(node.attrs?.blockId || "").trim();
+    if (!blockId) return;
+    const nodeFrom = pos;
+    const nodeTo = pos + node.nodeSize;
+    if (nodeTo < from || nodeFrom > to) return;
+    if (!blockIds.includes(blockId)) {
+      blockIds.push(blockId);
     }
-    return;
   });
-  return found;
+  return blockIds;
 };
 
 const formatConfidence = (value?: number) => {
@@ -345,6 +352,8 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
     const [commentLayout, setCommentLayout] = useState<Record<string, number>>({});
     const [pendingTop, setPendingTop] = useState<number | null>(null);
     const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+    const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
+    const [selectionInsightTop, setSelectionInsightTop] = useState<number>(0);
 
     commentsRef.current = comments;
     findReplaceStateRef.current = {
@@ -397,9 +406,70 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       if (selectedBlockId && generatedBlockMeta[selectedBlockId]) {
         return generatedBlockMeta[selectedBlockId];
       }
-      const firstKey = Object.keys(generatedBlockMeta)[0];
-      return firstKey ? generatedBlockMeta[firstKey] : null;
+      return null;
     }, [generatedBlockMeta, selectedBlockId]);
+
+    const selectedBlockMetaList = useMemo(
+      () =>
+        selectedBlockIds
+          .map((blockId) => generatedBlockMeta[blockId])
+          .filter(Boolean),
+      [generatedBlockMeta, selectedBlockIds],
+    );
+
+    const selectedAiNotes = useMemo(() => {
+      if (!selectedBlockIds.length) return [];
+      const blockIdSet = new Set(selectedBlockIds);
+      return aiGeneratedComments.filter((note) =>
+        note.blockId ? blockIdSet.has(note.blockId) : false,
+      );
+    }, [aiGeneratedComments, selectedBlockIds]);
+
+    const selectedInsights = useMemo(() => {
+      const blockIdSet = new Set(selectedBlockIds);
+      const sourceRefs = new Map<string, NonNullable<DraftBlockMeta["sourceRefs"]>[number]>();
+      const legalSourceRefs = new Map<string, NonNullable<DraftBlockMeta["legalSourceRefs"]>[number]>();
+      const provisions = new Map<string, NonNullable<DraftBlockMeta["referencedProvisions"]>[number]>();
+      const warnings = new Set<string>();
+      const placeholders = new Set<string>();
+      const evidenceStatuses = new Set<string>();
+      const sourceTypes = new Set<string>();
+      let highestConfidence = 0;
+
+      selectedBlockMetaList.forEach((blockMeta) => {
+        blockMeta.sourceRefs.forEach((sourceRef) => {
+          const key = JSON.stringify(sourceRef);
+          if (!sourceRefs.has(key)) sourceRefs.set(key, sourceRef);
+        });
+        blockMeta.legalSourceRefs.forEach((sourceRef) => {
+          const key = JSON.stringify(sourceRef);
+          if (!legalSourceRefs.has(key)) legalSourceRefs.set(key, sourceRef);
+        });
+        (blockMeta.referencedProvisions || []).forEach((item) => {
+          const key = JSON.stringify(item);
+          if (!provisions.has(key)) provisions.set(key, item);
+        });
+        (blockMeta.warnings || []).forEach((warning) => warnings.add(warning));
+        (blockMeta.placeholders || []).forEach((item) => placeholders.add(item));
+        if (blockMeta.evidenceStatus) evidenceStatuses.add(blockMeta.evidenceStatus);
+        if (blockMeta.sourceType) sourceTypes.add(blockMeta.sourceType);
+        if (typeof blockMeta.confidence === "number") {
+          highestConfidence = Math.max(highestConfidence, blockMeta.confidence);
+        }
+      });
+
+      return {
+        blockCount: blockIdSet.size,
+        sourceRefs: [...sourceRefs.values()],
+        legalSourceRefs: [...legalSourceRefs.values()],
+        referencedProvisions: [...provisions.values()],
+        warnings: [...warnings.values()],
+        placeholders: [...placeholders.values()],
+        evidenceStatuses: [...evidenceStatuses.values()],
+        sourceTypes: [...sourceTypes.values()],
+        confidence: highestConfidence || undefined,
+      };
+    }, [selectedBlockIds, selectedBlockMetaList]);
 
     const updateHeaderFooterSlot = useCallback(
       (
@@ -476,7 +546,21 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
     );
 
     const refreshSelectionMenu = useCallback((editorInstance: Editor | null) => {
-      setSelectedBlockId(getSelectedBlockId(editorInstance));
+      const currentBlockIds = getSelectedBlockIds(editorInstance);
+      setSelectedBlockIds(currentBlockIds);
+      setSelectedBlockId(currentBlockIds[0] || getSelectedBlockId(editorInstance));
+      if (editorInstance && sheetRef.current) {
+        const { from } = editorInstance.state.selection;
+        try {
+          const coords = editorInstance.view.coordsAtPos(from);
+          const sheetRect = sheetRef.current.getBoundingClientRect();
+          setSelectionInsightTop(Math.max(0, coords.top - sheetRect.top));
+        } catch {
+          setSelectionInsightTop(0);
+        }
+      } else {
+        setSelectionInsightTop(0);
+      }
       if (!editorInstance || !roleCanEdit(currentRole)) {
         setSelectionMenuTop(null);
         return;
@@ -612,6 +696,7 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       hydratedKeyRef.current = hydrationKey;
       editor.commands.setContent(draft.contentJson);
       setSelectedBlockId(getSelectedBlockId(editor));
+      setSelectedBlockIds(getSelectedBlockIds(editor));
       syncToolbarState(editor);
       measureCommentLayout(editor);
     }, [draft.id, draft.contentHash, draft.contentJson, editor, measureCommentLayout, syncToolbarState]);
@@ -847,14 +932,6 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       (left, right) => (commentLayout[left.id] || 0) - (commentLayout[right.id] || 0),
     );
 
-    const jumpToBlock = (blockId?: string) => {
-      if (!editor || !blockId) return;
-      const position = findBlockPosition(editor, blockId);
-      if (!position) return;
-      editor.chain().focus().setTextSelection(position).scrollIntoView().run();
-      setSelectedBlockId(blockId);
-    };
-
     const renderSourceRef = (
       sourceRef: NonNullable<DraftBlockMeta["sourceRefs"]>[number],
       index: number,
@@ -1058,33 +1135,51 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
           </div>
 
           <aside className="draftCommentRail">
-            <div className="draftInsightStack">
-              <div className="draftInsightCard">
+            <div className="draftSelectionHint">
+              Select a line to see from where it is cited. If your selection spans multiple cited blocks, all relevant citations, warnings, and authority notes will appear here.
+            </div>
+            <div
+              className={`draftInsightStack ${selectedBlockIds.length > 0 ? "hasSelection" : ""}`}
+              style={selectedBlockIds.length > 0 ? { top: `${selectionInsightTop}px` } : undefined}
+            >
+              <div className="draftInsightCard draftInsightDrawerCard">
                 <p className="draftTemplateEyebrow">Source Drawer</p>
-                {selectedBlockMeta ? (
+                {selectedBlockIds.length > 0 ? (
                   <div className="draftSourceDrawerBody">
                     <div className="draftSourceDrawerHeader">
-                      <strong>{selectedBlockMeta.sectionTitle || "Selected block"}</strong>
+                      <strong>
+                        {selectedBlockIds.length === 1
+                          ? selectedBlockMeta?.sectionTitle || "Selected citation block"
+                          : `${selectedBlockIds.length} cited blocks selected`}
+                      </strong>
                       <div className="draftSourceBadgeRow">
-                        <span className={`draftMetaBadge evidence-${selectedBlockMeta.evidenceStatus || "unknown"}`}>
-                          {selectedBlockMeta.evidenceStatus || "unknown"}
+                        <span className="draftMetaBadge">
+                          {selectedInsights.blockCount} block{selectedInsights.blockCount === 1 ? "" : "s"}
                         </span>
-                        <span className="draftMetaBadge">{selectedBlockMeta.sourceType || "source-unspecified"}</span>
-                        <span className="draftMetaBadge">Confidence {formatConfidence(selectedBlockMeta.confidence)}</span>
+                        <span className="draftMetaBadge">
+                          {selectedInsights.sourceRefs.length} source{selectedInsights.sourceRefs.length === 1 ? "" : "s"}
+                        </span>
+                        <span className="draftMetaBadge">
+                          {selectedInsights.legalSourceRefs.length} authority
+                        </span>
+                        <span className="draftMetaBadge">Confidence {formatConfidence(selectedInsights.confidence)}</span>
                       </div>
                     </div>
                     <p className="draftSourceDrawerExcerpt">
-                      {selectedBlockMeta.text ||
-                        (Array.isArray(selectedBlockMeta.items)
-                          ? selectedBlockMeta.items.join(" ")
-                          : "Select an AI-generated block to inspect its source support.")}
+                      {selectedBlockIds.length === 1
+                        ? selectedBlockMeta?.text ||
+                          (Array.isArray(selectedBlockMeta?.items)
+                            ? selectedBlockMeta.items.join(" ")
+                            : "Selection is mapped to one cited block.")
+                        : "Your selection spans multiple cited blocks. Hover this drawer to inspect all supporting citations, provision mappings, and review notes."}
                     </p>
-                    {Array.isArray(selectedBlockMeta.referencedProvisions) &&
-                      selectedBlockMeta.referencedProvisions.length > 0 && (
+                    <div className="draftSourceDrawerHoverPanel">
+                    {Array.isArray(selectedInsights.referencedProvisions) &&
+                      selectedInsights.referencedProvisions.length > 0 && (
                         <div className="draftInsightGroup">
                           <h4>Referenced Provisions</h4>
                           <div className="draftProvisionList">
-                            {selectedBlockMeta.referencedProvisions.map((item, index) => (
+                            {selectedInsights.referencedProvisions.map((item, index) => (
                               <div
                                 key={`${item.reference_id || item.label || "provision"}-${index}`}
                                 className="draftProvisionItem"
@@ -1098,9 +1193,9 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                       )}
                     <div className="draftInsightGroup">
                       <h4>Document Sources</h4>
-                      {selectedBlockMeta.sourceRefs.length > 0 ? (
+                      {selectedInsights.sourceRefs.length > 0 ? (
                         <div className="draftSourceRefList">
-                          {selectedBlockMeta.sourceRefs.map(renderSourceRef)}
+                          {selectedInsights.sourceRefs.map(renderSourceRef)}
                         </div>
                       ) : (
                         <p className="draftInsightEmpty">
@@ -1110,9 +1205,9 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                     </div>
                     <div className="draftInsightGroup">
                       <h4>Legal Authority</h4>
-                      {selectedBlockMeta.legalSourceRefs.length > 0 ? (
+                      {selectedInsights.legalSourceRefs.length > 0 ? (
                         <div className="draftSourceRefList">
-                          {selectedBlockMeta.legalSourceRefs.map(renderLegalSourceRef)}
+                          {selectedInsights.legalSourceRefs.map(renderLegalSourceRef)}
                         </div>
                       ) : (
                         <p className="draftInsightEmpty">
@@ -1120,46 +1215,31 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                         </p>
                       )}
                     </div>
-                    {(selectedBlockMeta.warnings?.length || selectedBlockMeta.placeholders?.length) ? (
+                    {(selectedInsights.warnings.length || selectedInsights.placeholders.length || selectedAiNotes.length) ? (
                       <div className="draftInsightGroup">
                         <h4>Open Issues</h4>
                         <ul className="draftOpenIssueList">
-                          {(selectedBlockMeta.warnings || []).map((warning, index) => (
+                          {selectedInsights.warnings.map((warning, index) => (
                             <li key={`warning-${index}`}>{warning}</li>
                           ))}
-                          {(selectedBlockMeta.placeholders || []).map((item, index) => (
+                          {selectedInsights.placeholders.map((item, index) => (
                             <li key={`placeholder-${index}`}>Open item: {item}</li>
+                          ))}
+                          {selectedAiNotes.map((note, index) => (
+                            <li key={`ai-note-${index}`}>{note.note}</li>
                           ))}
                         </ul>
                       </div>
                     ) : null}
+                    </div>
                   </div>
                 ) : (
                   <p className="draftInsightEmpty">
-                    Select an AI-generated paragraph or list to inspect supporting sources.
+                    Select highlighted text in the draft to load citations, warnings, and authority support into this drawer.
                   </p>
                 )}
               </div>
 
-              {aiGeneratedComments.length > 0 && (
-                <div className="draftInsightCard">
-                  <p className="draftTemplateEyebrow">AI Review Notes</p>
-                  <div className="draftAiNotesList">
-                    {aiGeneratedComments.map((note: DraftAiReviewNote) => (
-                      <button
-                        key={note.id}
-                        type="button"
-                        className={`draftAiNoteCard severity-${note.severity || "review"}`}
-                        onClick={() => jumpToBlock(note.blockId)}
-                      >
-                        <strong>{note.sectionTitle || note.classification || "Review note"}</strong>
-                        {note.excerpt ? <blockquote>{note.excerpt}</blockquote> : null}
-                        <p>{note.note}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {pendingAnnotation && (

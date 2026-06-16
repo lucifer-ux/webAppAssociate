@@ -4568,6 +4568,154 @@
   }
 }
 
+.matterOverviewWrap,
+.matterOverviewWrap * {
+  min-width: 0;
+}
+
+.matterOverviewWrap h1,
+.matterOverviewWrap h2,
+.matterOverviewWrap h3,
+.matterOverviewWrap h4,
+.matterOverviewWrap p,
+.matterOverviewWrap small,
+.matterOverviewWrap strong,
+.matterOverviewWrap span,
+.matterOverviewWrap button,
+.matterOverviewWrap a,
+.matterOverviewWrap pre {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .matterOverviewWrap {
+    padding: 20px 12px 88px;
+  }
+
+  .matterOverviewHead h1,
+  .matterTitleEditorInput {
+    font-size: clamp(2rem, 10vw, 2.8rem);
+  }
+
+  .matterSubhead {
+    font-size: 16px;
+  }
+
+  .matterOverviewActionRow {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .matterOverviewActionRow > * {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
+    text-align: center;
+  }
+
+  .matterDeleteBtn,
+  .matterAddFilesBtn,
+  .matterMockModeBtn,
+  .matterStartDraftingBtn {
+    min-height: 38px;
+    padding: 10px 12px;
+    white-space: normal;
+  }
+
+  .matterPipelineStrip,
+  .matterStatStrip,
+  .matterMetaGrid,
+  .matterQualityMetrics,
+  .matterStructureGrid,
+  .matterPageIndexList,
+  .matterHealthBody,
+  .matterObligationColumns,
+  .matterPeopleGrid,
+  .matterCompactFactDetailGrid,
+  .matterDraftRecommendationGrid,
+  .matterClarificationUploadGrid,
+  .matterJourneySteps,
+  .matterOverviewSummaryGrid,
+  .matterNextStepCardGrid,
+  .matterNextStepSidebarGrid,
+  .matterCaseViewerWorkspace,
+  .matterAnalysisSecondaryGrid,
+  .matterDraftRecommendationsActions,
+  .matterSourceWorkspace {
+    grid-template-columns: 1fr !important;
+  }
+
+  .matterWorkspacePanelHead,
+  .matterDraftRecommendationsHead,
+  .matterDraftRecommendationGroupHead,
+  .matterDraftRecommendationTop,
+  .matterDraftRecommendationFooter,
+  .matterCaseRowMain,
+  .matterOverviewTitleRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .matterSourceDialog {
+    width: min(100vw - 16px, 1000px);
+    max-height: calc(100vh - 16px);
+  }
+
+  .matterSourcePageRail {
+    padding-bottom: 4px;
+  }
+
+  .matterSourcePageSheet {
+    min-height: 420px;
+    padding: 18px 14px;
+  }
+
+  .matterSourcePageSheet pre,
+  .matterSourceContextRail p {
+    font-size: 12px;
+  }
+
+  .matterObligationPanel {
+    width: 100vw;
+    max-width: 100vw;
+  }
+}
+
+@media (max-width: 480px) {
+  .matterOverviewWrap {
+    padding: 18px 10px 92px;
+  }
+
+  .matterOverviewHead h1,
+  .matterTitleEditorInput {
+    font-size: clamp(1.75rem, 11vw, 2.3rem);
+  }
+
+  .matterOverviewActionRow > * {
+    flex-basis: 100%;
+  }
+
+  .matterPipelineIndex {
+    width: 30px;
+    height: 30px;
+  }
+
+  .matterSourceDialog {
+    width: calc(100vw - 8px);
+    max-height: calc(100vh - 8px);
+  }
+
+  .matterClauseJumpPanel {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+  }
+
+  .matterSourcePageSheet {
+    padding: 16px 12px;
+  }
+}
+
 @keyframes matterFieldShimmer {
   0% {
     background-position: 200% 0;
@@ -4891,6 +5039,60 @@
     border-color 160ms ease,
     background 160ms ease,
     color 160ms ease;
+}
+
+.matterResearchStartBtn {
+  appearance: none;
+  border: 1px solid rgba(48, 92, 67, 0.22);
+  background:
+    linear-gradient(180deg, rgba(243, 253, 247, 0.98), rgba(225, 245, 233, 0.98));
+  color: #23543c;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 10px 20px rgba(48, 92, 67, 0.1);
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.matterResearchStartBtn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(48, 92, 67, 0.34);
+  background:
+    linear-gradient(180deg, rgba(239, 251, 244, 1), rgba(212, 239, 222, 1));
+  color: #1b4731;
+  box-shadow: 0 14px 24px rgba(48, 92, 67, 0.16);
+}
+
+.matterResearchStartBtn:active {
+  transform: translateY(0);
+  box-shadow: 0 8px 16px rgba(48, 92, 67, 0.12);
+}
+
+.matterResearchStartBtn:focus-visible {
+  outline: 2px solid rgba(48, 92, 67, 0.28);
+  outline-offset: 2px;
+}
+
+.matterResearchStartBtn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .matterResearchCancelBtn::before {

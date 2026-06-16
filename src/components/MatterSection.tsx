@@ -951,6 +951,7 @@ const MatterSection = ({
   >([]);
   const [matterSearchError, setMatterSearchError] = useState("");
   const [matterSearchInfo, setMatterSearchInfo] = useState("");
+  const autoStartedAtlasMatterIdsRef = useRef<Set<string>>(new Set());
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(
     null,
   );
@@ -2401,6 +2402,21 @@ const MatterSection = ({
         : isMatterResearchRunning
           ? "live execution"
           : "research queued";
+  const activeAnalysisStatus = String(activeAnalysisState?.status || "").trim();
+  const canStartResearchFromUi =
+    Boolean(activeMatter?.id) &&
+    !isMockMatterId(activeMatter?.id || "") &&
+    !activePrimarySummary &&
+    !shouldShowWorkflowConfirmationState &&
+    !shouldShowClarificationState &&
+    !isMatterResearchRunning;
+  const isResearchStartBlockedByPreparation =
+    isExtractionRunning || isIndexingRunning;
+  const researchStartButtonLabel =
+    activeAnalysisStatus === "atlas_failed" ||
+    activeAnalysisStatus === "atlas_cancelled"
+      ? "Restart research"
+      : "Start research";
 
   useEffect(() => {
     setActiveProgressVariantIndex(0);
@@ -2475,6 +2491,25 @@ const MatterSection = ({
       };
     });
   }, [activeAnalysisState?.status, activeMatter?.id, activePrimarySummary]);
+
+  useEffect(() => {
+    if (!activeMatter?.id || isMockMatterId(activeMatter.id)) return;
+    if (activePrimarySummary) return;
+    if (activeSummaryRunState.running || isExtractionRunning || isIndexingRunning) {
+      return;
+    }
+    if (activeAnalysisStatus) return;
+    if (autoStartedAtlasMatterIdsRef.current.has(activeMatter.id)) return;
+    autoStartedAtlasMatterIdsRef.current.add(activeMatter.id);
+    void runMatterAtlasResearch(activeMatter.id);
+  }, [
+    activeAnalysisStatus,
+    activeMatter?.id,
+    activePrimarySummary,
+    activeSummaryRunState.running,
+    isExtractionRunning,
+    isIndexingRunning,
+  ]);
 
   useEffect(() => {
     const hasOpenPopup =
@@ -6368,6 +6403,18 @@ const MatterSection = ({
                       <span className="matterResearchModeStatus">
                         {researchWorkspaceStatusLabel}
                       </span>
+                      {canStartResearchFromUi && activeMatter ? (
+                        <button
+                          type="button"
+                          className="matterResearchStartBtn"
+                          disabled={isResearchStartBlockedByPreparation}
+                          onClick={() =>
+                            void runMatterAtlasResearch(activeMatter.id)
+                          }
+                        >
+                          {researchStartButtonLabel}
+                        </button>
+                      ) : null}
                       {isMatterResearchRunning && activeMatter ? (
                         <button
                           type="button"
@@ -6707,6 +6754,18 @@ const MatterSection = ({
                           <span className="matterResearchModeStatus">
                             {researchWorkspaceStatusLabel}
                           </span>
+                          {canStartResearchFromUi && activeMatter ? (
+                            <button
+                              type="button"
+                              className="matterResearchStartBtn"
+                              disabled={isResearchStartBlockedByPreparation}
+                              onClick={() =>
+                                void runMatterAtlasResearch(activeMatter.id)
+                              }
+                            >
+                              {researchStartButtonLabel}
+                            </button>
+                          ) : null}
                           {isMatterResearchRunning && activeMatter ? (
                             <button
                               type="button"

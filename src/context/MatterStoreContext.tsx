@@ -1806,33 +1806,34 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
   const setMattersFromServer = useCallback((results: MatterProcessedResult[]) => {
     if (!Array.isArray(results)) return;
 
-    let defaultActiveMatterId: string | null = null;
+    let nextDefaultActiveMatterId: string | null = null;
+    let containsCurrentActiveMatter = false;
 
     setMatters((prev) => {
-      const next = [...prev];
-      results.forEach((result) => {
-        const existing = next.find((item) => item.id === result.matter.id);
+      const next = results.map((result) => {
+        const existing = prev.find((item) => item.id === result.matter.id);
         if (existing) {
-          const patched = buildMatterRecord(result, existing.version, existing.people);
-          const index = next.findIndex((item) => item.id === existing.id);
-          next[index] = patched;
-          return;
+          return buildMatterRecord(result, existing.version, existing.people);
         }
-        next.push(buildMatterRecord(result, 1));
+        return buildMatterRecord(result, 1);
       });
 
       next.sort(
         (a, b) =>
           new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
       );
-      defaultActiveMatterId = next[0]?.id || null;
+      nextDefaultActiveMatterId = next[0]?.id || null;
+      containsCurrentActiveMatter = next.some(
+        (matter) => matter.id === activeMatterId,
+      );
       return next;
     });
 
-    if (defaultActiveMatterId) {
-      setActiveMatterId((current) => current || defaultActiveMatterId);
-    }
-  }, []);
+    setActiveMatterId((current) => {
+      if (current && containsCurrentActiveMatter) return current;
+      return nextDefaultActiveMatterId;
+    });
+  }, [activeMatterId]);
 
   const deleteMatter = (matterId: string) => {
     setMatters((prev) => prev.filter((matter) => matter.id !== matterId));
