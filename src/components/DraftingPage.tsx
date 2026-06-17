@@ -1039,7 +1039,7 @@ const DraftingPage = () => {
     void poll();
     intervalId = window.setInterval(() => {
       void poll();
-    }, 4000);
+    }, 1500);
 
     return () => {
       cancelled = true;
