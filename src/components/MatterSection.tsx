@@ -168,6 +168,48 @@ const normalizeInline = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const formatUnknownLabel = (value: unknown) => {
+  if (typeof value === "string") return normalizeInline(value);
+  if (typeof value === "number" || typeof value === "boolean") {
+    return normalizeInline(String(value));
+  }
+  if (value && typeof value === "object") {
+    const candidate = value as {
+      label?: unknown;
+      title?: unknown;
+      name?: unknown;
+      description?: unknown;
+      reason?: unknown;
+      value?: unknown;
+      marker?: unknown;
+      text?: unknown;
+      section?: unknown;
+      warning_type?: unknown;
+    };
+    const parts = [
+      typeof candidate.label === "string" ? candidate.label : "",
+      typeof candidate.title === "string" ? candidate.title : "",
+      typeof candidate.name === "string" ? candidate.name : "",
+      typeof candidate.description === "string" ? candidate.description : "",
+      typeof candidate.reason === "string" ? candidate.reason : "",
+      typeof candidate.value === "string" ? candidate.value : "",
+      typeof candidate.marker === "string" ? candidate.marker : "",
+      typeof candidate.text === "string" ? candidate.text : "",
+      typeof candidate.section === "string" ? candidate.section : "",
+      typeof candidate.warning_type === "string" ? candidate.warning_type : "",
+    ]
+      .map((item) => normalizeInline(item))
+      .filter(Boolean);
+    if (parts.length) return parts.join(" — ");
+    try {
+      return normalizeInline(JSON.stringify(value));
+    } catch {
+      return "";
+    }
+  }
+  return "";
+};
+
 const formatSummaryTypeLabel = (value: string) => {
   const normalized = String(value || "")
     .trim()
@@ -1317,7 +1359,7 @@ const MatterSection = ({
     secondaryClassification?.classification_markers,
   )
     ? secondaryClassification.classification_markers
-        .map((item) => String(item || "").trim())
+        .map((item) => formatUnknownLabel(item))
         .filter(Boolean)
         .slice(0, 12)
     : [];
@@ -1600,17 +1642,17 @@ const MatterSection = ({
   const missingProofItems = useMemo(() => {
     if (activeAtlasMatterBrief?.remainingGaps?.length) {
       return activeAtlasMatterBrief.remainingGaps
-        .map((item) => normalizeInline(item))
+        .map((item) => formatUnknownLabel(item))
         .filter(Boolean);
     }
     if (activeAtlasCheckpoint?.gapClassification?.factualProofMissing?.length) {
       return activeAtlasCheckpoint.gapClassification.factualProofMissing
-        .map((item) => normalizeInline(item))
+        .map((item) => formatUnknownLabel(item))
         .filter(Boolean);
     }
     if (activeAtlasCheckpoint?.missingWorkflowRequirements?.length) {
       return activeAtlasCheckpoint.missingWorkflowRequirements
-        .map((item) => normalizeInline(item))
+        .map((item) => formatUnknownLabel(item))
         .filter(Boolean);
     }
     return (activeOverview?.gapsToClose || []).map((item) =>
@@ -6552,7 +6594,7 @@ const MatterSection = ({
                                   .filter((item) => item.trim().length > 0)
                                   .map((item, index, array) => (
                                     <li
-                                      key={item}
+                                      key={`missing-proof-${index}-${item.slice(0, 48)}`}
                                       className="is-warning matterChecklistActionItem"
                                     >
                                       <ShieldAlert size={15} />
@@ -7239,9 +7281,9 @@ const MatterSection = ({
                         {secondaryClassificationMarkers.length ? (
                           <div className="matterSecondaryTagSection">
                             <div className="matterSecondaryTagList">
-                              {secondaryClassificationMarkers.map((marker) => (
+                              {secondaryClassificationMarkers.map((marker, index) => (
                                 <span
-                                  key={marker}
+                                  key={`secondary-marker-${index}-${marker.slice(0, 48)}`}
                                   className={`matterSecondaryTag ${
                                     secondaryUserDefinedTags.some(
                                       (tag) =>

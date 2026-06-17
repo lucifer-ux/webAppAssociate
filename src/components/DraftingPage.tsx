@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { generateJSON } from "@tiptap/html";
 import type { JSONContent } from "@tiptap/core";
-import { X } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import Button from "./Button";
 import Loader from "./Loader";
@@ -212,6 +212,40 @@ type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error" | "loading";
 
 const normalizeCheckpointText = (value: unknown) =>
   String(value || "").replaceAll("\n", " ").replaceAll("\t", " ").trim().toLowerCase();
+
+const renderWarningText = (warning: unknown) => {
+  if (typeof warning === "string") {
+    return warning.trim();
+  }
+  if (warning && typeof warning === "object") {
+    const candidate = warning as {
+      description?: unknown;
+      section?: unknown;
+      warning_type?: unknown;
+      message?: unknown;
+      note?: unknown;
+    };
+    const description =
+      typeof candidate.description === "string" ? candidate.description.trim() : "";
+    const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
+    const note = typeof candidate.note === "string" ? candidate.note.trim() : "";
+    const section = typeof candidate.section === "string" ? candidate.section.trim() : "";
+    const warningType =
+      typeof candidate.warning_type === "string" ? candidate.warning_type.trim() : "";
+    const mainText = description || message || note;
+    if (section && mainText) return `${section}: ${mainText}`;
+    if (mainText) return mainText;
+    if (section && warningType) return `${section}: ${warningType}`;
+    if (section) return section;
+    if (warningType) return warningType;
+    try {
+      return JSON.stringify(warning);
+    } catch {
+      return "";
+    }
+  }
+  return String(warning || "").trim();
+};
 
 const shouldShowCheckpointQuestion = (
   question: DraftGenerationCheckpoint["questions"][number],
@@ -471,6 +505,13 @@ const DraftingPage = () => {
   const [dismissedDraftSidePanelKey, setDismissedDraftSidePanelKey] = useState("");
   const isDraftSidePanelVisible =
     Boolean(draftSidePanelKey) && draftSidePanelKey !== dismissedDraftSidePanelKey;
+  const hasDraftSidePanelContent = Boolean(
+    draftGenerationThread ||
+      draftGenerationCheckpoint ||
+      (startDraftFromQuery && !activeDraft) ||
+      formatProposal ||
+      formatGenerationError,
+  );
   const openMatterSupportUploader = useCallback(
     (documentLabel: string, reason: string) => {
       if (activeMatter?.id) {
@@ -1108,6 +1149,8 @@ const DraftingPage = () => {
       setDraftGenerationError("Draft generation thread is not ready yet. Please retry.");
       return;
     }
+    const previousThread = draftGenerationThread;
+    const previousCheckpoint = draftGenerationCheckpoint;
     try {
       setIsSubmittingDraftGeneration(true);
       setDraftGenerationError("");
@@ -1139,6 +1182,16 @@ const DraftingPage = () => {
         chosenAction,
         answers,
       });
+      setDraftGenerationThread((current) =>
+        current
+          ? {
+              ...current,
+              status: "running",
+              checkpointPayload: null,
+            }
+          : current,
+      );
+      setDraftGenerationCheckpoint(null);
       const payload = await continueMatterDraftGeneration({
         matterId,
         threadId,
@@ -1159,6 +1212,8 @@ const DraftingPage = () => {
       setDraftGenerationCheckpoint(null);
       setDraftGenerationAnswers({});
     } catch (error) {
+      setDraftGenerationThread(previousThread);
+      setDraftGenerationCheckpoint(previousCheckpoint);
       setDraftGenerationError(
         error instanceof Error
           ? error.message
@@ -1438,7 +1493,19 @@ const DraftingPage = () => {
           canRenderEditor ? "draftingMain" : "draftingTemplateMain"
         } draftingNoAppSidebar`}
       >
-        {isDraftSidePanelVisible && (draftGenerationThread || draftGenerationCheckpoint || (startDraftFromQuery && !activeDraft)) && (
+        {!isDraftSidePanelVisible && hasDraftSidePanelContent ? (
+          <button
+            type="button"
+            className="draftFormatProposalReveal"
+            aria-label="Open draft generation panel"
+            onClick={() => setDismissedDraftSidePanelKey("")}
+          >
+            <ChevronLeft size={16} />
+          </button>
+        ) : null}
+        {isDraftSidePanelVisible &&
+        (draftGenerationThread || (startDraftFromQuery && !activeDraft)) &&
+        !draftGenerationCheckpoint ? (
           <aside className="draftFormatProposal">
             <button
               type="button"
@@ -1489,15 +1556,11 @@ const DraftingPage = () => {
                 <div>
                   <p className="draftTemplateEyebrow">Draft Generation</p>
                   <h2>
-                    {draftGenerationCheckpoint
-                      ? draftGenerationCheckpoint.title
-                      : activeDraft?.title || draftLabelFromQuery || "Preparing draft"}
+                    {activeDraft?.title || draftLabelFromQuery || "Preparing draft"}
                   </h2>
                   <p className="draftFormatLead">
                     {draftGenerationTypedStatus ||
-                      (draftGenerationCheckpoint
-                        ? "Associate needs a few confirmations before stronger drafting can continue."
-                        : "Associate is preparing the draft and will add sections as they are validated.")}
+                      "Associate is preparing the draft and will add sections as they are validated."}
                     {draftGenerationThread?.status === "running" ? " |" : ""}
                   </p>
                   {draftGenerationThread?.uiSummary?.format ? (
@@ -1539,9 +1602,15 @@ const DraftingPage = () => {
                   ) : null}
                   {draftGenerationThread?.uiSummary?.criticReport?.warnings?.length ? (
                     <div className="draftFormatSources">
-                      {draftGenerationThread.uiSummary.criticReport.warnings.slice(0, 4).map((warning) => (
-                        <span key={warning}>Critic: {warning}</span>
-                      ))}
+                      {draftGenerationThread.uiSummary.criticReport.warnings
+                        .map((warning) => renderWarningText(warning))
+                        .filter(Boolean)
+                        .slice(0, 4)
+                        .map((warning, index) => (
+                          <span key={`critic-warning-${index}-${warning.slice(0, 48)}`}>
+                            Critic: {warning}
+                          </span>
+                        ))}
                     </div>
                   ) : null}
                   {draftGenerationError ? <p>{draftGenerationError}</p> : null}
@@ -1556,9 +1625,17 @@ const DraftingPage = () => {
               </>
             )}
           </aside>
-        )}
-        {draftGenerationCheckpoint ? (
+        ) : null}
+        {isDraftSidePanelVisible && draftGenerationCheckpoint ? (
           <aside className="draftFormatProposal">
+            <button
+              type="button"
+              className="draftFormatProposalClose"
+              aria-label="Close draft generation panel"
+              onClick={() => setDismissedDraftSidePanelKey(draftSidePanelKey)}
+            >
+              <X size={16} />
+            </button>
             <div>
               <p className="draftTemplateEyebrow">
                 {getDraftCheckpointEyebrow(draftGenerationCheckpoint)}
@@ -1715,8 +1792,16 @@ const DraftingPage = () => {
             </div>
           </aside>
         ) : null}
-        {(formatProposal || formatGenerationError) && (
+        {isDraftSidePanelVisible && (formatProposal || formatGenerationError) ? (
           <aside className="draftFormatProposal">
+            <button
+              type="button"
+              className="draftFormatProposalClose"
+              aria-label="Close draft generation panel"
+              onClick={() => setDismissedDraftSidePanelKey(draftSidePanelKey)}
+            >
+              <X size={16} />
+            </button>
             <div>
               <p className="draftTemplateEyebrow">AI Format Proposal</p>
               <h2>{formatProposal?.title || "Format generation failed"}</h2>
@@ -1748,7 +1833,7 @@ const DraftingPage = () => {
               ) : null}
             </div>
           </aside>
-        )}
+        ) : null}
         {activeDraft ? (
           <DraftingDocument
             ref={editorRef}

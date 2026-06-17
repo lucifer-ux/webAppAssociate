@@ -93,7 +93,7 @@ export type DraftBlockMeta = {
   recommendationPosture?: string;
   referencedProvisions?: DraftReferencedProvision[];
   placeholders?: string[];
-  warnings?: string[];
+  warnings?: unknown[];
   createdByAi?: boolean;
 };
 
@@ -519,9 +519,9 @@ export type DraftGenerationThread = {
     gapOwnership?: Record<string, number>;
     criticReport?: {
       draft_quality_report?: string;
-      blocking_issues?: string[];
-      warnings?: string[];
-      suggested_fixes?: string[];
+      blocking_issues?: unknown[];
+      warnings?: unknown[];
+      suggested_fixes?: unknown[];
       ready_for_lawyer_review?: boolean;
     } | null;
     sourceCoverage?: {

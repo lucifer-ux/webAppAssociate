@@ -34,11 +34,15 @@ const Button = ({
 
   const content = children ?? text;
   const shouldRenderImage = showImage && Boolean(image);
+  const isIconOnly = shouldRenderImage && !content;
+  const finalClassName = [resolvedClassName, isIconOnly ? "buttonStyleIconOnly" : ""]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <button
       type={type}
-      className={resolvedClassName}
+      className={finalClassName}
       style={{
         ...(backgroundColor ? { backgroundColor } : {}),
         ...(color ? { color } : {}),

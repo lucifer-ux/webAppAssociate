@@ -28,6 +28,40 @@ import type {
 
 export type { AccessRole, DraftComment, PendingAnnotation, ParagraphStyle, ZoomLevel } from "./draftingApi";
 
+const renderWarningText = (warning: unknown) => {
+  if (typeof warning === "string") {
+    return warning.trim();
+  }
+  if (warning && typeof warning === "object") {
+    const candidate = warning as {
+      description?: unknown;
+      section?: unknown;
+      warning_type?: unknown;
+      message?: unknown;
+      note?: unknown;
+    };
+    const description =
+      typeof candidate.description === "string" ? candidate.description.trim() : "";
+    const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
+    const note = typeof candidate.note === "string" ? candidate.note.trim() : "";
+    const section = typeof candidate.section === "string" ? candidate.section.trim() : "";
+    const warningType =
+      typeof candidate.warning_type === "string" ? candidate.warning_type.trim() : "";
+    const mainText = description || message || note;
+    if (section && mainText) return `${section}: ${mainText}`;
+    if (mainText) return mainText;
+    if (section && warningType) return `${section}: ${warningType}`;
+    if (section) return section;
+    if (warningType) return warningType;
+    try {
+      return JSON.stringify(warning);
+    } catch {
+      return "";
+    }
+  }
+  return String(warning || "").trim();
+};
+
 export type DraftHeadingItem = {
   id: string;
   level: number;
@@ -449,7 +483,10 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
           const key = JSON.stringify(item);
           if (!provisions.has(key)) provisions.set(key, item);
         });
-        (blockMeta.warnings || []).forEach((warning) => warnings.add(warning));
+        (blockMeta.warnings || []).forEach((warning) => {
+          const normalized = renderWarningText(warning);
+          if (normalized) warnings.add(normalized);
+        });
         (blockMeta.placeholders || []).forEach((item) => placeholders.add(item));
         if (blockMeta.evidenceStatus) evidenceStatuses.add(blockMeta.evidenceStatus);
         if (blockMeta.sourceType) sourceTypes.add(blockMeta.sourceType);
@@ -1220,7 +1257,7 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                         <h4>Open Issues</h4>
                         <ul className="draftOpenIssueList">
                           {selectedInsights.warnings.map((warning, index) => (
-                            <li key={`warning-${index}`}>{warning}</li>
+                          <li key={`warning-${index}`}>{warning}</li>
                           ))}
                           {selectedInsights.placeholders.map((item, index) => (
                             <li key={`placeholder-${index}`}>Open item: {item}</li>

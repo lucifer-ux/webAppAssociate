@@ -19,4 +19,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+}
+
+.buttonStyleIconOnly {
+  padding: 0;
+  gap: 0;
 }
