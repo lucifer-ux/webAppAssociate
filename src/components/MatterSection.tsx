@@ -7906,18 +7906,23 @@ const MatterSection = ({
                             <Button
                               type="button"
                               className="matterStartDraftingBtn"
+                              disabled={item.isStartable === false}
                               onClick={() =>
-                                void startAtlasDraftGeneration(
-                                  {
-                                    id: item.id,
-                                    draftType: item.draftType,
-                                    title: item.title,
-                                  },
-                                  "drafts",
-                                )
+                                item.isStartable === false
+                                  ? undefined
+                                  : void startAtlasDraftGeneration(
+                                      {
+                                        id: item.id,
+                                        draftType: item.draftType,
+                                        title: item.title,
+                                      },
+                                      "drafts",
+                                    )
                               }
                             >
-                              Start drafting
+                              {item.isStartable === false
+                                ? "Not yet supported"
+                                : "Start drafting"}
                             </Button>
                           </div>
                           <p className="matterNextStepsPreview">
@@ -7932,6 +7937,11 @@ const MatterSection = ({
                               activeAtlasMatterBrief?.usedWorkflow?.name || "",
                             ])}
                           </p>
+                          {item.availabilityNote ? (
+                            <p className="matterNextStepsMeta">
+                              {item.availabilityNote}
+                            </p>
+                          ) : null}
                           {dependencies.length ? (
                             <div className="matterNextStepsAccordionBody">
                               <ul className="matterBulletList">
@@ -9403,9 +9413,9 @@ const MatterSection = ({
                   </p>
                 </div>
 
-                <div className="matterClarificationOptionList">
-                  {activeAtlasRecognition.candidateWorkflows.map(
-                    (candidate: AtlasBaseRecognitionCandidate) => (
+	                <div className="matterClarificationOptionList">
+	                  {activeAtlasRecognition.candidateWorkflows.map(
+	                    (candidate: AtlasBaseRecognitionCandidate) => (
                       <button
                         type="button"
                         key={candidate.workflowId}
@@ -9422,22 +9432,45 @@ const MatterSection = ({
                         }
                       >
                         <span className="matterClarificationOptionCheck" />
-                        <span className="matterClarificationOptionContent">
-                          <strong>
-                            {candidate.workflowName ||
-                              formatAtlasLabel(candidate.workflowId)}
-                          </strong>
-                          <small>
-                            {candidate.areaName ||
-                              formatAtlasLabel(candidate.areaId)}
-                          </small>
-                        </span>
-                      </button>
-                    ),
-                  )}
-                </div>
+	                        <span className="matterClarificationOptionContent">
+	                          <strong>
+	                            {candidate.workflowName ||
+	                              formatAtlasLabel(candidate.workflowId)}
+	                          </strong>
+	                          <small>
+	                            {candidate.areaName ||
+	                              formatAtlasLabel(candidate.areaId)}
+	                          </small>
+	                          {candidate.trigger ? (
+	                            <small>{candidate.trigger}</small>
+	                          ) : null}
+	                        </span>
+	                      </button>
+	                    ),
+	                  )}
+	                </div>
+	                {Array.isArray(activeAtlasRecognition?.conflictingSignals) &&
+	                activeAtlasRecognition.conflictingSignals.length ? (
+	                  <div className="matterClarificationConflictNote">
+	                    {activeAtlasRecognition.conflictingSignals.map((item) => (
+	                      <p
+	                        key={`${item.type}:${item.values.join("|")}`}
+	                        className="matterClarificationMeta"
+	                      >
+	                        Signal conflict in {item.type.replace(/_/g, " ")}:{" "}
+	                        {item.values.join(", ")}
+	                      </p>
+	                    ))}
+	                  </div>
+	                ) : null}
+	                {activeAtlasRecognition?.forumMismatch ? (
+	                  <p className="matterClarificationMeta">
+	                    Extracted forum signals do not cleanly match the top
+	                    workflow forum.
+	                  </p>
+	                ) : null}
 
-                <div className="matterClarificationChoiceFlow">
+	                <div className="matterClarificationChoiceFlow">
                   <UiInput
                     type="text"
                     value={activeWorkflowOverrideNote}

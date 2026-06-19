@@ -3,6 +3,24 @@ const normalizeBaseUrl = (value: string) =>
     .trim()
     .replace(/\/+$/, "");
 
+const LOCAL_HOSTNAME_PATTERN = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i;
+
+const isLocalHostname = (value: string) =>
+  LOCAL_HOSTNAME_PATTERN.test(String(value || "").trim());
+
+const shouldUseDevProxy = (explicitApiBaseUrl: string) => {
+  if (!import.meta.env.DEV || !explicitApiBaseUrl || typeof window === "undefined") {
+    return false;
+  }
+  try {
+    const configuredUrl = new URL(explicitApiBaseUrl);
+    const currentUrl = new URL(window.location.origin);
+    return isLocalHostname(configuredUrl.hostname) && isLocalHostname(currentUrl.hostname);
+  } catch {
+    return false;
+  }
+};
+
 const frontendEnv = import.meta.env as Record<string, string | undefined>;
 
 const DEFAULT_DEV_API_BASE_URL = "";
@@ -13,7 +31,7 @@ const EXPLICIT_API_BASE_URL = normalizeBaseUrl(
 );
 
 export const apiBaseUrl = normalizeBaseUrl(
-  EXPLICIT_API_BASE_URL ||
+  (shouldUseDevProxy(EXPLICIT_API_BASE_URL) ? "" : EXPLICIT_API_BASE_URL) ||
     (import.meta.env.DEV
       ? DEFAULT_DEV_API_BASE_URL
       : DEFAULT_PROD_API_BASE_URL),

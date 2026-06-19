@@ -721,9 +721,13 @@ export type AtlasBaseRecognitionCandidate = {
   areaName?: string;
   score: number;
   confidence: "high" | "medium" | "low";
+  confidenceScore?: number;
   whyItMatches: string;
   matchedSignals: string[];
   missingSignals: string[];
+  trigger?: string | null;
+  objective?: string | null;
+  forum?: string | null;
 };
 
 export type AtlasRequirementsPreview = {
@@ -738,9 +742,25 @@ export type AtlasBaseRecognitionResult = {
   status: "needs_confirmation" | "confirmed" | "needs_input" | "blocked";
   primaryWorkflowId: string | null;
   primaryWorkflowName?: string | null;
+  primaryAreaId?: string | null;
   primaryAreaName?: string | null;
   primaryReason: string | null;
+  candidateAreas?: Array<{
+    areaKey: string;
+    areaId: string;
+    areaName: string;
+    confidence: number;
+    reason: string;
+  }>;
   candidateWorkflows: AtlasBaseRecognitionCandidate[];
+  matchedSignals?: string[];
+  conflictingSignals?: Array<{
+    type: string;
+    values: string[];
+  }>;
+  forumMismatch?: boolean;
+  triggerMatchPenaltyApplied?: boolean;
+  requiresConfirmation?: boolean;
   atlasRequirementsPreview: AtlasRequirementsPreview | null;
   checkpoint: {
     type: "workflow_confirmation";
@@ -748,6 +768,11 @@ export type AtlasBaseRecognitionResult = {
     primaryWorkflowId: string | null;
     candidates: AtlasBaseRecognitionCandidate[];
     canAcceptPrimary: boolean;
+    areaName?: string;
+    conflictingSignals?: Array<{
+      type: string;
+      values: string[];
+    }>;
   } | null;
 };
 
@@ -870,6 +895,8 @@ export type AtlasNextStepsAnalysis = {
     priority: "high" | "medium" | "low";
     unblocksWhen: string[];
     dependsOn: string[];
+    isStartable?: boolean;
+    availabilityNote?: string;
   }>;
   systemWorkingOn: Array<{
     id: string;
