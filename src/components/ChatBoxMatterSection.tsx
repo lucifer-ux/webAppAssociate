@@ -56,8 +56,9 @@ const SUGGESTED_PROMPTS = [
 
 const ASSISTANT_SKIP_MESSAGE =
   "Sure, I will think about the brief with the data that I have.";
-const TYPEWRITER_DELAY_MS = 28;
-const TYPEWRITER_CLOSE_DELAY_MS = 420;
+const TYPEWRITER_DELAY_MS = 8;
+const TYPEWRITER_CHUNK_SIZE = 4;
+const TYPEWRITER_CLOSE_DELAY_MS = 180;
 
 const ChatBoxMatterSection = ({
   open,
@@ -152,7 +153,11 @@ const ChatBoxMatterSection = ({
 
     const skipPromise = Promise.resolve(onSkipClarification?.());
 
-    for (let index = 1; index <= ASSISTANT_SKIP_MESSAGE.length; index += 1) {
+    for (
+      let index = TYPEWRITER_CHUNK_SIZE;
+      index <= ASSISTANT_SKIP_MESSAGE.length + TYPEWRITER_CHUNK_SIZE;
+      index += TYPEWRITER_CHUNK_SIZE
+    ) {
       setTypingMessage(ASSISTANT_SKIP_MESSAGE.slice(0, index));
       await new Promise((resolve) =>
         window.setTimeout(resolve, TYPEWRITER_DELAY_MS),

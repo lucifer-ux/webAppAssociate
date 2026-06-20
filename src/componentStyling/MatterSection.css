@@ -4604,6 +4604,7 @@
   .matterOverviewActionRow {
     display: flex;
     width: 100%;
+    flex-wrap: wrap;
     gap: 8px;
   }
 
@@ -4620,6 +4621,24 @@
     min-height: 38px;
     padding: 10px 12px;
     white-space: normal;
+  }
+
+  .matterPipelineStep,
+  .matterStatCard,
+  .matterWorkspacePanel,
+  .matterAnalysisPanel,
+  .matterAnalysisHero {
+    border-radius: 14px;
+  }
+
+  .matterWorkspaceTabs {
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .matterWorkspaceTabs > * {
+    flex: 0 0 auto;
   }
 
   .matterPipelineStrip,
@@ -4693,6 +4712,16 @@
 
   .matterOverviewActionRow > * {
     flex-basis: 100%;
+  }
+
+  .matterPipelineStrip,
+  .matterStatStrip {
+    gap: 8px;
+  }
+
+  .matterPipelineStep,
+  .matterStatCard {
+    padding: 10px;
   }
 
   .matterPipelineIndex {
@@ -5980,6 +6009,14 @@
 }
 
 @media (max-width: 1180px) {
+  .matterPipelineStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .matterStatStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .matterAnalysisGrid,
   .matterJourneySteps,
   .matterAnalysisSecondaryGrid {

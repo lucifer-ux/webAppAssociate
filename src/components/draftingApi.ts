@@ -77,6 +77,18 @@ export type DraftReferencedProvision = {
   evidence_bundle_id?: string;
 };
 
+export type DraftPendingChange = {
+  id: string;
+  block_id?: string;
+  removed_text?: string;
+  added_text?: string;
+  proposed_by?: string;
+  status?: string;
+  reason?: string;
+  source_issue_ids?: string[];
+  created_at?: string;
+};
+
 export type DraftBlockMeta = {
   blockId: string;
   sectionId?: string;
@@ -94,6 +106,7 @@ export type DraftBlockMeta = {
   referencedProvisions?: DraftReferencedProvision[];
   placeholders?: string[];
   warnings?: unknown[];
+  pendingChanges?: DraftPendingChange[];
   createdByAi?: boolean;
 };
 
@@ -144,6 +157,20 @@ export type DraftDetail = DraftSummary & {
   contentHash: string;
   context: DraftContext;
   createdAt: string;
+};
+
+export type DraftVersionSummary = {
+  id: string;
+  draftId: string;
+  saveVersion: number;
+  saveReason: string;
+  contentHash: string;
+  changeSummary: string | null;
+  createdAt: string;
+};
+
+export type DraftVersionDetail = DraftVersionSummary & {
+  snapshotJson: Record<string, unknown>;
 };
 
 export type DraftComment = {
@@ -275,6 +302,30 @@ export const getDraft = async (draftId: string) => {
   );
   const payload = await readJson<{ draft: DraftDetail; success: true }>(response);
   return payload.draft;
+};
+
+export const listDraftVersions = async (draftId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/versions`),
+    {
+      headers: buildDraftHeaders(false),
+    },
+  );
+  const payload = await readJson<{ versions: DraftVersionSummary[]; success: true }>(response);
+  return Array.isArray(payload.versions) ? payload.versions : [];
+};
+
+export const getDraftVersion = async (draftId: string, saveVersion: number) => {
+  const response = await fetch(
+    buildApiUrl(
+      `/api/drafts/${encodeURIComponent(draftId)}/versions/${encodeURIComponent(String(saveVersion))}`,
+    ),
+    {
+      headers: buildDraftHeaders(false),
+    },
+  );
+  const payload = await readJson<{ version: DraftVersionDetail; success: true }>(response);
+  return payload.version;
 };
 
 export const patchDraft = async (

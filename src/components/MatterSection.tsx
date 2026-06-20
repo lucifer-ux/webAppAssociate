@@ -39,6 +39,7 @@ import {
   type ClarificationCheckpoint,
   type ClauseItem,
   type ContextCoreMatterState,
+  type EvidenceReference,
   type FrontendBriefArtifact,
   type MatterDraftRecommendation,
   type MatterDraftRecommendations,
@@ -222,6 +223,71 @@ const formatSummaryTypeLabel = (value: string) => {
   return "Processing";
 };
 
+const dedupeEvidenceItems = (
+  items: EvidenceReference["evidenceItems"],
+): EvidenceReference["evidenceItems"] => {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = [
+      String(item.documentName || "").trim().toLowerCase(),
+      item.pageNumber == null ? "" : String(item.pageNumber),
+      String(item.section || "").trim().toLowerCase(),
+      normalizeInline(item.excerpt).toLowerCase(),
+      String(item.slot || "").trim().toLowerCase(),
+    ].join("::");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const buildEvidenceReferenceFromSourceRefs = (
+  refs: Array<{
+    documentName: string;
+    pageNumber: number | null;
+    section: string | null;
+    excerpt: string;
+    slot: string;
+    confidence: "high" | "medium" | "low";
+    evidenceAnswerId?: string;
+  }>,
+): EvidenceReference | null => {
+  const evidenceItems = dedupeEvidenceItems(
+    refs
+      .map((ref, index) => ({
+        id: `derived_evidence_${index}`,
+        evidenceAnswerId:
+          String(ref.evidenceAnswerId || "").trim() || `derived_evidence_${index}`,
+        documentName: String(ref.documentName || "").trim(),
+        pageNumber:
+          typeof ref.pageNumber === "number" && Number.isFinite(ref.pageNumber)
+            ? ref.pageNumber
+            : null,
+        section: String(ref.section || "").trim() || null,
+        excerpt: normalizeInline(ref.excerpt),
+        slot: String(ref.slot || "record excerpt").trim() || "record excerpt",
+        confidence: ref.confidence,
+      }))
+      .filter((item) => item.documentName && item.excerpt),
+  );
+  if (!evidenceItems.length) return null;
+  const grouped = new Map<string, string[]>();
+  for (const item of evidenceItems) {
+    const title = item.documentName;
+    const existing = grouped.get(title) || [];
+    existing.push(item.id);
+    grouped.set(title, existing);
+  }
+  return {
+    evidenceItems,
+    citationGroups: Array.from(grouped.entries()).map(([title, evidenceIds]) => ({
+      id: `citation_group_${title.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+      title,
+      evidenceIds,
+    })),
+  };
+};
+
 const formatAtlasLabel = (value: string) =>
   String(value || "")
     .replace(/[_-]+/g, " ")
@@ -281,11 +347,13 @@ const useTypewriterText = (
     enabled?: boolean;
     speed?: number;
     startDelayMs?: number;
+    chunkSize?: number;
   },
 ) => {
   const enabled = options?.enabled !== false;
   const speed = options?.speed ?? 12;
   const startDelayMs = options?.startDelayMs ?? 0;
+  const chunkSize = Math.max(1, Math.floor(options?.chunkSize ?? 3));
   const [visibleLength, setVisibleLength] = useState(
     enabled ? 0 : String(text || "").length,
   );
@@ -308,7 +376,7 @@ const useTypewriterText = (
             window.clearInterval(intervalId);
             return current;
           }
-          const next = Math.min(normalizedText.length, current + 1);
+          const next = Math.min(normalizedText.length, current + chunkSize);
           if (next >= normalizedText.length) {
             window.clearInterval(intervalId);
           }
@@ -326,7 +394,7 @@ const useTypewriterText = (
       window.clearTimeout(timeoutId);
       window.clearInterval(intervalId);
     };
-  }, [enabled, normalizedText, speed, startDelayMs]);
+  }, [chunkSize, enabled, normalizedText, speed, startDelayMs]);
 
   return normalizedText.slice(0, visibleLength);
 };
@@ -337,11 +405,13 @@ const useTypewriterList = (
     enabled?: boolean;
     speed?: number;
     startDelayMs?: number;
+    chunkSize?: number;
   },
 ) => {
   const enabled = options?.enabled !== false;
   const speed = options?.speed ?? 10;
   const startDelayMs = options?.startDelayMs ?? 0;
+  const chunkSize = Math.max(1, Math.floor(options?.chunkSize ?? 3));
   const normalizedItems = useMemo(
     () => items.map((item) => String(item || "")),
     [items],
@@ -373,7 +443,7 @@ const useTypewriterList = (
             window.clearInterval(intervalId);
             return current;
           }
-          const next = Math.min(totalLength, current + 1);
+          const next = Math.min(totalLength, current + chunkSize);
           if (next >= totalLength) {
             window.clearInterval(intervalId);
           }
@@ -391,7 +461,7 @@ const useTypewriterList = (
       window.clearTimeout(timeoutId);
       window.clearInterval(intervalId);
     };
-  }, [enabled, speed, startDelayMs, totalLength]);
+  }, [chunkSize, enabled, speed, startDelayMs, totalLength]);
 
   return useMemo(() => {
     if (!enabled) return normalizedItems;
@@ -1116,8 +1186,6 @@ const MatterSection = ({
   const activeBriefArtifact = activeLegalBriefArtifact;
   const activeOverview = activeLegalBriefArtifact?.overview || null;
   const activeDetailedBrief = activeLegalBriefArtifact?.detailedBrief || null;
-  const activeEvidenceReference =
-    activeLegalBriefArtifact?.evidenceReference || null;
   const activeClarificationCheckpoint =
     ((activeMatter?.clarificationCheckpoint ||
       activeMatter?.analysis_state?.pendingClarification ||
@@ -1616,6 +1684,160 @@ const MatterSection = ({
       }))
       .filter((card) => card.id && card.title && card.factText);
   }, [groundAnalysis?.cards, secondaryAnalysis?.extracted_facts]);
+  const activeEvidenceReference = useMemo<EvidenceReference | null>(() => {
+    if (activeLegalBriefArtifact?.evidenceReference?.evidenceItems?.length) {
+      return activeLegalBriefArtifact.evidenceReference;
+    }
+
+    const derivedRefs: Array<{
+      documentName: string;
+      pageNumber: number | null;
+      section: string | null;
+      excerpt: string;
+      slot: string;
+      confidence: "high" | "medium" | "low";
+      evidenceAnswerId?: string;
+    }> = [];
+
+    for (const point of briefPoints) {
+      for (const sourceRef of point.sourceRefs) {
+        derivedRefs.push({
+          documentName: String(
+            sourceRef.fileName || point.sourceDocument || "Matter record",
+          ).trim(),
+          pageNumber: sourceRef.pageStart,
+          section: null,
+          excerpt:
+            String(sourceRef.verbatimBasis || "").trim() ||
+            String(point.detail || "").trim(),
+          slot: String(point.heading || "Brief point").trim() || "Brief point",
+          confidence:
+            point.certainty === "high" || point.certainty === "low"
+              ? point.certainty
+              : "medium",
+          evidenceAnswerId: point.id,
+        });
+      }
+    }
+
+    if (Array.isArray(secondaryAnalysis?.extracted_facts)) {
+      secondaryAnalysis.extracted_facts.forEach((fact, index) => {
+        const factRecord = fact as {
+          fact_id?: string;
+          assertion?: string;
+          source_refs?: MatterSignalSourceRef[];
+        };
+        const sourceRefs = Array.isArray(factRecord.source_refs)
+          ? factRecord.source_refs
+          : [];
+        sourceRefs.forEach((sourceRef) => {
+          derivedRefs.push({
+            documentName: String(sourceRef.file_name || "Matter record").trim(),
+            pageNumber:
+              typeof sourceRef.page === "number" && Number.isFinite(sourceRef.page)
+                ? sourceRef.page
+                : null,
+            section:
+              String(sourceRef.section_id || sourceRef.clause_id || "").trim() ||
+              null,
+            excerpt:
+              String(sourceRef.quote || sourceRef.fact || "").trim() ||
+              String(factRecord.assertion || "").trim(),
+            slot: "Extracted fact",
+            confidence: "medium",
+            evidenceAnswerId:
+              String(factRecord.fact_id || "").trim() || `secondary_fact_${index}`,
+          });
+        });
+      });
+    }
+
+    for (const card of groundAnalysisCards) {
+      for (const sourceRef of card.sourceRefs) {
+        derivedRefs.push({
+          documentName: String(sourceRef.file_name || "Matter record").trim(),
+          pageNumber:
+            typeof sourceRef.page === "number" && Number.isFinite(sourceRef.page)
+              ? sourceRef.page
+              : null,
+          section:
+            String(sourceRef.section_id || sourceRef.clause_id || "").trim() ||
+            null,
+          excerpt:
+            String(sourceRef.quote || sourceRef.fact || "").trim() ||
+            String(card.factText || "").trim(),
+          slot: String(card.title || "Ground analysis").trim() || "Ground analysis",
+          confidence: "medium",
+          evidenceAnswerId: card.id,
+        });
+      }
+    }
+
+    const signalPayloads = Array.isArray(activeMatter?.documentSignalPayloads)
+      ? activeMatter.documentSignalPayloads
+      : [];
+    signalPayloads.forEach((payload, payloadIndex) => {
+      const groups = [
+        ...(Array.isArray(payload.possible_grounds)
+          ? payload.possible_grounds.map((item) => ({
+              label:
+                String(item.title || "Possible ground").trim() ||
+                "Possible ground",
+              refs: Array.isArray(item.supporting_fact_refs)
+                ? item.supporting_fact_refs
+                : [],
+            }))
+          : []),
+        ...(Array.isArray(payload.open_issues)
+          ? payload.open_issues.map((item) => ({
+              label: String(item.title || "Open issue").trim() || "Open issue",
+              refs: Array.isArray(item.source_refs) ? item.source_refs : [],
+            }))
+          : []),
+        ...(Array.isArray(payload.drafting_implications)
+          ? payload.drafting_implications.map((item) => ({
+              label:
+                String(
+                  item.title ||
+                    item.suggested_action_label ||
+                    "Drafting implication",
+                ).trim() || "Drafting implication",
+              refs: Array.isArray(item.source_refs) ? item.source_refs : [],
+            }))
+          : []),
+      ];
+
+      groups.forEach((group, groupIndex) => {
+        group.refs.forEach((sourceRef) => {
+          derivedRefs.push({
+            documentName: String(
+              sourceRef.file_name || payload.file_name || "Matter record",
+            ).trim(),
+            pageNumber:
+              typeof sourceRef.page === "number" && Number.isFinite(sourceRef.page)
+                ? sourceRef.page
+                : null,
+            section:
+              String(sourceRef.section_id || sourceRef.clause_id || "").trim() ||
+              null,
+            excerpt:
+              String(sourceRef.quote || sourceRef.fact || "").trim() || group.label,
+            slot: group.label,
+            confidence: "medium",
+            evidenceAnswerId: `signal_${payloadIndex}_${groupIndex}`,
+          });
+        });
+      });
+    });
+
+    return buildEvidenceReferenceFromSourceRefs(derivedRefs);
+  }, [
+    activeLegalBriefArtifact?.evidenceReference,
+    activeMatter?.documentSignalPayloads,
+    briefPoints,
+    groundAnalysisCards,
+    secondaryAnalysis?.extracted_facts,
+  ]);
   const hasHiddenGroundAnalysisCards =
     groundAnalysisCards.length > GROUND_ANALYSIS_INITIAL_FACT_COUNT;
   const visibleGroundAnalysisCards = isGroundAnalysisExpanded
@@ -1639,6 +1861,19 @@ const MatterSection = ({
   const summaryIssues = Array.isArray(activeDetailedBrief?.issueAnalysis)
     ? activeDetailedBrief.issueAnalysis
     : [];
+  const analysisReferenceCount =
+    summaryIssues.length +
+    (Array.isArray(activeDetailedBrief?.contractualFramework)
+      ? activeDetailedBrief.contractualFramework.length
+      : 0) +
+    (Array.isArray(activeDetailedBrief?.recommendedActions)
+      ? activeDetailedBrief.recommendedActions.length
+      : 0) +
+    briefPoints.length +
+    groundAnalysisCards.length +
+    secondaryVerifiedFactCount +
+    (normalizeInline(String(activeFrontendBrief?.summary || "")).length ? 1 : 0) +
+    (normalizeInline(String(activeAtlasMatterBrief?.brief || "")).length ? 1 : 0);
   const missingProofItems = useMemo(() => {
     if (activeAtlasMatterBrief?.remainingGaps?.length) {
       return activeAtlasMatterBrief.remainingGaps
@@ -1793,16 +2028,18 @@ const MatterSection = ({
   }, [activeBriefAnimationSignature, activeMatter?.id]);
   const typedPrimarySummary = useTypewriterText(activePrimarySummary, {
     enabled: Boolean(activePrimarySummary) && shouldAnimateBriefSections,
-    speed: 10,
-    startDelayMs: 120,
+    speed: 4,
+    startDelayMs: 40,
+    chunkSize: 5,
   });
   const typedMissingProofItems = useTypewriterList(missingProofItems, {
     enabled:
       shouldAnimateBriefSections &&
       briefRevealStage >= 2 &&
       missingProofItems.length > 0,
-    speed: 7,
-    startDelayMs: 320,
+    speed: 4,
+    startDelayMs: 100,
+    chunkSize: 4,
   });
   const typedAtlasCaseTitles = useTypewriterList(
     atlasSimilarCases.map((item) => String(item.title || "")),
@@ -1811,8 +2048,9 @@ const MatterSection = ({
         shouldAnimateBriefSections &&
         briefRevealStage >= 3 &&
         atlasSimilarCases.length > 0,
-      speed: 7,
-      startDelayMs: 520,
+      speed: 4,
+      startDelayMs: 160,
+      chunkSize: 4,
     },
   );
   useEffect(() => {
@@ -2912,8 +3150,7 @@ const MatterSection = ({
     ? atlasDraftQueue
     : draftRecommendationItems;
   const draftPanelCount = draftPanelItems.length;
-  const factCoverageCount =
-    groundAnalysisCards.length || secondaryVerifiedFactCount || 0;
+  const factCoverageCount = analysisReferenceCount || 0;
   const workspaceTabs: Array<{
     id: MatterWorkspaceTab;
     label: string;
@@ -2923,12 +3160,12 @@ const MatterSection = ({
     {
       id: "facts",
       label: "Analysis",
-      count: summaryIssues.length || factCoverageCount,
+      count: factCoverageCount,
     },
     {
       id: "evidence",
       label: "Evidence",
-      count: activeEvidenceReference?.evidenceItems?.length || 0,
+      count: activeEvidenceReference?.evidenceItems?.length || briefEvidenceCount || 0,
     },
     { id: "drafts", label: "Drafts", count: draftPanelCount },
     {
@@ -7429,7 +7666,10 @@ const MatterSection = ({
                     <h2>Evidence reference</h2>
                   </div>
                   <span className="matterBriefStatus is-ready">
-                    {activeEvidenceReference?.evidenceItems?.length || 0} items
+                    {activeEvidenceReference?.evidenceItems?.length ||
+                      briefEvidenceCount ||
+                      0}{" "}
+                    items
                   </span>
                 </div>
                 {activeEvidenceReference?.citationGroups?.length ? (

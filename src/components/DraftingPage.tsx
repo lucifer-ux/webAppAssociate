@@ -45,6 +45,7 @@ import {
 const FONT_FAMILIES = ["Newsreader", "Georgia", "Times New Roman", "Work Sans"];
 const COLOR_CHOICES = ["#1b1c19", "#4c0003", "#6f5d55", "#0f5b78"];
 const DRAFT_REVIEW_POLL_INTERVAL_MS = 5000;
+const DRAFT_GENERATION_POLL_INTERVAL_MS = 4000;
 const MATTER_APPEND_UPLOAD_SESSION_KEY = "open_matter_append_uploader";
 const MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY =
   "matter_uploader_prefill_context";
@@ -465,14 +466,23 @@ const DraftingPage = () => {
     if (draftGenerationCheckpoint) {
       return "Associate is checking what must be confirmed before drafting.";
     }
+    if (draftGenerationThread?.status === "completed") {
+      return "Draft generation is complete.";
+    }
+    if (draftGenerationThread?.status === "needs_review") {
+      return "Draft generation is complete and ready for lawyer review.";
+    }
+    if (draftGenerationThread?.status === "failed") {
+      return "Draft generation stopped because the backend reported a failure.";
+    }
+    if (draftGenerationThread?.status === "cancelled") {
+      return "Draft generation was cancelled.";
+    }
     if (draftGenerationThread?.status === "running" && loaderCurrentStep) {
       return `${loaderCurrentStep}\n\nAssociate is validating sources, preserving open proof items, and preparing lawyer-review drafting language section by section.`;
     }
     if (runningSection) {
       return `Associate is drafting ${runningSection.title}.`;
-    }
-    if (draftGenerationThread?.status === "completed") {
-      return "Draft generation is complete.";
     }
     if (draftGenerationThread?.status === "running") {
       return "Associate is assembling the draft section by section.";
@@ -1039,7 +1049,7 @@ const DraftingPage = () => {
     void poll();
     intervalId = window.setInterval(() => {
       void poll();
-    }, 1500);
+    }, DRAFT_GENERATION_POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
@@ -1121,6 +1131,10 @@ const DraftingPage = () => {
       return;
     }
     draftGenerationMessageRef.current = draftGenerationLoaderMessage;
+    if (draftGenerationThread?.status !== "running" || draftGenerationCheckpoint) {
+      setDraftGenerationTypedStatus(draftGenerationLoaderMessage);
+      return;
+    }
     let cancelled = false;
     let index = 0;
     setDraftGenerationTypedStatus("");
@@ -1136,7 +1150,7 @@ const DraftingPage = () => {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [draftGenerationLoaderMessage]);
+  }, [draftGenerationCheckpoint, draftGenerationLoaderMessage, draftGenerationThread?.status]);
 
   const continueActiveDraftGeneration = async (chosenAction: string) => {
     const threadId = String(
@@ -1182,6 +1196,7 @@ const DraftingPage = () => {
         chosenAction,
         answers,
       });
+      pendingCheckpointDismissThreadRef.current = threadId;
       setDraftGenerationThread((current) =>
         current
           ? {
@@ -1198,7 +1213,6 @@ const DraftingPage = () => {
         chosenAction,
         answers,
       });
-      pendingCheckpointDismissThreadRef.current = threadId;
       setDraftGenerationThread((current) =>
         current
           ? {

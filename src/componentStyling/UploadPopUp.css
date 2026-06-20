@@ -526,3 +526,74 @@
     font-size: 24px;
   }
 }
+
+@media (max-width: 640px) {
+  .uploadPopupBackdrop {
+    padding: 8px;
+  }
+
+  .uploadPopupShell {
+    width: 100%;
+    height: auto;
+    min-height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
+    padding: 18px 14px;
+    gap: 16px;
+    border-radius: 0;
+  }
+
+  .uploadPopupHead {
+    align-items: flex-start;
+    text-align: left;
+    padding-right: 28px;
+  }
+
+  .uploadPopupHead h2 {
+    font-size: 32px;
+  }
+
+  .uploadPopupDescription {
+    font-size: 16px;
+  }
+
+  .uploadPopupPromptField span {
+    font-size: 20px;
+  }
+
+  .uploadPopupPromptField textarea {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  .uploadPopupSubmitBtn {
+    width: 100%;
+    min-height: 48px;
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .uploadPopupShell {
+    min-height: calc(100vh - 8px);
+    max-height: calc(100vh - 8px);
+    padding: 16px 12px;
+  }
+
+  .uploadPopupHead h2 {
+    font-size: 28px;
+  }
+
+  .uploadPopupDropZone {
+    min-height: 148px;
+  }
+
+  .uploadPopupDropZone strong {
+    font-size: 18px;
+  }
+
+  .uploadPopupDropZone p,
+  .uploadPopupMetaInline,
+  .uploadPopupPromptHint {
+    font-size: 10px;
+  }
+}
