@@ -553,6 +553,12 @@ export type DraftGenerationThread = {
       sourceRefCount?: number;
       warningCount?: number;
     }>;
+    generationProgress?: {
+      currentStep?: string;
+      totalSections?: number;
+      completedSections?: number;
+      currentSectionTitle?: string | null;
+    };
     blockers?: string[];
     riskFlags?: string[];
     draftScope?: Record<string, unknown> | null;

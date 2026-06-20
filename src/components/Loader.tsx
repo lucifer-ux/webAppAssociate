@@ -74,7 +74,7 @@ const Loader = ({
           <div className="matterUploadLoaderProgress" aria-hidden="true">
             <span
               className="matterUploadLoaderProgressBar"
-              style={{ width: `${Math.max(10, Math.min(100, progress || 10))}%` }}
+              style={{ width: `${Math.max(0, Math.min(100, progress || 0))}%` }}
             />
           </div>
 

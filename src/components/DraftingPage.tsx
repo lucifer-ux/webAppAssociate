@@ -49,53 +49,6 @@ const DRAFT_GENERATION_POLL_INTERVAL_MS = 10000;
 const MATTER_APPEND_UPLOAD_SESSION_KEY = "open_matter_append_uploader";
 const MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY =
   "matter_uploader_prefill_context";
-const DRAFT_GENERATION_LOADER_MIN_DELAY_MS = 4000;
-const DRAFT_GENERATION_LOADER_MAX_DELAY_MS = 9000;
-const DRAFT_GENERATION_LOADER_LIBRARY = [
-  "Reviewing the draft request against the matter objective",
-  "Reconfirming document-backed facts before stronger assertions are written",
-  "Matching the draft posture to the current proof record",
-  "Checking which source excerpts can be stated directly",
-  "Separating verified terms from client allegations",
-  "Normalizing dates, parties, and agreement references",
-  "Carrying open proof items into guarded drafting language",
-  "Reducing unsupported conclusions before section writing begins",
-  "Checking whether the current record supports stronger notice language",
-  "Confirming which provisions belong in the memo and which remain background only",
-  "Preparing a compact working set for section-by-section drafting",
-  "Verifying that unsupported factual claims stay attributed and qualified",
-  "Balancing memo structure, source coverage, and drafting posture",
-  "Cross-checking proof gaps against the requested draft objective",
-  "Translating retrieved support into section-specific drafting inputs",
-  "Screening the record for refund, cure, and notice dependencies",
-  "Compressing research context into usable drafting evidence",
-  "Rechecking whether any open proof gap can be handled as a review note",
-  "Ordering section generation by drafting risk and evidence coverage",
-  "Checking for contradictions between the uploaded record and draft posture",
-  "Preserving unresolved issues for lawyer review instead of overclaiming",
-  "Preparing the next validated section for insertion into the draft",
-  "Reviewing generated language for unsupported factual drift",
-  "Assembling the memo so each section reflects its source posture clearly",
-];
-
-const shuffleList = <T,>(values: T[]) => {
-  const next = [...values];
-  for (let index = next.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-  }
-  return next;
-};
-
-const getRandomLoaderDelay = () =>
-  DRAFT_GENERATION_LOADER_MIN_DELAY_MS +
-  Math.floor(
-    Math.random() *
-      (DRAFT_GENERATION_LOADER_MAX_DELAY_MS -
-        DRAFT_GENERATION_LOADER_MIN_DELAY_MS +
-        1),
-  );
-
 const styleMap: Record<ParagraphStyle, string> = {
   normal: "P",
   title: "TITLE",
@@ -246,6 +199,135 @@ const renderWarningText = (warning: unknown) => {
     }
   }
   return String(warning || "").trim();
+};
+
+type DraftGenerationChecklistItem = {
+  id: string;
+  label: string;
+  status: "pending" | "current" | "done";
+  detail?: string;
+};
+
+const DRAFT_GENERATION_STEP_ORDER: Record<string, number> = {
+  writing_sections: 0,
+  checking_consistency: 1,
+  final_quality_review: 2,
+  saving_draft: 3,
+  complete: 4,
+};
+
+const buildDraftGenerationChecklist = (
+  thread: DraftGenerationThread | null,
+): DraftGenerationChecklistItem[] => {
+  const generationProgress = thread?.uiSummary?.generationProgress || null;
+  const sectionStatuses = Array.isArray(thread?.uiSummary?.sectionStatuses)
+    ? thread.uiSummary.sectionStatuses
+    : [];
+  const totalSections = Math.max(
+    Number(generationProgress?.totalSections || 0),
+    sectionStatuses.length,
+  );
+  const completedSections = Math.min(
+    totalSections,
+    Math.max(
+      0,
+      Number(
+        generationProgress?.completedSections ||
+          sectionStatuses.filter((item) => item.status === "generated").length,
+      ),
+    ),
+  );
+  const currentStep =
+    thread?.status === "completed" || thread?.status === "needs_review"
+      ? "complete"
+      : String(generationProgress?.currentStep || "writing_sections");
+  const currentStepRank =
+    DRAFT_GENERATION_STEP_ORDER[currentStep] ??
+    DRAFT_GENERATION_STEP_ORDER.writing_sections;
+  const currentSectionNumber =
+    totalSections > 0
+      ? Math.min(totalSections, Math.max(completedSections + 1, 1))
+      : 0;
+  const currentSectionTitle =
+    typeof generationProgress?.currentSectionTitle === "string" &&
+    generationProgress.currentSectionTitle.trim()
+      ? generationProgress.currentSectionTitle.trim()
+      : "";
+
+  const items: DraftGenerationChecklistItem[] = [];
+  for (let index = 0; index < totalSections; index += 1) {
+    const sectionNumber = index + 1;
+    const status: DraftGenerationChecklistItem["status"] =
+      sectionNumber <= completedSections
+        ? "done"
+        : currentStep === "writing_sections" && sectionNumber === currentSectionNumber
+          ? "current"
+          : "pending";
+    items.push({
+      id: `section-${sectionNumber}`,
+      label: `Writing Section ${sectionNumber} of ${totalSections}`,
+      status,
+      detail:
+        status === "current" && currentSectionTitle
+          ? currentSectionTitle
+          : undefined,
+    });
+  }
+
+  [
+    { id: "checking_consistency", label: "Checking consistency" },
+    { id: "final_quality_review", label: "Final quality review" },
+    { id: "saving_draft", label: "Saving draft" },
+  ].forEach((step, index) => {
+    const rank = index + 1;
+    const status: DraftGenerationChecklistItem["status"] =
+      currentStepRank > rank
+        ? "done"
+        : currentStepRank === rank
+          ? "current"
+          : "pending";
+    items.push({
+      ...step,
+      status,
+    });
+  });
+
+  return items;
+};
+
+const buildDraftGenerationProgressMetrics = (
+  thread: DraftGenerationThread | null,
+  checklist: DraftGenerationChecklistItem[],
+) => {
+  const generationProgress = thread?.uiSummary?.generationProgress || null;
+  const totalSections = Math.max(
+    0,
+    Number(generationProgress?.totalSections || 0),
+  );
+  const postSectionCheckpointCount = 3;
+  const totalCheckpoints = Math.max(1, totalSections + postSectionCheckpointCount);
+  const completedCheckpoints = checklist.filter((item) => item.status === "done").length;
+  const progress = Math.max(
+    0,
+    Math.min(100, Math.round((completedCheckpoints / totalCheckpoints) * 100)),
+  );
+  const visibleSteps = checklist
+    .filter((item) => item.status !== "pending")
+    .slice(-4)
+    .map((item) => item.detail ? `${item.label} · ${item.detail}` : item.label);
+  const currentStep =
+    checklist.find((item) => item.status === "current") ||
+    checklist[checklist.length - 1] ||
+    null;
+  return {
+    progress,
+    steps: visibleSteps,
+    stage: currentStep
+      ? currentStep.detail
+        ? `${currentStep.label} · ${currentStep.detail}`
+        : currentStep.label
+      : "Preparing guarded draft working set",
+  };
 };
 
 const shouldShowCheckpointQuestion = (
@@ -425,7 +507,6 @@ const DraftingPage = () => {
   const [isSubmittingDraftGeneration, setIsSubmittingDraftGeneration] =
     useState(false);
   const [draftGenerationTypedStatus, setDraftGenerationTypedStatus] = useState("");
-  const [draftGenerationLoaderSteps, setDraftGenerationLoaderSteps] = useState<string[]>([]);
   const checkpointQuestions = useMemo(
     () => (Array.isArray(draftGenerationCheckpoint?.questions) ? draftGenerationCheckpoint.questions : []),
     [draftGenerationCheckpoint],
@@ -440,31 +521,7 @@ const DraftingPage = () => {
         : [],
     [draftGenerationCheckpoint],
   );
-  const draftGenerationLoaderRef = useRef<{
-    threadId: string;
-    orderedSteps: string[];
-    timerId: number | null;
-  }>({
-    threadId: "",
-    orderedSteps: [],
-    timerId: null,
-  });
   const draftGenerationMessageRef = useRef("");
-  const loaderCurrentStep =
-    draftGenerationLoaderSteps[draftGenerationLoaderSteps.length - 1] || "";
-  const loaderProgress = draftGenerationLoaderRef.current.orderedSteps.length
-    ? Math.min(
-        95,
-        Math.max(
-        10,
-        Math.round(
-          (draftGenerationLoaderSteps.length /
-            draftGenerationLoaderRef.current.orderedSteps.length) *
-            100,
-        ),
-        ),
-      )
-    : 12;
   const loaderHighlights = useMemo(() => {
     const readiness = draftGenerationThread?.uiSummary?.readiness || null;
     return [
@@ -481,7 +538,23 @@ const DraftingPage = () => {
         : "Open proof items are being preserved as review notes where needed",
     ];
   }, [draftGenerationThread]);
+  const draftGenerationChecklist = useMemo(
+    () => buildDraftGenerationChecklist(draftGenerationThread),
+    [draftGenerationThread],
+  );
+  const draftGenerationProgressMetrics = useMemo(
+    () =>
+      buildDraftGenerationProgressMetrics(
+        draftGenerationThread,
+        draftGenerationChecklist,
+      ),
+    [draftGenerationChecklist, draftGenerationThread],
+  );
+  const loaderCurrentStep = draftGenerationProgressMetrics.stage;
+  const loaderProgress = draftGenerationProgressMetrics.progress;
+  const draftGenerationLoaderSteps = draftGenerationProgressMetrics.steps;
   const draftGenerationLoaderMessage = useMemo(() => {
+    const progress = draftGenerationThread?.uiSummary?.generationProgress || null;
     const statuses = Array.isArray(draftGenerationThread?.uiSummary?.sectionStatuses)
       ? draftGenerationThread.uiSummary.sectionStatuses
       : [];
@@ -506,6 +579,22 @@ const DraftingPage = () => {
       return "Draft generation was cancelled.";
     }
     if (draftGenerationThread?.status === "running" && loaderCurrentStep) {
+      if (progress?.currentStep === "writing_sections" && progress?.totalSections) {
+        const currentSection = Math.min(
+          Number(progress.totalSections),
+          Math.max(Number(progress.completedSections || 0) + 1, 1),
+        );
+        return `Associate is drafting section ${currentSection} of ${progress.totalSections}.\n\n${loaderCurrentStep}`;
+      }
+      if (progress?.currentStep === "checking_consistency") {
+        return "Associate is checking consistency across the generated sections.";
+      }
+      if (progress?.currentStep === "final_quality_review") {
+        return "Associate is running the final quality review on the assembled draft.";
+      }
+      if (progress?.currentStep === "saving_draft") {
+        return "Associate is saving the assembled draft.";
+      }
       return `${loaderCurrentStep}\n\nAssociate is validating sources, preserving open proof items, and preparing lawyer-review drafting language section by section.`;
     }
     if (runningSection) {
@@ -515,7 +604,13 @@ const DraftingPage = () => {
       return "Associate is assembling the draft section by section.";
     }
     return "";
-  }, [draftGenerationCheckpoint, draftGenerationThread?.status, draftGenerationThread?.uiSummary?.sectionStatuses, loaderCurrentStep]);
+  }, [
+    draftGenerationCheckpoint,
+    draftGenerationThread?.status,
+    draftGenerationThread?.uiSummary?.generationProgress,
+    draftGenerationThread?.uiSummary?.sectionStatuses,
+    loaderCurrentStep,
+  ]);
   const draftSidePanelKey = useMemo(() => {
     if (draftGenerationCheckpoint) {
       return `checkpoint:${draftGenerationThread?.id || "none"}:${draftGenerationCheckpoint.status || "unknown"}:${draftGenerationCheckpoint.title || "draft"}`;
@@ -1096,62 +1191,6 @@ const DraftingPage = () => {
   ]);
 
   useEffect(() => {
-    const loaderState = draftGenerationLoaderRef.current;
-    if (
-      draftGenerationThread?.status !== "running" ||
-      draftGenerationCheckpoint
-    ) {
-      if (loaderState.timerId) {
-        window.clearTimeout(loaderState.timerId);
-      }
-      draftGenerationLoaderRef.current = {
-        threadId: "",
-        orderedSteps: [],
-        timerId: null,
-      };
-      setDraftGenerationLoaderSteps([]);
-      return;
-    }
-    const threadId = String(draftGenerationThread?.id || "").trim();
-    if (!threadId) return;
-    if (loaderState.threadId === threadId && loaderState.orderedSteps.length) {
-      return;
-    }
-    if (loaderState.timerId) {
-      window.clearTimeout(loaderState.timerId);
-    }
-    const orderedSteps = shuffleList(DRAFT_GENERATION_LOADER_LIBRARY).slice(0, 12);
-    draftGenerationLoaderRef.current = {
-      threadId,
-      orderedSteps,
-      timerId: null,
-    };
-    setDraftGenerationLoaderSteps(orderedSteps.length ? [orderedSteps[0]] : []);
-    const scheduleNextStep = (nextIndex: number) => {
-      if (nextIndex >= orderedSteps.length) return;
-      const timerId = window.setTimeout(() => {
-        setDraftGenerationLoaderSteps((current) =>
-          current.length >= nextIndex + 1
-            ? current
-            : [...current, orderedSteps[nextIndex]],
-        );
-        scheduleNextStep(nextIndex + 1);
-      }, getRandomLoaderDelay());
-      draftGenerationLoaderRef.current = {
-        threadId,
-        orderedSteps,
-        timerId,
-      };
-    };
-    scheduleNextStep(1);
-    return () => {
-      if (draftGenerationLoaderRef.current.timerId) {
-        window.clearTimeout(draftGenerationLoaderRef.current.timerId);
-      }
-    };
-  }, [draftGenerationCheckpoint, draftGenerationThread?.id, draftGenerationThread?.status]);
-
-  useEffect(() => {
     if (!draftGenerationLoaderMessage) {
       draftGenerationMessageRef.current = "";
       setDraftGenerationTypedStatus("");
@@ -1631,16 +1670,32 @@ const DraftingPage = () => {
                       </span>
                     </div>
                   ) : null}
-                  {draftGenerationThread?.uiSummary?.sectionStatuses?.length ? (
-                    <div className="draftFormatSources">
-                      {draftGenerationThread.uiSummary.sectionStatuses
-                        .slice(0, 8)
-                        .map((item) => (
-                          <span key={item.sectionId}>
-                            {item.title}: {item.status.replace(/_/g, " ")}
-                            {item.sourceRefCount ? ` · ${item.sourceRefCount} sources` : ""}
-                            {item.warningCount ? ` · ${item.warningCount} warnings` : ""}
+                  {draftGenerationChecklist.length ? (
+                    <div className="draftGenerationChecklist">
+                      {draftGenerationChecklist.map((item) => (
+                        <div
+                          key={item.id}
+                          className={`draftGenerationChecklistItem ${
+                            item.status === "done"
+                              ? "isDone"
+                              : item.status === "current"
+                                ? "isCurrent"
+                                : ""
+                          }`}
+                        >
+                          <span
+                            className="draftGenerationChecklistMarker"
+                            aria-hidden="true"
+                          />
+                          <span className="draftGenerationChecklistText">
+                            {item.label}
+                            {item.detail ? (
+                              <span className="draftGenerationChecklistDetail">
+                                {item.detail}
+                              </span>
+                            ) : null}
                           </span>
+                        </div>
                       ))}
                     </div>
                   ) : null}

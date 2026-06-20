@@ -102,6 +102,60 @@
   white-space: nowrap;
 }
 
+.draftGenerationChecklist {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.draftGenerationChecklistItem {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  color: #9a8d84;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.draftGenerationChecklistItem.isCurrent {
+  color: #5f3226;
+}
+
+.draftGenerationChecklistItem.isDone {
+  color: #3d352f;
+}
+
+.draftGenerationChecklistMarker {
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border: 1px solid #ccb9ab;
+  border-radius: 999px;
+  background: #fff8f1;
+}
+
+.draftGenerationChecklistItem.isCurrent .draftGenerationChecklistMarker {
+  border-color: #8a4734;
+  background: #c96e4f;
+  box-shadow: 0 0 0 3px rgba(201, 110, 79, 0.14);
+}
+
+.draftGenerationChecklistItem.isDone .draftGenerationChecklistMarker {
+  border-color: #6f655f;
+  background: #6f655f;
+}
+
+.draftGenerationChecklistText {
+  display: grid;
+  gap: 2px;
+}
+
+.draftGenerationChecklistDetail {
+  color: #7b6c62;
+  font-size: 11px;
+}
+
 .draftFormatProposalActions {
   display: flex;
   flex-wrap: wrap;
