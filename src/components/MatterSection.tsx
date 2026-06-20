@@ -250,6 +250,7 @@ const buildEvidenceReferenceFromSourceRefs = (
     slot: string;
     confidence: "high" | "medium" | "low";
     evidenceAnswerId?: string;
+    sourceUrl?: string | null;
   }>,
 ): EvidenceReference | null => {
   const evidenceItems = dedupeEvidenceItems(
@@ -267,6 +268,7 @@ const buildEvidenceReferenceFromSourceRefs = (
         excerpt: normalizeInline(ref.excerpt),
         slot: String(ref.slot || "record excerpt").trim() || "record excerpt",
         confidence: ref.confidence,
+        sourceUrl: String(ref.sourceUrl || "").trim() || null,
       }))
       .filter((item) => item.documentName && item.excerpt),
   );
@@ -1697,6 +1699,7 @@ const MatterSection = ({
       slot: string;
       confidence: "high" | "medium" | "low";
       evidenceAnswerId?: string;
+      sourceUrl?: string | null;
     }> = [];
 
     for (const point of briefPoints) {
@@ -1830,8 +1833,47 @@ const MatterSection = ({
       });
     });
 
+    if (Array.isArray(activeAtlasCaseResearch?.similarCases)) {
+      activeAtlasCaseResearch.similarCases.forEach((item, index) => {
+        const title = String(item?.title || "").trim();
+        const citation = String(item?.officialCitation || "").trim();
+        const sourceCourt = String(item?.sourceCourt || "").trim();
+        const excerpt = normalizeInline(
+          String(
+            item?.relevantExcerpt ||
+              item?.holding ||
+              item?.legalQuestion ||
+              item?.facts ||
+              item?.note ||
+              "",
+          ),
+        );
+        if (!title || !excerpt) return;
+        derivedRefs.push({
+          documentName: title,
+          pageNumber:
+            typeof item?.pageNumber === "number" && Number.isFinite(item.pageNumber)
+              ? item.pageNumber
+              : null,
+          section: citation || sourceCourt || null,
+          excerpt,
+          slot: "Similar case authority",
+          confidence: "high",
+          evidenceAnswerId: `atlas_case_${index}`,
+          sourceUrl:
+            String(
+              item?.officialViewerUrl ||
+                item?.officialDocumentUrl ||
+                item?.referenceUrl ||
+                "",
+            ).trim() || null,
+        });
+      });
+    }
+
     return buildEvidenceReferenceFromSourceRefs(derivedRefs);
   }, [
+    activeAtlasCaseResearch?.similarCases,
     activeLegalBriefArtifact?.evidenceReference,
     activeMatter?.documentSignalPayloads,
     briefPoints,
@@ -3165,7 +3207,11 @@ const MatterSection = ({
     {
       id: "evidence",
       label: "Evidence",
-      count: activeEvidenceReference?.evidenceItems?.length || briefEvidenceCount || 0,
+      count:
+        activeEvidenceReference?.evidenceItems?.length ||
+        activeAtlasCaseResearch?.similarCases?.length ||
+        briefEvidenceCount ||
+        0,
     },
     { id: "drafts", label: "Drafts", count: draftPanelCount },
     {
@@ -7704,6 +7750,23 @@ const MatterSection = ({
                           </span>
                         </div>
                         <p>{item.excerpt}</p>
+                        {item.sourceUrl ? (
+                          <div className="matterIssueCardBody isOpen">
+                            <UiButton
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                window.open(
+                                  item.sourceUrl || "",
+                                  "_blank",
+                                  "noopener,noreferrer",
+                                )
+                              }
+                            >
+                              See evidence
+                            </UiButton>
+                          </div>
+                        ) : null}
                       </article>
                     ))}
                   </div>

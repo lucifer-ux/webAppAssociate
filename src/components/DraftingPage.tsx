@@ -268,16 +268,7 @@ const shouldShowCheckpointQuestion = (
   ) {
     return false;
   }
-  const disposition = String(
-    (question as Record<string, unknown>).disposition ||
-      (question as Record<string, unknown>).owner ||
-      "",
-  );
-  if (disposition === "user_confirmation") return true;
-  if (question.answerType === "date" || question.answerType === "amount") return true;
-  if (Array.isArray(question.options) && question.options.length > 0) return true;
-  if (question.suggestedAnswer) return true;
-  return false;
+  return true;
 };
 
 const normalizeLawyerFacingQuestion = (

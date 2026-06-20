@@ -602,6 +602,7 @@ export type EvidenceReference = {
     excerpt: string;
     slot: string;
     confidence: "high" | "medium" | "low";
+    sourceUrl?: string | null;
   }>;
   citationGroups: Array<{
     id: string;
