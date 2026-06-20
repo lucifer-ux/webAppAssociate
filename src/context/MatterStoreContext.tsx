@@ -1357,6 +1357,34 @@ type MatterStoreContextValue = {
   isSavedMattersLoading: boolean;
   addMatter: (result: MatterProcessedResult) => MatterRecord;
   updateMatter: (result: MatterProcessedResult) => void;
+  mergeMatterAtlasLatest: (
+    matterId: string,
+    patch: {
+      matter?: Partial<
+        Pick<
+          MatterUploadPayload,
+          | "status"
+          | "job_id"
+          | "versionFingerprint"
+          | "contextcore"
+          | "intelligence_statuses"
+          | "analysis_state"
+          | "classification"
+          | "classification_meta"
+        >
+      > | null;
+      extractedFieldsStatus?: MatterExtractedFieldsStatus;
+      extractedFieldsError?: string | null;
+      atlasBaseRecognition?: MatterProcessedResult["atlas_base_recognition"];
+      atlasWorkflowConfirmation?: MatterProcessedResult["atlas_workflow_confirmation"];
+      atlasGapCheckpoint?: MatterProcessedResult["atlas_gap_checkpoint"];
+      atlasDeciderResearch?: MatterProcessedResult["atlas_decider_research"];
+      atlasCaseResearch?: MatterProcessedResult["atlas_case_research"];
+      atlasNextSteps?: MatterProcessedResult["atlas_next_steps"];
+      atlasMatterBrief?: MatterProcessedResult["atlas_matter_brief"];
+      atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
+    },
+  ) => void;
   markMatterJobExpired: (matterId: string) => void;
   setMattersFromServer: (results: MatterProcessedResult[]) => void;
   setIsSavedMattersLoading: (value: boolean) => void;
@@ -1772,6 +1800,86 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
     );
   }, []);
 
+  const mergeMatterAtlasLatest = useCallback(
+    (
+      matterId: string,
+      patch: {
+        matter?: Partial<
+          Pick<
+            MatterUploadPayload,
+            | "status"
+            | "job_id"
+            | "versionFingerprint"
+            | "contextcore"
+            | "intelligence_statuses"
+            | "analysis_state"
+            | "classification"
+            | "classification_meta"
+          >
+        > | null;
+        extractedFieldsStatus?: MatterExtractedFieldsStatus;
+        extractedFieldsError?: string | null;
+        atlasBaseRecognition?: MatterProcessedResult["atlas_base_recognition"];
+        atlasWorkflowConfirmation?: MatterProcessedResult["atlas_workflow_confirmation"];
+        atlasGapCheckpoint?: MatterProcessedResult["atlas_gap_checkpoint"];
+        atlasDeciderResearch?: MatterProcessedResult["atlas_decider_research"];
+        atlasCaseResearch?: MatterProcessedResult["atlas_case_research"];
+        atlasNextSteps?: MatterProcessedResult["atlas_next_steps"];
+        atlasMatterBrief?: MatterProcessedResult["atlas_matter_brief"];
+        atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
+      },
+    ) => {
+      setMatters((prev) =>
+        prev.map((matter) => {
+          if (matter.id !== matterId) return matter;
+          return {
+            ...matter,
+            ...(patch.matter || {}),
+            extractedFieldsStatus:
+              patch.extractedFieldsStatus ?? matter.extractedFieldsStatus,
+            extractedFieldsError:
+              patch.extractedFieldsError !== undefined
+                ? patch.extractedFieldsError
+                : matter.extractedFieldsError,
+            atlasBaseRecognition:
+              patch.atlasBaseRecognition !== undefined
+                ? patch.atlasBaseRecognition || undefined
+                : matter.atlasBaseRecognition,
+            atlasWorkflowConfirmation:
+              patch.atlasWorkflowConfirmation !== undefined
+                ? patch.atlasWorkflowConfirmation || undefined
+                : matter.atlasWorkflowConfirmation,
+            atlasGapCheckpoint:
+              patch.atlasGapCheckpoint !== undefined
+                ? patch.atlasGapCheckpoint || undefined
+                : matter.atlasGapCheckpoint,
+            atlasDeciderResearch:
+              patch.atlasDeciderResearch !== undefined
+                ? patch.atlasDeciderResearch || undefined
+                : matter.atlasDeciderResearch,
+            atlasCaseResearch:
+              patch.atlasCaseResearch !== undefined
+                ? patch.atlasCaseResearch || undefined
+                : matter.atlasCaseResearch,
+            atlasNextSteps:
+              patch.atlasNextSteps !== undefined
+                ? patch.atlasNextSteps || undefined
+                : matter.atlasNextSteps,
+            atlasMatterBrief:
+              patch.atlasMatterBrief !== undefined
+                ? patch.atlasMatterBrief || undefined
+                : matter.atlasMatterBrief,
+            atlasUserInputs:
+              patch.atlasUserInputs !== undefined
+                ? patch.atlasUserInputs || undefined
+                : matter.atlasUserInputs,
+          };
+        }),
+      );
+    },
+    [],
+  );
+
   const markMatterJobExpired = useCallback((matterId: string) => {
     setMatters((prev) =>
       prev.map((matter) => {
@@ -2036,6 +2144,7 @@ export const MatterStoreProvider = ({ children }: PropsWithChildren) => {
         isSavedMattersLoading,
         addMatter,
         updateMatter,
+        mergeMatterAtlasLatest,
         markMatterJobExpired,
         setMattersFromServer,
         setIsSavedMattersLoading,

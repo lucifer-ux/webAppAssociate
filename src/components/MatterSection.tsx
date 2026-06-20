@@ -25,7 +25,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  type AtlasBaseRecognitionCandidate,
   type AtlasBaseRecognitionResult,
   type AtlasCaseResearchResult,
   type AtlasDeciderResearchResult,
@@ -44,6 +43,7 @@ import {
   type MatterDraftRecommendation,
   type MatterDraftRecommendations,
   type MatterProcessedResult,
+  type MatterRecord,
   type MatterSignalSourceRef,
   type ObligationMapResult,
   type PageAwareBlock,
@@ -141,6 +141,7 @@ const MATTER_UPLOAD_MAX_PAGES = 20;
 const GROUND_ANALYSIS_INITIAL_FACT_COUNT = 3;
 const MATTER_JOB_POLL_INTERVAL_MS = 5000;
 const GROUND_ANALYSIS_POLL_INTERVAL_MS = 5000;
+const ATLAS_STATE_POLL_INTERVAL_MS = 10000;
 const CLASSIFICATION_CONTINUATION_POLL_ATTEMPTS = 36;
 
 const clipText = (value: string, limit = 180) => {
@@ -931,6 +932,7 @@ const MatterSection = ({
     addPersonToMatter,
     removePersonFromMatter,
     updateMatter,
+    mergeMatterAtlasLatest,
     getObligationMap,
     setObligationMap,
     clearObligationMap,
@@ -2197,12 +2199,13 @@ const MatterSection = ({
     return (
       <div className="matterCaseList">
         {cases.map((item, index) => {
-          const caseId =
+          const caseIdBase =
             item.officialViewerUrl ||
             item.officialDocumentUrl ||
             item.referenceUrl ||
             item.title ||
             `atlas-case-${index}`;
+          const caseId = `${caseIdBase}-${index}`;
           const isExpanded = Boolean(expandedCaseIds[caseId]);
           const summaryText = normalizeInline(
             String(item.relevantExcerpt || item.note || ""),
@@ -2762,13 +2765,14 @@ const MatterSection = ({
         return;
       }
       void refreshMattersFromServer();
-    }, 2500);
+    }, ATLAS_STATE_POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [
     activeAnalysisState?.status,
     activeMatter?.id,
     activeSummaryRunState.running,
     isMatterStatePolling,
+    mergeMatterAtlasLatest,
   ]);
 
   useEffect(() => {
@@ -4796,12 +4800,53 @@ const MatterSection = ({
     );
     const payload = (await response.json()) as {
       success?: boolean;
-      result?: MatterProcessedResult;
+      matter?: {
+        status?: MatterRecord["status"];
+        job_id?: string | null;
+        versionFingerprint?: string | null;
+        contextcore?: MatterRecord["contextcore"];
+        intelligence_statuses?: MatterRecord["intelligence_statuses"];
+        analysis_state?: MatterRecord["analysis_state"];
+        classification?: MatterRecord["classification"];
+        classification_meta?: MatterRecord["classification_meta"];
+        extracted_fields_status?: MatterRecord["extractedFieldsStatus"];
+        extracted_fields_error?: string | null;
+      } | null;
+      baseRecognition?: AtlasBaseRecognitionResult | null;
+      workflowConfirmation?: AtlasWorkflowConfirmation | null;
+      gapCheckpoint?: AtlasGapCheckpoint | null;
+      deciderResearch?: AtlasDeciderResearchResult | null;
+      caseResearch?: AtlasCaseResearchResult | null;
+      nextStepsAnalysis?: AtlasNextStepsAnalysis | null;
+      brief?: AtlasMatterBrief | null;
+      atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
     };
-    if (!response.ok || !payload?.success || !payload.result) {
+    if (!response.ok || !payload?.success || !payload.matter) {
       throw new Error("Failed to refresh atlas matter state.");
     }
-    updateMatter(payload.result);
+    mergeMatterAtlasLatest(matterId, {
+      matter: {
+        status: payload.matter.status,
+        job_id: payload.matter.job_id || "",
+        versionFingerprint: payload.matter.versionFingerprint || undefined,
+        contextcore: payload.matter.contextcore,
+        intelligence_statuses: payload.matter.intelligence_statuses,
+        analysis_state: payload.matter.analysis_state,
+        classification: payload.matter.classification,
+        classification_meta: payload.matter.classification_meta,
+      },
+      extractedFieldsStatus:
+        payload.matter.extracted_fields_status || undefined,
+      extractedFieldsError: payload.matter.extracted_fields_error,
+      atlasBaseRecognition: payload.baseRecognition,
+      atlasWorkflowConfirmation: payload.workflowConfirmation,
+      atlasGapCheckpoint: payload.gapCheckpoint,
+      atlasDeciderResearch: payload.deciderResearch,
+      atlasCaseResearch: payload.caseResearch,
+      atlasNextSteps: payload.nextStepsAnalysis,
+      atlasMatterBrief: payload.brief,
+      atlasUserInputs: payload.atlasUserInputs,
+    });
   };
 
   const waitForMatterAvailability = async (matterId: string) => {
@@ -5064,6 +5109,7 @@ const MatterSection = ({
         [matterId]: { submitting: false, error: "" },
       }));
       console.log("[atlas][base-recognition][retry]", payload.recognition);
+      return payload.recognition || null;
     } catch (error) {
       setWorkflowConfirmationStateByMatterId((current) => ({
         ...current,
@@ -5075,6 +5121,7 @@ const MatterSection = ({
               : "Failed to retry categorization.",
         },
       }));
+      return null;
     }
   };
 
@@ -5140,6 +5187,58 @@ const MatterSection = ({
         },
       }));
     }
+  };
+
+  const submitMatterAtlasWorkflowClassification = async (matterId: string) => {
+    const overrideNote = normalizeInline(
+      workflowOverrideNoteByMatterId[matterId] || "",
+    );
+    let selectedWorkflowId = normalizeInline(
+      activeAtlasRecognition?.primaryWorkflowId ||
+        activeWorkflowSelectionId ||
+        activeAtlasRecognition?.candidateWorkflows?.[0]?.workflowId ||
+        "",
+    );
+
+    if (overrideNote) {
+      const rerankedRecognition = await retryMatterAtlasRecognition(
+        matterId,
+        overrideNote,
+      );
+      selectedWorkflowId = normalizeInline(
+        rerankedRecognition?.primaryWorkflowId ||
+          rerankedRecognition?.candidateWorkflows?.[0]?.workflowId ||
+          "",
+      );
+      if (!selectedWorkflowId) {
+        setWorkflowConfirmationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: {
+            submitting: false,
+            error:
+              "Atlas could not find a close enough category and subcategory from that note.",
+          },
+        }));
+        return;
+      }
+    }
+
+    if (!selectedWorkflowId) {
+      setWorkflowConfirmationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: {
+          submitting: false,
+          error: "No atlas subcategory is available to confirm for this matter.",
+        },
+      }));
+      return;
+    }
+
+    await confirmMatterAtlasWorkflow({
+      matterId,
+      selectedWorkflowId,
+      overrideNote,
+    });
   };
 
   const logMatterUnderstandingAgents = async (matterId: string) => {
@@ -9708,72 +9807,53 @@ const MatterSection = ({
                 <div className="matterClarificationQuestionHero">
                   <span className="matterIssueKey">Atlas classification</span>
                   <h3>
-                    {activeWorkflowDisplayName || "A workflow match is ready"}
+                    {activeWorkflowDisplayName || "A subcategory match is ready"}
                   </h3>
                   <p className="matterClarificationMeta">
-                    {activePracticeAreaDisplayName ||
-                      "Select the closest practice area and workflow."}
+                    Associate is confident in the detected atlas category and
+                    subcategory. Add a short correction only if you want atlas
+                    to search for a closer fit.
                   </p>
                 </div>
 
-	                <div className="matterClarificationOptionList">
-	                  {activeAtlasRecognition.candidateWorkflows.map(
-	                    (candidate: AtlasBaseRecognitionCandidate) => (
-                      <button
-                        type="button"
-                        key={candidate.workflowId}
-                        className={`matterClarificationOptionRow ${
-                          activeWorkflowSelectionId === candidate.workflowId
-                            ? "isSelected"
-                            : ""
-                        }`}
-                        onClick={() =>
-                          setWorkflowSelectionIdByMatterId((current) => ({
-                            ...current,
-                            [activeMatter.id]: candidate.workflowId,
-                          }))
-                        }
-                      >
-                        <span className="matterClarificationOptionCheck" />
-	                        <span className="matterClarificationOptionContent">
-	                          <strong>
-	                            {candidate.workflowName ||
-	                              formatAtlasLabel(candidate.workflowId)}
-	                          </strong>
-	                          <small>
-	                            {candidate.areaName ||
-	                              formatAtlasLabel(candidate.areaId)}
-	                          </small>
-	                          {candidate.trigger ? (
-	                            <small>{candidate.trigger}</small>
-	                          ) : null}
-	                        </span>
-	                      </button>
-	                    ),
-	                  )}
-	                </div>
-	                {Array.isArray(activeAtlasRecognition?.conflictingSignals) &&
-	                activeAtlasRecognition.conflictingSignals.length ? (
-	                  <div className="matterClarificationConflictNote">
-	                    {activeAtlasRecognition.conflictingSignals.map((item) => (
-	                      <p
-	                        key={`${item.type}:${item.values.join("|")}`}
-	                        className="matterClarificationMeta"
-	                      >
-	                        Signal conflict in {item.type.replace(/_/g, " ")}:{" "}
-	                        {item.values.join(", ")}
-	                      </p>
-	                    ))}
-	                  </div>
-	                ) : null}
-	                {activeAtlasRecognition?.forumMismatch ? (
-	                  <p className="matterClarificationMeta">
-	                    Extracted forum signals do not cleanly match the top
-	                    workflow forum.
-	                  </p>
-	                ) : null}
+                <div className="matterSecondaryClassificationBox">
+                  <p className="matterClarificationMeta">
+                    <strong>Category:</strong>{" "}
+                    {activePracticeAreaDisplayName || "Unspecified"}
+                  </p>
+                  <p className="matterClarificationMeta">
+                    <strong>Subcategory:</strong>{" "}
+                    {activeWorkflowDisplayName || "Unspecified"}
+                  </p>
+                  {activeAtlasRecognition?.primaryReason ? (
+                    <p className="matterClarificationMeta">
+                      <strong>Why this fit:</strong>{" "}
+                      {activeAtlasRecognition.primaryReason}
+                    </p>
+                  ) : null}
+                  {Array.isArray(activeAtlasRecognition?.conflictingSignals) &&
+                  activeAtlasRecognition.conflictingSignals.length ? (
+                    <div className="matterClarificationConflictNote">
+                      {activeAtlasRecognition.conflictingSignals.map((item) => (
+                        <p
+                          key={`${item.type}:${item.values.join("|")}`}
+                          className="matterClarificationMeta"
+                        >
+                          Signal conflict in {item.type.replace(/_/g, " ")}:{" "}
+                          {item.values.join(", ")}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                  {activeAtlasRecognition?.forumMismatch ? (
+                    <p className="matterClarificationMeta">
+                      Extracted forum signals do not cleanly match the detected
+                      subcategory forum.
+                    </p>
+                  ) : null}
+                </div>
 
-	                <div className="matterClarificationChoiceFlow">
+                <div className="matterClarificationChoiceFlow">
                   <UiInput
                     type="text"
                     value={activeWorkflowOverrideNote}
@@ -9783,34 +9863,17 @@ const MatterSection = ({
                         [activeMatter.id]: event.target.value,
                       }))
                     }
-                    placeholder="Optional: add a case-specific note to rerun categorization"
+                    placeholder="Optional: add a note if the category or subcategory should be different"
                   />
                   <div className="matterClarificationFooter">
-                    <div className="matterClarificationFooterActions">
-                      <UiButton
-                        variant="ghost"
-                        className="matterClarificationTextButton"
-                        disabled={activeWorkflowConfirmationState.submitting}
-                        onClick={() =>
-                          void retryMatterAtlasRecognition(
-                            activeMatter.id,
-                            activeWorkflowOverrideNote,
-                          )
-                        }
-                      >
-                        Retry categorization
-                      </UiButton>
-                    </div>
                     <UiButton
                       variant="primary"
                       className="matterClarificationIconButton"
                       disabled={activeWorkflowConfirmationState.submitting}
                       onClick={() =>
-                        void confirmMatterAtlasWorkflow({
-                          matterId: activeMatter.id,
-                          selectedWorkflowId: activeWorkflowSelectionId,
-                          overrideNote: activeWorkflowOverrideNote,
-                        })
+                        void submitMatterAtlasWorkflowClassification(
+                          activeMatter.id,
+                        )
                       }
                     >
                       <ArrowRight size={18} />

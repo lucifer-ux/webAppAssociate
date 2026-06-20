@@ -3911,10 +3911,22 @@
   color: #2b1b12;
   text-align: left;
   cursor: pointer;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+  text-decoration-color: rgba(95, 58, 31, 0.5);
 }
 
 .matterCaseTitleLink:hover {
   color: #5f3a1f;
+  text-decoration-color: currentColor;
+}
+
+.matterCaseTitleLink:focus-visible,
+.matterDebriefLawSourceLink:focus-visible {
+  outline: 2px solid rgba(143, 88, 46, 0.45);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .matterCaseSummaryToggle {
@@ -3931,6 +3943,17 @@
   text-transform: uppercase;
   color: #6f4e34;
   cursor: pointer;
+}
+
+.matterDebriefLawSourceLink {
+  color: #5f3a1f;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+
+.matterDebriefLawSourceLink:hover {
+  color: #7b4420;
 }
 
 .matterCaseSummary {

@@ -581,6 +581,15 @@ export type DraftGenerationThread = {
       userSuppliedCount?: number;
     };
   };
+  draftMeta?: {
+    id: string | null;
+    title?: string | null;
+    saveVersion?: number | null;
+    contentHash?: string | null;
+    updatedAt?: string | null;
+    lastSavedAt?: string | null;
+    generationStatus?: string | null;
+  } | null;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;

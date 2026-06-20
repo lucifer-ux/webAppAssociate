@@ -45,7 +45,7 @@ import {
 const FONT_FAMILIES = ["Newsreader", "Georgia", "Times New Roman", "Work Sans"];
 const COLOR_CHOICES = ["#1b1c19", "#4c0003", "#6f5d55", "#0f5b78"];
 const DRAFT_REVIEW_POLL_INTERVAL_MS = 5000;
-const DRAFT_GENERATION_POLL_INTERVAL_MS = 4000;
+const DRAFT_GENERATION_POLL_INTERVAL_MS = 10000;
 const MATTER_APPEND_UPLOAD_SESSION_KEY = "open_matter_append_uploader";
 const MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY =
   "matter_uploader_prefill_context";
@@ -318,6 +318,38 @@ const normalizeDraftGenerationCheckpoint = (
     : null;
 };
 
+const shouldRefreshDraftFromThread = (
+  thread: DraftGenerationThread,
+  draft: DraftDetail | null,
+) => {
+  const meta = thread?.draftMeta || null;
+  if (!meta) return false;
+  if (!draft) return true;
+  if (meta.id && meta.id !== draft.id) return true;
+  if (
+    typeof meta.saveVersion === "number" &&
+    Number(meta.saveVersion) !== Number(draft.saveVersion || 0)
+  ) {
+    return true;
+  }
+  if (meta.contentHash && meta.contentHash !== draft.contentHash) {
+    return true;
+  }
+  const isTerminalThreadStatus = ["completed", "failed", "cancelled", "needs_review"].includes(
+    String(thread?.status || "").trim().toLowerCase(),
+  );
+  const currentGenerationStatus = String(
+    draft?.context?.generationStatus || "",
+  ).trim().toLowerCase();
+  const nextGenerationStatus = String(
+    meta.generationStatus || thread?.status || "",
+  ).trim().toLowerCase();
+  if (isTerminalThreadStatus && currentGenerationStatus !== nextGenerationStatus) {
+    return true;
+  }
+  return false;
+};
+
 const getDraftCheckpointEyebrow = (
   checkpoint: DraftGenerationCheckpoint | null,
 ) => {
@@ -335,6 +367,7 @@ const DraftingPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const editorRef = useRef<DraftingEditorHandle | null>(null);
+  const activeDraftRef = useRef<DraftDetail | null>(null);
   const savedHashRef = useRef("");
   const currentHashRef = useRef("");
   const contextDirtyRef = useRef(false);
@@ -397,6 +430,9 @@ const DraftingPage = () => {
     () => (Array.isArray(draftGenerationCheckpoint?.questions) ? draftGenerationCheckpoint.questions : []),
     [draftGenerationCheckpoint],
   );
+  useEffect(() => {
+    activeDraftRef.current = activeDraft;
+  }, [activeDraft]);
   const checkpointRequestedDocuments = useMemo(
     () =>
       Array.isArray(draftGenerationCheckpoint?.requestedDocuments)
@@ -977,48 +1013,51 @@ const DraftingPage = () => {
         } else {
           setDraftGenerationCheckpoint(normalizedCheckpoint);
         }
-        const latestDraft = sanitizeDraftDetailContent(await getDraft(draftId));
-        if (cancelled) return;
-        setActiveDraft((current) => {
-          if (!current || current.id !== latestDraft.id) {
+        const currentDraftSnapshot = activeDraftRef.current;
+        if (shouldRefreshDraftFromThread(thread, currentDraftSnapshot)) {
+          const latestDraft = sanitizeDraftDetailContent(await getDraft(draftId));
+          if (cancelled) return;
+          setActiveDraft((current) => {
+            if (!current || current.id !== latestDraft.id) {
+              return latestDraft;
+            }
+            const currentGenerationStatus = String(
+              current.context?.generationStatus || "",
+            ).trim();
+            const nextGenerationStatus = String(
+              latestDraft.context?.generationStatus || "",
+            ).trim();
+            const currentSectionStatuses = JSON.stringify(
+              (current.context?.sectionStatuses as unknown) || null,
+            );
+            const nextSectionStatuses = JSON.stringify(
+              (latestDraft.context?.sectionStatuses as unknown) || null,
+            );
+            const currentContentHash = hashDraftContent(current.contentJson || {});
+            const nextContentHash = hashDraftContent(latestDraft.contentJson || {});
+            if (
+              current.title === latestDraft.title &&
+              currentGenerationStatus === nextGenerationStatus &&
+              currentSectionStatuses === nextSectionStatuses &&
+              currentContentHash === nextContentHash
+            ) {
+              return current;
+            }
             return latestDraft;
-          }
-          const currentGenerationStatus = String(
-            current.context?.generationStatus || "",
-          ).trim();
-          const nextGenerationStatus = String(
-            latestDraft.context?.generationStatus || "",
-          ).trim();
-          const currentSectionStatuses = JSON.stringify(
-            (current.context?.sectionStatuses as unknown) || null,
-          );
-          const nextSectionStatuses = JSON.stringify(
-            (latestDraft.context?.sectionStatuses as unknown) || null,
-          );
-          const currentContentHash = hashDraftContent(current.contentJson || {});
-          const nextContentHash = hashDraftContent(latestDraft.contentJson || {});
-          if (
-            current.title === latestDraft.title &&
-            currentGenerationStatus === nextGenerationStatus &&
-            currentSectionStatuses === nextSectionStatuses &&
-            currentContentHash === nextContentHash
-          ) {
-            return current;
-          }
-          return latestDraft;
-        });
+          });
 
-        const latestDraftGenerationContext = (latestDraft?.context
-          ?.draftGeneration || {}) as Record<string, unknown>;
-        const allowAutoApply =
-          latestDraftGenerationContext.allowAutoApply !== false;
-        if (allowAutoApply) {
-          const nextHash = hashDraftContent(latestDraft.contentJson || {});
-          if (nextHash !== savedHashRef.current) {
-            setCurrentContentJson(latestDraft.contentJson || {});
-            savedHashRef.current = nextHash;
-            currentHashRef.current = nextHash;
-            setDocumentTitle(latestDraft.title);
+          const latestDraftGenerationContext = (latestDraft?.context
+            ?.draftGeneration || {}) as Record<string, unknown>;
+          const allowAutoApply =
+            latestDraftGenerationContext.allowAutoApply !== false;
+          if (allowAutoApply) {
+            const nextHash = hashDraftContent(latestDraft.contentJson || {});
+            if (nextHash !== savedHashRef.current) {
+              setCurrentContentJson(latestDraft.contentJson || {});
+              savedHashRef.current = nextHash;
+              currentHashRef.current = nextHash;
+              setDocumentTitle(latestDraft.title);
+            }
           }
         }
 
