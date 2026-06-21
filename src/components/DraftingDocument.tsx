@@ -1046,6 +1046,9 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                     >
                       <strong>{item.label || item.type || "Source policy"}</strong>
                       <span>{item.source || item.role || "Declared source policy"}</span>
+                      {Array.isArray(item.acceptable_sources) && item.acceptable_sources.length > 0 && (
+                        <p>{item.acceptable_sources[0]}</p>
+                      )}
                     </div>
                   ))}
                 </div>

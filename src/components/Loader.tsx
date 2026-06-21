@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import "../componentStyling/Loader.css";
 
 type LoaderProps = {
@@ -10,6 +11,7 @@ type LoaderProps = {
   title?: string;
   mode?: "overlay" | "inline";
   variant?: "timeline" | "spinner";
+  transcript?: string[];
 };
 
 const Loader = ({
@@ -22,10 +24,19 @@ const Loader = ({
   title = "Processing Matter",
   mode = "overlay",
   variant = "timeline",
+  transcript = [],
 }: LoaderProps) => {
   const visibleSteps = steps.length
     ? steps.slice(-4)
     : [stage || "Queued matter ingestion"];
+  const visibleTranscript = useMemo(
+    () =>
+      transcript
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+        .slice(-80),
+    [transcript],
+  );
 
   if (variant === "spinner") {
     return (
@@ -96,6 +107,25 @@ const Loader = ({
               );
             })}
           </div>
+
+          {visibleTranscript.length ? (
+            <div className="matterUploadLoaderTranscript">
+              <div className="matterUploadLoaderTranscriptHeader">
+                <span>Thinking log</span>
+                <span>{visibleTranscript.length} entries</span>
+              </div>
+              <div className="matterUploadLoaderTranscriptBody">
+                {visibleTranscript.map((entry, index) => (
+                  <p
+                    key={`${index}-${entry.slice(0, 32)}`}
+                    className="matterUploadLoaderTranscriptEntry"
+                  >
+                    {entry}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <aside className="matterUploadLoaderPreview" aria-hidden="true">

@@ -470,6 +470,17 @@ export type DraftFormatProposal = {
   meta?: Record<string, unknown>;
 };
 
+export type DraftIdentificationResult = {
+  selectedDraftType: string;
+  selectedDraftKey: string;
+  draftTitle: string;
+  searchIntent: string;
+  exaQueries: string[];
+  matterContext?: Record<string, unknown>;
+  model?: string;
+  usedFallback?: boolean;
+};
+
 export type DraftGenerationQuestion = {
   id: string;
   question: string;
@@ -610,6 +621,15 @@ export type DraftGenerationStartResponse =
     checkpoint?: DraftGenerationCheckpoint | null;
   };
 
+export type SingleDraftStreamRequest = {
+  matterId: string;
+  draftType: string;
+  draftKey?: string;
+  draftTitle?: string;
+  source?: "atlas_next_steps";
+  requestedFrom?: "overview" | "drafts";
+};
+
 export const generateDraftFormat = async (input: {
   matterId: string;
   draftKey: string;
@@ -653,6 +673,52 @@ export const startMatterDraftGeneration = async (input: {
     },
   );
   return readJson<DraftGenerationStartResponse>(response);
+};
+
+export const openSingleDraftStream = async (
+  input: SingleDraftStreamRequest,
+  signal?: AbortSignal,
+) => {
+  return fetch(
+    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/single-draft/stream`),
+    {
+      method: "POST",
+      signal,
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({
+        draftType: input.draftType,
+        draftKey: input.draftKey || "",
+        draftTitle: input.draftTitle || "",
+        source: input.source || "atlas_next_steps",
+        requestedFrom: input.requestedFrom || "overview",
+      }),
+    },
+  );
+};
+
+export const identifyMatterDraft = async (input: {
+  matterId: string;
+  draftType: string;
+  draftKey?: string;
+  draftTitle?: string;
+}) => {
+  const response = await fetch(
+    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/draft-identification`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({
+        draftType: input.draftType,
+        draftKey: input.draftKey || "",
+        draftTitle: input.draftTitle || "",
+      }),
+    },
+  );
+  const payload = await readJson<{
+    success: true;
+    identification: DraftIdentificationResult;
+  }>(response);
+  return payload.identification;
 };
 
 export const continueMatterDraftGeneration = async (input: {

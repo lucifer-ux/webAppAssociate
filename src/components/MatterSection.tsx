@@ -61,7 +61,6 @@ import {
   continueMatterDraftGeneration,
   getDraftRecommendations,
   refreshDraftRecommendations,
-  startDraftRecommendation,
   type DraftGenerationCheckpoint,
 } from "./draftingApi";
 import { buildApiUrl } from "../lib/apiBase";
@@ -6105,21 +6104,15 @@ const MatterSection = ({
     setStartingDraftKey(recommendation.draft_key);
     setDraftRecommendationError("");
     try {
-      const payload = await startDraftRecommendation({
-        matterId: activeMatter.id,
-        recommendation,
-      });
-      if (payload.draft_recommendations) {
-        setDraftRecommendations(payload.draft_recommendations);
-      }
-      if (payload.result) {
-        updateMatter(payload.result);
-      }
-      if (payload.draft?.id) {
-        navigate(
-          `/drafting?draft=${encodeURIComponent(payload.draft.id)}&matter=${encodeURIComponent(activeMatter.id)}&mode=edit`,
-        );
-      }
+      navigate(
+        `/drafting?matter=${encodeURIComponent(activeMatter.id)}&startDraft=${encodeURIComponent(
+          recommendation.draft_key,
+        )}&draftLabel=${encodeURIComponent(
+          recommendation.title,
+        )}&requestedFrom=drafts&draftKey=${encodeURIComponent(
+          recommendation.draft_key,
+        )}`,
+      );
     } catch (error) {
       setDraftRecommendationError(
         error instanceof Error
