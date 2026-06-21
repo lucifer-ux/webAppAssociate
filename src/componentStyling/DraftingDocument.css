@@ -255,7 +255,7 @@
   position: sticky;
   top: 108px;
   align-self: start;
-  padding-right: 18px;
+  padding-right: 12px;
 }
 
 .singleDraftThinkingTitle {
@@ -277,9 +277,8 @@
 }
 
 .singleDraftThinkingViewport {
-  margin-top: 28px;
   min-height: 300px;
-  max-width: 460px;
+  max-width: 560px;
 }
 
 .singleDraftThinkingTyped {
@@ -291,54 +290,137 @@
   white-space: pre-wrap;
 }
 
-.singleDraftPreviewColumn {
-  min-width: 0;
+.singleDraftThinkingCursor {
+  display: inline-block;
+  width: 0.55ch;
+  height: 1.05em;
+  margin-left: 3px;
+  vertical-align: -0.08em;
+  background: #700d0d;
+  animation: singleDraftCursorBlink 0.95s steps(1) infinite;
 }
 
-.singleDraftPreviewSheet {
-  min-height: calc(100vh - 188px);
-  padding: 44px 54px;
-  border: 1px solid #e1d6cb;
-  background: #fffdf8;
+.singleDraftThinkingHero {
+  margin-top: 28px;
+  padding: 30px 32px;
+  border: 1px solid #dfbfbc;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 250, 244, 0.92)),
+    #fffdf8;
   box-shadow: 0 18px 42px rgba(43, 26, 22, 0.08);
-  color: #2b211d;
 }
 
-.singleDraftPreviewSheet h1,
-.singleDraftPreviewSheet h2,
-.singleDraftPreviewSheet h3 {
+.singleDraftThinkingMeta {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #866259;
+}
+
+.singleDraftExecutionRail {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.singleDraftExecutionPanel {
+  border: 1px solid #dfbfbc;
+  background: rgba(255, 253, 248, 0.86);
+  box-shadow: 0 18px 42px rgba(43, 26, 22, 0.08);
+  padding: 22px;
+}
+
+.singleDraftExecutionStepList {
+  display: grid;
+  gap: 14px;
+}
+
+.singleDraftExecutionStep {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.singleDraftExecutionStepMarker {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border: 1px solid #9e7f73;
+  background: transparent;
+}
+
+.singleDraftExecutionStep strong {
+  display: block;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #382b26;
+}
+
+.singleDraftExecutionStep p {
+  margin: 6px 0 0;
   font-family: "Newsreader", serif;
-  font-weight: 500;
-  color: #221915;
+  font-size: 18px;
+  line-height: 1.5;
+  color: #57413f;
 }
 
-.singleDraftPreviewSheet h1 {
-  margin: 0 0 22px;
-  font-size: 34px;
+.singleDraftExecutionStepDone .singleDraftExecutionStepMarker {
+  background: #700d0d;
+  border-color: #700d0d;
 }
 
-.singleDraftPreviewSheet p {
-  margin: 0 0 16px;
+.singleDraftExecutionStepCurrent .singleDraftExecutionStepMarker {
+  background: #fff1ef;
+  border-color: #700d0d;
+  box-shadow: 0 0 0 4px rgba(112, 13, 13, 0.08);
+}
+
+.singleDraftExecutionStepPending {
+  opacity: 0.6;
+}
+
+.singleDraftChunkStack {
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.singleDraftChunkCard {
+  border-left: 2px solid #700d0d;
+  padding: 14px 14px 14px 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.singleDraftChunkCard.isActive {
+  background: #fff8f2;
+  box-shadow: inset 0 0 0 1px rgba(112, 13, 13, 0.08);
+}
+
+.singleDraftChunkCard p {
+  margin: 0;
   font-family: "Newsreader", serif;
-  font-size: 20px;
-  line-height: 1.65;
+  font-size: 18px;
+  line-height: 1.58;
   color: #3f322d;
 }
 
-.singleDraftPreviewEmpty {
-  min-height: calc(100vh - 188px);
-  border: 1px solid #e1d6cb;
-  background: #fffdf8;
-  box-shadow: 0 18px 42px rgba(43, 26, 22, 0.08);
-}
-
 .singleDraftFormattingPopup {
-  position: fixed;
-  z-index: 160;
-  top: 96px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(420px, calc(100vw - 32px));
+  position: sticky;
+  bottom: 18px;
+  z-index: 20;
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -370,12 +452,30 @@
   color: #261914;
 }
 
+.draftPostFormattingPopup {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  width: min(360px, calc(100vw - 48px));
+}
+
 .singleDraftFormattingCopy p:last-child {
   margin: 8px 0 0;
   font-family: "Work Sans", sans-serif;
   font-size: 14px;
   line-height: 1.45;
   color: #695b51;
+}
+
+@keyframes singleDraftCursorBlink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .draftTemplateSelection {
@@ -550,15 +650,19 @@
   align-items: flex-start;
   gap: 22px;
   padding: 26px 0 54px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .draftNavigatorRail {
-  width: 220px;
-  flex: 0 0 220px;
+  width: 340px;
+  flex: 0 0 340px;
   min-width: 0;
   position: sticky;
   top: 210px;
   align-self: flex-start;
+  display: grid;
+  gap: 18px;
 }
 
 .draftNavigatorCard {
@@ -650,7 +754,10 @@
 }
 
 .draftPaperSheet.compact {
-  width: min(100%);
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: min(980px, calc(100vw - 430px));
   min-height: 1180px;
   background: #fffdfa;
   border: 1px solid #d8cbc2;
@@ -954,10 +1061,10 @@
 }
 
 .draftCommentRail {
-  width: 300px;
+  width: 100%;
   position: relative;
-  min-height: 1180px;
-  padding-top: 14px;
+  min-height: 0;
+  padding-top: 0;
 }
 
 .draftSelectionHint {
@@ -1212,8 +1319,7 @@
 }
 
 .draftCommentComposerInline {
-  position: absolute;
-  left: 0;
+  position: relative;
   width: 100%;
   display: grid;
   gap: 10px;
@@ -1302,16 +1408,19 @@
 }
 
 .commentInlineList {
-  position: relative;
-  min-height: 1180px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  padding: 12px 0 40px;
 }
 
 .inlineCommentCard {
-  position: absolute;
-  left: 0;
+  position: relative;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
   box-sizing: border-box;
-  padding: 14px 16px;
+  padding: 18px 18px 16px;
   border-radius: 20px 20px 8px 20px;
   background: rgba(251, 249, 244, 0.94);
   border: 1px solid rgba(139, 113, 110, 0.2);
@@ -1335,6 +1444,10 @@
   gap: 8px;
 }
 
+.inlineCommentTitleBlock {
+  min-width: 0;
+}
+
 .inlineCommentCard strong {
   display: block;
   margin-bottom: 8px;
@@ -1343,6 +1456,14 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #5f5048;
+}
+
+.inlineCommentSectionTag {
+  display: block;
+  color: #7a6760;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .commentOverflowWrap {
@@ -1372,7 +1493,7 @@
   border: 1px solid #ccb7b3;
   background: #fffdfa;
   box-shadow: 0 10px 24px rgba(40, 27, 23, 0.12);
-  z-index: 8;
+  z-index: 12;
   padding: 4px;
 }
 
@@ -1405,6 +1526,33 @@
   color: #322825;
   font-family: "Newsreader", serif;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.inlineCommentCard .draftMetaBadgeRow {
+  margin: 10px 0 12px;
+}
+
+.inlineCommentPreviewExcerpt,
+.inlineCommentPreviewNote {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.inlineCommentPreviewExcerpt {
+  margin-bottom: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.inlineCommentCardActions {
+  margin-top: 16px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
 .inlineCommentEdit {
@@ -1474,6 +1622,24 @@
   background: rgba(250, 235, 232, 0.94);
 }
 
+.inlineCommentCard.critiqueStatusCard {
+  position: relative;
+  border-radius: 12px;
+  border-left: 3px solid #700d0d;
+}
+
+.inlineCommentCard.critiqueStatusCard.running {
+  background: rgba(255, 251, 245, 0.96);
+}
+
+.inlineCommentCard.critiqueStatusCard.ready {
+  background: rgba(241, 246, 239, 0.96);
+}
+
+.inlineCommentCard.critiqueStatusCard.error {
+  background: rgba(252, 238, 236, 0.96);
+}
+
 .inlineCommentCard.reaction p {
   font-size: 24px;
   line-height: 1;
@@ -1501,6 +1667,106 @@
 .inlineCommentActions button:hover {
   background: #f0e9e1;
   color: #4c0003;
+}
+
+.commentDetailBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 18, 15, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  z-index: 40;
+}
+
+.commentDetailModal {
+  width: min(880px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  border-radius: 24px;
+  border: 1px solid rgba(139, 113, 110, 0.22);
+  background: #fffdfa;
+  box-shadow: 0 24px 72px rgba(40, 27, 23, 0.18);
+  padding: 28px;
+  display: grid;
+  gap: 18px;
+}
+
+.commentDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.commentDetailHeader h3 {
+  margin: 4px 0 0;
+  font-family: "Newsreader", serif;
+  font-size: 30px;
+  color: #2d211d;
+}
+
+.commentDetailClose {
+  border: 1px solid #ccb7b3;
+  background: transparent;
+  color: #5a4a43;
+}
+
+.commentDetailBody p {
+  margin: 0;
+  color: #322825;
+  font-family: "Newsreader", serif;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.commentDiffGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.commentDiffCard {
+  border-radius: 18px;
+  border: 1px solid rgba(139, 113, 110, 0.2);
+  background: rgba(251, 249, 244, 0.94);
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.commentDiffCard.before {
+  border-left: 3px solid #c98b81;
+}
+
+.commentDiffCard.after {
+  border-left: 3px solid #678f69;
+}
+
+.commentDiffCard span {
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b5952;
+}
+
+.commentDiffCard pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #2f2522;
+  font-family: "Newsreader", serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.commentDetailFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 @media (max-width: 760px) {
@@ -1532,10 +1798,13 @@
     min-height: 200px;
   }
 
-  .singleDraftPreviewSheet,
-  .singleDraftPreviewEmpty {
-    min-height: auto;
-    padding: 28px 22px;
+  .singleDraftThinkingHero,
+  .singleDraftExecutionPanel {
+    padding: 22px 20px;
+  }
+
+  .singleDraftChunkStack {
+    max-height: none;
   }
 
   .draftTemplateSelection {
@@ -1591,6 +1860,20 @@
     right: 16px;
     width: auto;
     top: 16px;
+  }
+
+  .commentDetailBackdrop {
+    padding: 16px;
+  }
+
+  .commentDetailModal {
+    padding: 22px 18px;
+  }
+
+  .commentDiffGrid,
+  .commentDetailFooter {
+    grid-template-columns: 1fr;
+    display: grid;
   }
 }
 

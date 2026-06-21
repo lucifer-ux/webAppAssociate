@@ -26,6 +26,8 @@ import {
   patchDraft,
   saveDraft,
   openSingleDraftStream,
+  openDraftCritiqueStream,
+  formatDraft,
   triggerDraftReview,
   type AccessRole,
   type DraftComment,
@@ -173,6 +175,25 @@ type SingleDraftStreamState = {
   thinkingHistory: string[];
 };
 
+type StreamedCritiqueState = {
+  status: "idle" | "running" | "ready" | "error";
+  message: string;
+  commentCount: number;
+};
+
+type DraftFormattingState = {
+  status: "idle" | "running" | "ready" | "error";
+  message: string;
+};
+
+const SINGLE_DRAFT_STAGE_ORDER = [
+  "loading_context",
+  "processing_document",
+  "drafting",
+  "formatting",
+  "saving",
+] as const;
+
 const appendLimitedEntries = (current: string[], next: string, maxEntries = 80) => {
   const normalized = String(next || "").trim();
   if (!normalized) return current;
@@ -193,6 +214,93 @@ const chunkWords = (text: string, size = 150) => {
     chunks.push(words.slice(index, index + size).join(" "));
   }
   return chunks;
+};
+
+const makeTextNodesWithBreaks = (text: string): JSONContent[] => {
+  const lines = String(text || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim());
+  const content: JSONContent[] = [];
+  lines.forEach((line, index) => {
+    if (index > 0) {
+      content.push({ type: "hardBreak" });
+    }
+    if (line) {
+      content.push({ type: "text", text: line });
+    }
+  });
+  return content;
+};
+
+const replaceBlockTextById = (
+  node: JSONContent,
+  blockId: string,
+  nextText: string,
+): JSONContent => {
+  if (!node || typeof node !== "object") return node;
+  const attrs = node.attrs && typeof node.attrs === "object" ? node.attrs : undefined;
+  const content = Array.isArray(node.content) ? node.content : undefined;
+  const normalizedBlockId = String(blockId || "").trim();
+  const isTarget = String(attrs?.blockId || "").trim() === normalizedBlockId;
+
+  if (isTarget && (node.type === "paragraph" || node.type === "heading")) {
+    return {
+      ...node,
+      content: makeTextNodesWithBreaks(nextText),
+    };
+  }
+
+  if (!content) return node;
+  return {
+    ...node,
+    content: content.map((child) => replaceBlockTextById(child, blockId, nextText)),
+  };
+};
+
+const extractInlineText = (node: JSONContent | null | undefined): string => {
+  if (!node || typeof node !== "object") return "";
+  if (node.type === "text") return String(node.text || "");
+  if (node.type === "hardBreak") return "\n";
+  const content = Array.isArray(node.content) ? node.content : [];
+  return content.map((child) => extractInlineText(child)).join("");
+};
+
+const replaceFirstMatchingExcerpt = (
+  node: JSONContent,
+  excerpt: string,
+  nextText: string,
+): { node: JSONContent; replaced: boolean } => {
+  if (!node || typeof node !== "object") return { node, replaced: false };
+  const content = Array.isArray(node.content) ? node.content : undefined;
+  const normalizedExcerpt = String(excerpt || "").replace(/\s+/g, " ").trim();
+  const nodeText = extractInlineText(node).replace(/\s+/g, " ").trim();
+  if (
+    normalizedExcerpt &&
+    nodeText &&
+    (node.type === "paragraph" || node.type === "heading") &&
+    nodeText.includes(normalizedExcerpt)
+  ) {
+    return {
+      replaced: true,
+      node: {
+        ...node,
+        content: makeTextNodesWithBreaks(nextText),
+      },
+    };
+  }
+  if (!content) return { node, replaced: false };
+  let replaced = false;
+  const nextContent = content.map((child) => {
+    if (replaced) return child;
+    const result = replaceFirstMatchingExcerpt(child, excerpt, nextText);
+    if (result.replaced) replaced = true;
+    return result.node;
+  });
+  return {
+    replaced,
+    node: replaced ? { ...node, content: nextContent } : node,
+  };
 };
 
 const normalizeCheckpointText = (value: unknown) =>
@@ -560,10 +668,24 @@ const DraftingPage = () => {
   const [isSubmittingDraftGeneration, setIsSubmittingDraftGeneration] =
     useState(false);
   const [draftGenerationTypedStatus, setDraftGenerationTypedStatus] = useState("");
+  const [streamedCritiqueState, setStreamedCritiqueState] = useState<StreamedCritiqueState>({
+    status: "idle",
+    message: "",
+    commentCount: 0,
+  });
+  const [draftFormattingState, setDraftFormattingState] = useState<DraftFormattingState>({
+    status: "idle",
+    message: "",
+  });
   const [singleDraftStreamState, setSingleDraftStreamState] =
     useState<SingleDraftStreamState | null>(null);
   const [singleDraftTypedThinking, setSingleDraftTypedThinking] = useState("");
-  const [singleDraftPreviewText, setSingleDraftPreviewText] = useState("");
+  const [singleDraftAnimatingPageIndex, setSingleDraftAnimatingPageIndex] = useState(-1);
+  const [singleDraftCommittedPageCount, setSingleDraftCommittedPageCount] = useState(0);
+  const singleDraftAnimationRef = useRef({ running: false, seenCount: 0 });
+  const singleDraftCritiqueRequestRef = useRef("");
+  const singleDraftFormattingRequestRef = useRef("");
+  const singleDraftFormattingRetryRef = useRef("");
   const checkpointQuestions = useMemo(
     () => (Array.isArray(draftGenerationCheckpoint?.questions) ? draftGenerationCheckpoint.questions : []),
     [draftGenerationCheckpoint],
@@ -687,6 +809,37 @@ const DraftingPage = () => {
     () => chunkWords(singleDraftThinkingTranscript.join(" "), 150),
     [singleDraftThinkingTranscript],
   );
+  const singleDraftCompletedPages = useMemo(
+    () => singleDraftThinkingPages.slice(0, singleDraftCommittedPageCount),
+    [singleDraftCommittedPageCount, singleDraftThinkingPages],
+  );
+  const singleDraftCurrentPage =
+    singleDraftAnimatingPageIndex >= 0
+      ? singleDraftThinkingPages[singleDraftAnimatingPageIndex] || ""
+      : "";
+  const singleDraftExecutionSteps = useMemo(() => {
+    const currentStage = String(singleDraftStreamState?.stage || "");
+    const currentIndex = SINGLE_DRAFT_STAGE_ORDER.indexOf(
+      currentStage as (typeof SINGLE_DRAFT_STAGE_ORDER)[number],
+    );
+    return [
+      { id: "loading_context", label: "Load matter context" },
+      { id: "processing_document", label: "Read uploaded files" },
+      { id: "drafting", label: "Generate draft text" },
+      { id: "formatting", label: "Format the structure" },
+      { id: "saving", label: "Save to draft workspace" },
+    ].map((item, index) => ({
+      ...item,
+      status:
+        currentIndex < 0
+          ? "pending"
+          : index < currentIndex
+            ? "done"
+            : index === currentIndex
+              ? "current"
+              : "pending",
+    }));
+  }, [singleDraftStreamState?.stage]);
   const draftSidePanelKey = useMemo(() => {
     if (draftGenerationCheckpoint) {
       return `checkpoint:${draftGenerationThread?.id || "none"}:${draftGenerationCheckpoint.status || "unknown"}:${draftGenerationCheckpoint.title || "draft"}`;
@@ -898,7 +1051,9 @@ const DraftingPage = () => {
     setDraftGenerationError("");
     setDraftGenerationCheckpoint(null);
     setDraftGenerationAnswers({});
-    setSingleDraftPreviewText("");
+    singleDraftAnimationRef.current = { running: false, seenCount: 0 };
+    setSingleDraftAnimatingPageIndex(-1);
+    setSingleDraftCommittedPageCount(0);
     setSingleDraftStreamState({
       draftId: "",
       title: draftLabelFromQuery || startDraftFromQuery,
@@ -983,9 +1138,6 @@ const DraftingPage = () => {
           break;
         }
         case "draft_chunk": {
-          const text = String(payload.text || "");
-          if (!text) break;
-          setSingleDraftPreviewText((current) => `${current}${text}`);
           break;
         }
         case "document_summary": {
@@ -1013,6 +1165,7 @@ const DraftingPage = () => {
         case "final": {
           streamedDraftId = String(payload.draftId || streamedDraftId || "").trim();
           setSingleDraftTypedThinking("");
+          setSingleDraftAnimatingPageIndex(-1);
           setSingleDraftStreamState((current) =>
             current
               ? {
@@ -1041,8 +1194,10 @@ const DraftingPage = () => {
           }
           completed = true;
           setSingleDraftTypedThinking("");
+          setSingleDraftAnimatingPageIndex(-1);
+          setSingleDraftCommittedPageCount(0);
+          singleDraftAnimationRef.current = { running: false, seenCount: 0 };
           setSingleDraftStreamState(null);
-          setSingleDraftPreviewText("");
           if (streamReader) {
             await streamReader.cancel().catch(() => {});
           }
@@ -1125,8 +1280,10 @@ const DraftingPage = () => {
         if (cancelled || controller.signal.aborted || completed) return;
         draftGenerationStartRequestRef.current = "";
         setSingleDraftTypedThinking("");
+        setSingleDraftAnimatingPageIndex(-1);
+        setSingleDraftCommittedPageCount(0);
+        singleDraftAnimationRef.current = { running: false, seenCount: 0 };
         setSingleDraftStreamState(null);
-        setSingleDraftPreviewText("");
         setActiveDraft(null);
         setSaveStatus("error");
         setLoadError(
@@ -1366,6 +1523,219 @@ const DraftingPage = () => {
 
   useEffect(() => {
     const draftId = String(activeDraft?.id || "").trim();
+    const singleDraftStreamContext =
+      activeDraft?.context?.singleDraftStream &&
+      typeof activeDraft.context.singleDraftStream === "object"
+        ? (activeDraft.context.singleDraftStream as Record<string, unknown>)
+        : null;
+    const latestCritiqueContext =
+      activeDraft?.context?.latestCritiqueReview &&
+      typeof activeDraft.context.latestCritiqueReview === "object"
+        ? (activeDraft.context.latestCritiqueReview as Record<string, unknown>)
+        : null;
+    const singleDraftStatus = String(singleDraftStreamContext?.status || "").trim();
+    const latestCritiqueStatus = String(latestCritiqueContext?.status || "").trim();
+    if (!draftId || singleDraftStatus !== "completed") {
+      setStreamedCritiqueState((current) =>
+        current.status === "running"
+          ? { status: "idle", message: "", commentCount: 0 }
+          : current,
+      );
+      return;
+    }
+    if (latestCritiqueStatus === "completed") {
+      return;
+    }
+    if (singleDraftCritiqueRequestRef.current === draftId) {
+      return;
+    }
+    singleDraftCritiqueRequestRef.current = draftId;
+    setStreamedCritiqueState({
+      status: "running",
+      message: "Critique is reviewing the generated draft.",
+      commentCount: 0,
+    });
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+    const runCritiqueStream = async () => {
+      try {
+        const response = await openDraftCritiqueStream(draftId, controller.signal);
+        if (!response.ok || !response.body) {
+          const raw = await response.text();
+          throw new Error(raw.trim() || "Failed to start critique review.");
+        }
+
+        streamReader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!cancelled) {
+          const { value, done } = await streamReader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let delimiterIndex = buffer.indexOf("\n\n");
+          while (delimiterIndex >= 0) {
+            const block = buffer.slice(0, delimiterIndex).trim();
+            buffer = buffer.slice(delimiterIndex + 2);
+            if (block) {
+              const lines = block.split("\n");
+              let eventName = "message";
+              const dataLines: string[] = [];
+              for (const line of lines) {
+                if (line.startsWith("event:")) {
+                  eventName = line.slice(6).trim();
+                } else if (line.startsWith("data:")) {
+                  dataLines.push(line.slice(5).trim());
+                }
+              }
+              if (dataLines.length) {
+                const payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+                if (eventName === "critique_status") {
+                  setStreamedCritiqueState((current) => ({
+                    status: "running",
+                    commentCount: current.commentCount,
+                    message: String(payload.message || "Critique is reviewing the draft."),
+                  }));
+                } else if (eventName === "critique_comment") {
+                  const annotation = payload.annotation as DraftComment | undefined;
+                  if (annotation?.id) {
+                    setComments((prev) => {
+                      const existing = prev.find((item) => item.id === annotation.id);
+                      if (existing) return prev;
+                      return [...prev, annotation];
+                    });
+                    setStreamedCritiqueState((current) => ({
+                      status: "running",
+                      commentCount: current.commentCount + 1,
+                      message:
+                        String(payload.annotation && "AI generated comment added.") ||
+                        current.message,
+                    }));
+                  }
+                } else if (eventName === "critique_done") {
+                  setStreamedCritiqueState((current) => ({
+                    status: "ready",
+                    commentCount:
+                      Number(payload.commentCount || current.commentCount || 0) ||
+                      current.commentCount,
+                    message: "Critique review is complete.",
+                  }));
+                } else if (eventName === "error") {
+                  throw new Error(String(payload.message || "Critique review failed."));
+                }
+              }
+            }
+            delimiterIndex = buffer.indexOf("\n\n");
+          }
+        }
+      } catch (error) {
+        if (cancelled || controller.signal.aborted) return;
+        setStreamedCritiqueState({
+          status: "error",
+          message:
+            error instanceof Error ? error.message : "Critique review failed.",
+          commentCount: 0,
+        });
+        singleDraftCritiqueRequestRef.current = "";
+      }
+    };
+
+    void runCritiqueStream();
+
+    return () => {
+      cancelled = true;
+      void streamReader?.cancel().catch(() => {});
+      controller.abort();
+    };
+  }, [activeDraft?.context, activeDraft?.id]);
+
+  useEffect(() => {
+    const draftId = String(activeDraft?.id || "").trim();
+    const singleDraftStreamContext =
+      activeDraft?.context?.singleDraftStream &&
+      typeof activeDraft.context.singleDraftStream === "object"
+        ? (activeDraft.context.singleDraftStream as Record<string, unknown>)
+        : null;
+    const latestFormattingContext =
+      activeDraft?.context?.latestFormatting &&
+      typeof activeDraft.context.latestFormatting === "object"
+        ? (activeDraft.context.latestFormatting as Record<string, unknown>)
+        : null;
+    const singleDraftStatus = String(singleDraftStreamContext?.status || "").trim();
+    const latestFormattingStatus = String(latestFormattingContext?.status || "").trim();
+    const hasFormattedText = Boolean(
+      String(activeDraft?.context?.singleDraftFormattedText || "").trim(),
+    );
+
+    if (!draftId || singleDraftStatus !== "completed") {
+      setDraftFormattingState((current) =>
+        current.status === "running" ? { status: "idle", message: "" } : current,
+      );
+      return;
+    }
+
+    if (latestFormattingStatus === "completed") {
+      setDraftFormattingState({
+        status: "ready",
+        message: "Formatting complete.",
+      });
+      return;
+    }
+
+    if (latestFormattingStatus === "error") {
+      if (!hasFormattedText && singleDraftFormattingRetryRef.current !== draftId) {
+        singleDraftFormattingRetryRef.current = draftId;
+      } else {
+        setDraftFormattingState({
+          status: "error",
+          message: String(latestFormattingContext?.message || "Draft formatting failed."),
+        });
+        return;
+      }
+    }
+
+    if (singleDraftFormattingRequestRef.current === draftId) {
+      return;
+    }
+
+    singleDraftFormattingRequestRef.current = draftId;
+    setDraftFormattingState({
+      status: "running",
+      message: "Formatting the draft for readability.",
+    });
+
+    void formatDraft(draftId)
+      .then((payload) => {
+        const nextDraft = sanitizeDraftDetailContent(payload.draft);
+        setActiveDraft((current) =>
+          current && current.id === nextDraft.id ? nextDraft : current,
+        );
+        setCurrentContentJson(nextDraft.contentJson || {});
+        setDocumentTitle(nextDraft.title);
+        const nextHash = hashDraftContent(nextDraft.contentJson || {});
+        savedHashRef.current = nextHash;
+        currentHashRef.current = nextHash;
+        contextDirtyRef.current = false;
+        setDraftFormattingState({
+          status: "ready",
+          message: "Formatting complete.",
+        });
+      })
+      .catch((error) => {
+        singleDraftFormattingRequestRef.current = "";
+        setDraftFormattingState({
+          status: "error",
+          message: error instanceof Error ? error.message : "Draft formatting failed.",
+        });
+      });
+  }, [activeDraft?.context, activeDraft?.id]);
+
+  useEffect(() => {
+    const draftId = String(activeDraft?.id || "").trim();
     const matterId = String(
       activeDraft?.matterId || activeDraft?.context?.matterId || matterIdFromQuery || "",
     ).trim();
@@ -1522,23 +1892,30 @@ const DraftingPage = () => {
   useEffect(() => {
     if (!isSingleDraftStreaming || isSingleDraftFormattingStage) {
       setSingleDraftTypedThinking("");
+      setSingleDraftAnimatingPageIndex(-1);
+      singleDraftAnimationRef.current.running = false;
       return;
     }
     if (!singleDraftThinkingPages.length) {
       setSingleDraftTypedThinking("");
+      setSingleDraftAnimatingPageIndex(-1);
       return;
     }
-
     let cancelled = false;
-    let pageIndex = 0;
-    let timeoutId: number | null = null;
     let intervalId: number | null = null;
+    let timeoutId: number | null = null;
 
-    const runPage = () => {
-      if (cancelled) return;
-      const words = singleDraftThinkingPages[pageIndex]?.split(/\s+/).filter(Boolean) || [];
-      let wordIndex = 0;
+    const runQueue = () => {
+      if (cancelled || singleDraftAnimationRef.current.running) return;
+      if (singleDraftAnimationRef.current.seenCount >= singleDraftThinkingPages.length) return;
+
+      const targetIndex = singleDraftAnimationRef.current.seenCount;
+      const words =
+        singleDraftThinkingPages[targetIndex]?.split(/\s+/).filter(Boolean) || [];
+      singleDraftAnimationRef.current.running = true;
+      setSingleDraftAnimatingPageIndex(targetIndex);
       setSingleDraftTypedThinking("");
+      let wordIndex = 0;
 
       intervalId = window.setInterval(() => {
         if (cancelled) {
@@ -1549,19 +1926,18 @@ const DraftingPage = () => {
         setSingleDraftTypedThinking(words.slice(0, wordIndex).join(" "));
         if (wordIndex >= words.length) {
           if (intervalId) window.clearInterval(intervalId);
+          singleDraftAnimationRef.current.seenCount = targetIndex + 1;
+          setSingleDraftCommittedPageCount(targetIndex + 1);
           timeoutId = window.setTimeout(() => {
             if (cancelled) return;
-            setSingleDraftTypedThinking("");
-            if (pageIndex < singleDraftThinkingPages.length - 1) {
-              pageIndex += 1;
-              runPage();
-            }
-          }, 550);
+            singleDraftAnimationRef.current.running = false;
+            runQueue();
+          }, 220);
         }
       }, 28);
     };
 
-    runPage();
+    runQueue();
 
     return () => {
       cancelled = true;
@@ -1754,9 +2130,52 @@ const DraftingPage = () => {
   };
 
   const updateCommentStatus = (id: string, status: DraftComment["status"]) => {
+    const acceptedComment =
+      status === "accepted" ? comments.find((comment) => comment.id === id) || null : null;
     setComments((prev) =>
-      prev.map((comment) => (comment.id === id ? { ...comment, status } : comment)),
+      prev.map((comment) => {
+        if (comment.id !== id) return comment;
+        return { ...comment, status };
+      }),
     );
+    if (
+      status === "accepted" &&
+      acceptedComment?.suggestedText &&
+      activeDraft
+    ) {
+      const nextContentByBlockId = acceptedComment.blockId
+        ? replaceBlockTextById(
+            currentContentJson,
+            acceptedComment.blockId,
+            acceptedComment.suggestedText,
+          )
+        : currentContentJson;
+      const blockIdChanged =
+        JSON.stringify(nextContentByBlockId) !== JSON.stringify(currentContentJson);
+      const excerptFallback = !blockIdChanged && acceptedComment.excerpt
+        ? replaceFirstMatchingExcerpt(
+            currentContentJson,
+            acceptedComment.excerpt,
+            acceptedComment.suggestedText,
+          )
+        : { node: nextContentByBlockId, replaced: blockIdChanged };
+      const nextContent = excerptFallback.node;
+      if (!blockIdChanged && !excerptFallback.replaced) {
+        return;
+      }
+      setCurrentContentJson(nextContent);
+      setActiveDraft((current) =>
+        current
+          ? {
+              ...current,
+              contentJson: nextContent,
+            }
+          : current,
+      );
+      currentHashRef.current = hashDraftContent(nextContent);
+      contextDirtyRef.current = true;
+      setSaveStatus("dirty");
+    }
   };
 
   const updateCommentNote = (id: string, note: string) => {
@@ -1801,14 +2220,6 @@ const DraftingPage = () => {
           : "Saved to Associate Drive";
 
   const canRenderEditor = Boolean(activeDraft) && !isSingleDraftStreaming;
-  const singleDraftPreviewHtml = useMemo(() => {
-    const previewText = String(singleDraftPreviewText || "").trim();
-    if (!previewText) return "";
-    return sourceTextToHtml(
-      singleDraftStreamState?.title || "Generated draft",
-      previewText,
-    );
-  }, [singleDraftPreviewText, singleDraftStreamState?.title]);
   const recommendation = activeDraft?.context?.recommendation;
   const canGenerateFormat = Boolean(
     activeDraft?.matterId && recommendation?.draft_key,
@@ -1937,19 +2348,6 @@ const DraftingPage = () => {
           canRenderEditor ? "draftingMain" : "draftingTemplateMain"
         } draftingNoAppSidebar`}
       >
-        {isSingleDraftStreaming && isSingleDraftFormattingStage ? (
-          <div className="singleDraftFormattingPopup" role="status" aria-live="polite">
-            <span className="singleDraftFormattingSpinner" aria-hidden="true" />
-            <div className="singleDraftFormattingCopy">
-              <p className="draftTemplateEyebrow">Draft Formatting</p>
-              <h2>Formatting the structure</h2>
-              <p>
-                {singleDraftStreamState?.statusMessage ||
-                  "Please wait while Associate formats the structure."}
-              </p>
-            </div>
-          </div>
-        ) : null}
         {!isDraftSidePanelVisible && hasDraftSidePanelContent ? (
           <button
             type="button"
@@ -2309,75 +2707,141 @@ const DraftingPage = () => {
           </aside>
         ) : null}
         {canRenderEditor && activeDraft ? (
-          <DraftingDocument
-            ref={editorRef}
-            draft={activeDraft}
-            currentRole={currentRole}
-            zoomLevel={zoomLevel}
-            activeAnnotationId={activeAnnotationId}
-            pendingAnnotation={pendingAnnotation}
-            commentDraft={commentDraft}
-            comments={comments}
-            onDocumentChange={updateCurrentDocument}
-            onDraftContextChange={updateDraftContext}
-            onToolbarStateChange={setToolbarState}
-            onCommentDraftChange={setCommentDraft}
-            onStartAnnotation={(annotation) => {
-              setPendingAnnotation(annotation);
-              setCommentDraft("");
-              setActiveAnnotationId(null);
-            }}
-            onClearPendingAnnotation={() => {
-              setPendingAnnotation(null);
-              setCommentDraft("");
-            }}
-            onAddPendingComment={addPendingComment}
-            onAddReaction={addReaction}
-            onSelectAnnotation={setActiveAnnotationId}
-            onAcceptComment={(id) => updateCommentStatus(id, "accepted")}
-            onRejectComment={(id) => updateCommentStatus(id, "rejected")}
-            onUpdateComment={updateCommentNote}
-            onDeleteComment={deleteComment}
-            onAddReply={addCommentReply}
-            onMapComments={setComments}
-            onRequestSave={() => void saveCurrentDraft("manual")}
-          />
+          <>
+            <DraftingDocument
+              ref={editorRef}
+              draft={activeDraft}
+              currentRole={currentRole}
+              zoomLevel={zoomLevel}
+              activeAnnotationId={activeAnnotationId}
+              pendingAnnotation={pendingAnnotation}
+              commentDraft={commentDraft}
+              comments={comments}
+              onDocumentChange={updateCurrentDocument}
+              onDraftContextChange={updateDraftContext}
+              onToolbarStateChange={setToolbarState}
+              onCommentDraftChange={setCommentDraft}
+              onStartAnnotation={(annotation) => {
+                setPendingAnnotation(annotation);
+                setCommentDraft("");
+                setActiveAnnotationId(null);
+              }}
+              onClearPendingAnnotation={() => {
+                setPendingAnnotation(null);
+                setCommentDraft("");
+              }}
+              onAddPendingComment={addPendingComment}
+              onAddReaction={addReaction}
+              onSelectAnnotation={setActiveAnnotationId}
+              onAcceptComment={(id) => updateCommentStatus(id, "accepted")}
+              onRejectComment={(id) => updateCommentStatus(id, "rejected")}
+              onUpdateComment={updateCommentNote}
+              onDeleteComment={deleteComment}
+              onAddReply={addCommentReply}
+              onMapComments={setComments}
+              onRequestSave={() => void saveCurrentDraft("manual")}
+              critiqueState={streamedCritiqueState}
+            />
+            {draftFormattingState.status === "running" ? (
+              <div className="singleDraftFormattingPopup draftPostFormattingPopup" role="status" aria-live="polite">
+                <span className="singleDraftFormattingSpinner" aria-hidden="true" />
+                <div className="singleDraftFormattingCopy">
+                  <p className="draftTemplateEyebrow">Draft Formatting</p>
+                  <h2>Formatting</h2>
+                  <p>{draftFormattingState.message || "Formatting the draft cleanly. Please wait."}</p>
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : isSingleDraftStreaming ? (
           <section className="singleDraftGenerationCanvas">
             <div className="singleDraftThinkingColumn">
-              <p className="draftTemplateEyebrow">Draft Generation</p>
+              <p className="draftTemplateEyebrow">Live Execution</p>
               <h1 className="singleDraftThinkingTitle">
                 {singleDraftStreamState?.title || "Generating draft"}
               </h1>
               <p className="singleDraftThinkingStage">
-                {singleDraftStreamState?.statusMessage ||
-                  "Associate is drafting from the matter record."}
+                {isSingleDraftFormattingStage
+                  ? "Draft generated. Formatting it properly now."
+                  : singleDraftStreamState?.statusMessage ||
+                    "Associate is drafting from the matter record."}
               </p>
-              <div className="singleDraftThinkingViewport">
-                <p className="singleDraftThinkingTyped">
-                  {singleDraftTypedThinking ||
-                    (isSingleDraftFormattingStage
-                      ? "Draft generated. Formatting the structure now."
-                      : "Associate is thinking through the matter.")}
-                </p>
+              <div className="singleDraftThinkingHero">
+                <div className="singleDraftThinkingViewport">
+                  <p className="singleDraftThinkingTyped">
+                    {singleDraftTypedThinking ||
+                      (isSingleDraftFormattingStage
+                        ? "Draft generated. Formatting it properly."
+                        : singleDraftCurrentPage ||
+                          "Associate is thinking through the matter.")}
+                    <span className="singleDraftThinkingCursor" aria-hidden="true" />
+                  </p>
+                </div>
+                <div className="singleDraftThinkingMeta">
+                  <span>
+                    {singleDraftCommittedPageCount +
+                      (singleDraftAnimatingPageIndex >= 0 ? 1 : 0)}{" "}
+                    chunks streamed
+                  </span>
+                  <span>{singleDraftThinkingTranscript.length} stream events</span>
+                </div>
               </div>
             </div>
-            <div className="singleDraftPreviewColumn">
-              {singleDraftPreviewHtml ? (
-                <article
-                  className="singleDraftPreviewSheet"
-                  dangerouslySetInnerHTML={{ __html: singleDraftPreviewHtml }}
-                />
-              ) : (
-                <section className="draftBlankLoading singleDraftPreviewEmpty">
-                  <p className="draftTemplateEyebrow">Draft Preview</p>
-                  <h1>Preparing first draft</h1>
-                  <p>
-                    The draft preview will appear here once the first full pass is generated.
-                  </p>
-                </section>
-              )}
-            </div>
+            <aside className="singleDraftExecutionRail">
+              <section className="singleDraftExecutionPanel">
+                <p className="draftTemplateEyebrow">Execution Steps</p>
+                <div className="singleDraftExecutionStepList">
+                  {singleDraftExecutionSteps.map((step) => (
+                    <div
+                      key={step.id}
+                      className={`singleDraftExecutionStep singleDraftExecutionStep${step.status[0].toUpperCase()}${step.status.slice(1)}`}
+                    >
+                      <span className="singleDraftExecutionStepMarker" aria-hidden="true" />
+                      <div>
+                        <strong>{step.label}</strong>
+                        {step.status === "current" ? (
+                          <p>
+                            {isSingleDraftFormattingStage && step.id === "formatting"
+                              ? "Draft is generated. Formatting it properly."
+                              : singleDraftStreamState?.statusMessage || "In progress."}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="singleDraftExecutionPanel">
+                <p className="draftTemplateEyebrow">Thinking Stream</p>
+                <div className="singleDraftChunkStack">
+                  {singleDraftCompletedPages.map((chunk, index) => (
+                    <article className="singleDraftChunkCard" key={`chunk-${index}`}>
+                      <p>{chunk}</p>
+                    </article>
+                  ))}
+                  {singleDraftTypedThinking ? (
+                    <article className="singleDraftChunkCard isActive">
+                      <p>
+                        {singleDraftTypedThinking}
+                        <span className="singleDraftThinkingCursor" aria-hidden="true" />
+                      </p>
+                    </article>
+                  ) : null}
+                </div>
+              </section>
+              {isSingleDraftFormattingStage ? (
+                <div className="singleDraftFormattingPopup" role="status" aria-live="polite">
+                  <span className="singleDraftFormattingSpinner" aria-hidden="true" />
+                  <div className="singleDraftFormattingCopy">
+                    <p className="draftTemplateEyebrow">Draft Formatting</p>
+                    <h2>Formatting the structure</h2>
+                    <p>
+                      Draft is generated. Formatting it properly. Please wait.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </aside>
           </section>
         ) : (
           <section className="draftBlankLoading">

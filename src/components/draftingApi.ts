@@ -135,6 +135,15 @@ export type DraftContext = {
   boilerplateMeta?: Record<string, unknown> | null;
   generatedBlockMeta?: Record<string, DraftBlockMeta>;
   aiGeneratedComments?: DraftAiReviewNote[];
+  latestFormatting?: {
+    status?: string;
+    model?: string;
+    message?: string;
+    sourceCount?: number;
+    startedAt?: string;
+    completedAt?: string;
+    failedAt?: string;
+  };
   source?: string;
   recommendation?: MatterDraftRecommendation;
   [key: string]: unknown;
@@ -191,6 +200,10 @@ export type DraftComment = {
   classification?: string;
   severity?: string;
   sourcePointers?: Array<Record<string, unknown>>;
+  blockId?: string;
+  suggestedText?: string;
+  sectionId?: string;
+  sectionTitle?: string;
 };
 
 export type DraftReviewJob = {
@@ -377,6 +390,42 @@ export const triggerDraftReview = async (draftId: string) => {
     review_job_id: string;
     status: string;
     success: true;
+  }>(response);
+  return payload;
+};
+
+export const openDraftCritiqueStream = async (
+  draftId: string,
+  signal?: AbortSignal,
+) => {
+  return fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/critique/stream`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({}),
+      signal,
+    },
+  );
+};
+
+export const formatDraft = async (draftId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/format`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({}),
+    },
+  );
+  const payload = await readJson<{
+    success: true;
+    draft: DraftDetail;
+    formatting: {
+      status: string;
+      model?: string;
+      sourceCount?: number;
+    };
   }>(response);
   return payload;
 };
