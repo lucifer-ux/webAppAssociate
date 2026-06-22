@@ -2477,6 +2477,178 @@ const MatterSection = ({
     "workflow_confirmation_needed",
     "workflow_gap_checkpoint",
   ]);
+  const atlasStatusFeedConfig: Record<
+    string,
+    {
+      label: string;
+      message: string;
+      rotationMessages?: string[];
+    }
+  > = {
+    orientation_running: {
+      label: "Reading matter record",
+      message: "Reading the uploaded record, matter goal, and document structure.",
+      rotationMessages: [
+        "Reading the uploaded record and matter goal.",
+        "Identifying document type, parties, clauses, and section headings.",
+        "Building the initial matter orientation from the uploaded files.",
+      ],
+    },
+    base_recognition_running: {
+      label: "Matching workflow",
+      message: "Comparing the uploaded matter against the atlas workflows.",
+      rotationMessages: [
+        "Comparing the matter against atlas workflows.",
+        "Scoring the closest procedural match.",
+        "Ranking the most likely workflow candidates from the atlas.",
+      ],
+    },
+    workflow_confirmation_needed: {
+      label: "Workflow confirmation",
+      message: "Waiting for workflow confirmation before deeper research starts.",
+      rotationMessages: [
+        "Preparing the best-matching workflow options.",
+        "Checking whether the selected workflow fits the uploaded record.",
+      ],
+    },
+    evidence_matrix_running: {
+      label: "Building evidence map",
+      message:
+        "Checking what the uploaded record already supports and where factual proof is still missing.",
+      rotationMessages: [
+        "Checking what the uploaded record already supports.",
+        "Separating framework clauses from factual proof gaps.",
+        "Building the evidence map for the selected workflow.",
+      ],
+    },
+    workflow_gap_check_running: {
+      label: "Checking workflow requirements",
+      message:
+        "Comparing atlas-required facts and documents against the uploaded record.",
+      rotationMessages: [
+        "Comparing workflow requirements against the uploaded record.",
+        "Checking which case-specific facts are already supported.",
+        "Identifying critical gaps before deeper research.",
+      ],
+    },
+    workflow_gap_checkpoint: {
+      label: "Missing inputs checkpoint",
+      message: "Preparing any critical case-specific questions or document requests.",
+      rotationMessages: [
+        "Preparing targeted questions from the workflow gaps.",
+        "Checking whether limited research can continue safely.",
+      ],
+    },
+    decider_research_running: {
+      label: "Workflow research",
+      message:
+        "Researching the selected workflow against the uploaded record and public legal sources.",
+      rotationMessages: [
+        "Researching the selected workflow against the uploaded record.",
+        "Pulling procedure-focused legal guidance from public sources.",
+        "Grounding the workflow against the current matter facts.",
+      ],
+    },
+    case_research_running: {
+      label: "Case analog research",
+      message:
+        "Finding similar cases and procedural patterns for the selected workflow.",
+      rotationMessages: [
+        "Finding similar official cases for this workflow.",
+        "Resolving official court or tribunal sources.",
+        "Matching the most relevant pages and excerpts.",
+      ],
+    },
+    next_steps_running: {
+      label: "Next steps analysis",
+      message:
+        "Grounding the likely next procedural steps and draft actions in similar official cases.",
+      rotationMessages: [
+        "Sequencing the likely next procedural steps.",
+        "Checking what can be drafted now and what remains blocked.",
+        "Comparing the current matter against similar case patterns.",
+      ],
+    },
+    atlas_brief_running: {
+      label: "Drafting matter brief",
+      message: "Preparing the concise atlas-backed matter brief.",
+      rotationMessages: [
+        "Preparing the concise matter brief.",
+        "Combining workflow, case, and document grounding.",
+        "Writing the final short brief for review.",
+      ],
+    },
+    atlas_brief_ready: {
+      label: "Matter brief ready",
+      message: "The atlas-backed matter brief is ready.",
+      rotationMessages: ["The atlas-backed matter brief is ready."],
+    },
+    atlas_cancelling: {
+      label: "Cancelling research",
+      message: "Stopping atlas research after the current stage finishes.",
+      rotationMessages: [
+        "Stopping the current research run.",
+        "Wrapping up the active stage safely before cancellation.",
+      ],
+    },
+    atlas_cancelled: {
+      label: "Research cancelled",
+      message: "Atlas research was cancelled before the brief was completed.",
+      rotationMessages: ["Atlas research was cancelled."],
+    },
+    atlas_failed: {
+      label: "Research failed",
+      message: "Atlas research hit an error before the brief was completed.",
+      rotationMessages: ["Atlas research hit an error before completion."],
+    },
+    atlas_needs_review: {
+      label: "Needs review",
+      message: "Atlas research completed with issues that need review.",
+      rotationMessages: ["Atlas research completed with issues that need review."],
+    },
+  };
+  const buildAtlasStatusOnlyFeed = (
+    status: string,
+  ): NonNullable<NonNullable<MatterRecord["analysis_state"]>["feed"]> => {
+    const orderedIds = [
+      "orientation_running",
+      "base_recognition_running",
+      "workflow_confirmation_needed",
+      "evidence_matrix_running",
+      "workflow_gap_check_running",
+      "workflow_gap_checkpoint",
+      "decider_research_running",
+      "case_research_running",
+      "next_steps_running",
+      "atlas_brief_running",
+      "atlas_brief_ready",
+      "atlas_cancelling",
+      "atlas_cancelled",
+      "atlas_failed",
+      "atlas_needs_review",
+    ];
+    return orderedIds.map((id) => {
+      const config = atlasStatusFeedConfig[id];
+      const state =
+        status === id
+          ? "current"
+          : orderedIds.indexOf(id) < orderedIds.indexOf(status)
+            ? "done"
+            : "waiting";
+      return {
+        id,
+        label: config.label,
+        state:
+          id === "atlas_failed"
+            ? status === id
+              ? "attention"
+              : state
+            : state,
+        message: config.message,
+        rotationMessages: config.rotationMessages || [],
+      };
+    });
+  };
   const isExtractionRunning =
     activeMatter?.status === "processing" ||
     activeMatter?.extractedFieldsStatus === "processing";
@@ -2487,11 +2659,15 @@ const MatterSection = ({
     activeOrientationSnapshot,
   );
   const analysisProgressMessages = useMemo<AnalysisProgressMessage[]>(() => {
-    if (
-      Array.isArray(activeAnalysisState?.feed) &&
-      activeAnalysisState.feed.length
-    ) {
-      return activeAnalysisState.feed.map((rawItem) => {
+    const atlasStatus = String(activeAnalysisState?.status || "").trim();
+    const atlasFeed =
+      Array.isArray(activeAnalysisState?.feed) && activeAnalysisState.feed.length
+        ? activeAnalysisState.feed
+        : atlasStatusFeedConfig[atlasStatus]
+          ? buildAtlasStatusOnlyFeed(atlasStatus)
+          : null;
+    if (Array.isArray(atlasFeed) && atlasFeed.length) {
+      return atlasFeed.map((rawItem) => {
         const item = rawItem as {
           id: string;
           state: "done" | "current" | "waiting" | "attention";
@@ -2606,6 +2782,7 @@ const MatterSection = ({
     });
     return messages;
   }, [
+    activeAnalysisState?.status,
     activeAnalysisState?.feed,
     activeBriefArtifact,
     activeMatter,
@@ -3979,12 +4156,11 @@ const MatterSection = ({
         lastGroundAnalysisPollAtRef.current[matterKey] = Date.now();
         const response = await fetch(
           buildApiUrl(
-            `/api/matters/${encodeURIComponent(activeMatter.id)}/ground-analysis`,
+            `/api/matters/${encodeURIComponent(activeMatter.id)}/ground-analysis?view=status`,
           ),
         );
         const payload = (await response.json()) as {
           success?: boolean;
-          result?: MatterProcessedResult | null;
           statuses?: {
             generation?: string;
             verification?: string;
@@ -3994,14 +4170,11 @@ const MatterSection = ({
             inference_verification?: string;
             next_step_planner?: string;
           };
+          payload_ready?: boolean;
         };
 
         if (!response.ok || !payload.success) {
           return;
-        }
-
-        if (!cancelled && payload.result) {
-          updateMatter(payload.result);
         }
 
         const shouldContinue =
@@ -4012,6 +4185,26 @@ const MatterSection = ({
           payload.statuses?.inference_generation === "processing" ||
           payload.statuses?.inference_verification === "processing" ||
           payload.statuses?.next_step_planner === "processing";
+
+        if (!cancelled && !shouldContinue && payload.payload_ready) {
+          const fullResponse = await fetch(
+            buildApiUrl(
+              `/api/matters/${encodeURIComponent(activeMatter.id)}/ground-analysis?view=full`,
+            ),
+          );
+          const fullPayload = (await fullResponse.json()) as {
+            success?: boolean;
+            result?: MatterProcessedResult | null;
+          };
+          if (
+            !cancelled &&
+            fullResponse.ok &&
+            fullPayload.success &&
+            fullPayload.result
+          ) {
+            updateMatter(fullPayload.result);
+          }
+        }
 
         if (!cancelled && shouldContinue) {
           timeoutId = window.setTimeout(() => {
@@ -4779,6 +4972,18 @@ const MatterSection = ({
     throw new MatterPollingTimeoutError(jobId);
   };
 
+  const shouldFetchFullAtlasPayload = (status: string) => {
+    const normalized = String(status || "").trim();
+    return (
+      normalized === "workflow_confirmation_needed" ||
+      normalized === "workflow_gap_checkpoint" ||
+      normalized === "atlas_brief_ready" ||
+      normalized === "atlas_cancelled" ||
+      normalized === "atlas_failed" ||
+      normalized === "atlas_needs_review"
+    );
+  };
+
   const refreshMattersFromServer = async () => {
     const response = await fetch(buildApiUrl("/api/matters"));
     const payload = (await response.json()) as {
@@ -4791,10 +4996,14 @@ const MatterSection = ({
     setMattersFromServer(Array.isArray(payload.matters) ? payload.matters : []);
   };
 
-  const refreshActiveAtlasMatterState = async (matterId: string) => {
+  const refreshActiveAtlasMatterState = async (
+    matterId: string,
+    options?: { full?: boolean },
+  ) => {
+    const includeFull = options?.full === true;
     const response = await fetch(
       buildApiUrl(
-        `/api/matters/${encodeURIComponent(matterId)}/atlas-research/latest`,
+        `/api/matters/${encodeURIComponent(matterId)}/atlas-research/latest?view=${includeFull ? "full" : "status"}`,
       ),
     );
     const payload = (await response.json()) as {
@@ -4811,6 +5020,9 @@ const MatterSection = ({
         extracted_fields_status?: MatterRecord["extractedFieldsStatus"];
         extracted_fields_error?: string | null;
       } | null;
+      analysis_state?: MatterRecord["analysis_state"];
+      status?: string;
+      payload_ready?: boolean;
       baseRecognition?: AtlasBaseRecognitionResult | null;
       workflowConfirmation?: AtlasWorkflowConfirmation | null;
       gapCheckpoint?: AtlasGapCheckpoint | null;
@@ -4823,35 +5035,73 @@ const MatterSection = ({
     if (!response.ok || !payload?.success || !payload.matter) {
       throw new Error("Failed to refresh atlas matter state.");
     }
+
+    const matterPatch: {
+      status?: MatterRecord["status"];
+      job_id?: string;
+      versionFingerprint?: string | undefined;
+      contextcore?: MatterRecord["contextcore"];
+      intelligence_statuses?: MatterRecord["intelligence_statuses"];
+      analysis_state?: MatterRecord["analysis_state"];
+      classification?: MatterRecord["classification"];
+      classification_meta?: MatterRecord["classification_meta"];
+    } = {
+      status: payload.matter.status,
+      job_id: payload.matter.job_id || "",
+      analysis_state: payload.analysis_state || payload.matter.analysis_state,
+    };
+    if (payload.matter.contextcore !== undefined) {
+      matterPatch.contextcore = payload.matter.contextcore;
+    }
+    if (payload.matter.intelligence_statuses !== undefined) {
+      matterPatch.intelligence_statuses = payload.matter.intelligence_statuses;
+    }
+    if (payload.matter.versionFingerprint !== undefined) {
+      matterPatch.versionFingerprint =
+        payload.matter.versionFingerprint || undefined;
+    }
+    if (payload.matter.classification !== undefined) {
+      matterPatch.classification = payload.matter.classification;
+    }
+    if (payload.matter.classification_meta !== undefined) {
+      matterPatch.classification_meta = payload.matter.classification_meta;
+    }
+
     mergeMatterAtlasLatest(matterId, {
-      matter: {
-        status: payload.matter.status,
-        job_id: payload.matter.job_id || "",
-        versionFingerprint: payload.matter.versionFingerprint || undefined,
-        contextcore: payload.matter.contextcore,
-        intelligence_statuses: payload.matter.intelligence_statuses,
-        analysis_state: payload.matter.analysis_state,
-        classification: payload.matter.classification,
-        classification_meta: payload.matter.classification_meta,
-      },
+      matter: matterPatch,
       extractedFieldsStatus:
         payload.matter.extracted_fields_status || undefined,
       extractedFieldsError: payload.matter.extracted_fields_error,
-      atlasBaseRecognition: payload.baseRecognition,
-      atlasWorkflowConfirmation: payload.workflowConfirmation,
-      atlasGapCheckpoint: payload.gapCheckpoint,
-      atlasDeciderResearch: payload.deciderResearch,
-      atlasCaseResearch: payload.caseResearch,
-      atlasNextSteps: payload.nextStepsAnalysis,
-      atlasMatterBrief: payload.brief,
-      atlasUserInputs: payload.atlasUserInputs,
+      atlasBaseRecognition: includeFull ? payload.baseRecognition : undefined,
+      atlasWorkflowConfirmation: includeFull
+        ? payload.workflowConfirmation
+        : undefined,
+      atlasGapCheckpoint: includeFull ? payload.gapCheckpoint : undefined,
+      atlasDeciderResearch: includeFull ? payload.deciderResearch : undefined,
+      atlasCaseResearch: includeFull ? payload.caseResearch : undefined,
+      atlasNextSteps: includeFull ? payload.nextStepsAnalysis : undefined,
+      atlasMatterBrief: includeFull ? payload.brief : undefined,
+      atlasUserInputs: includeFull ? payload.atlasUserInputs : undefined,
     });
+
+    const latestStatus = String(
+      payload.status ||
+        payload.analysis_state?.status ||
+        payload.matter.analysis_state?.status ||
+        "",
+    ).trim();
+    if (
+      !includeFull &&
+      (payload.payload_ready || shouldFetchFullAtlasPayload(latestStatus))
+    ) {
+      await refreshActiveAtlasMatterState(matterId, { full: true });
+    }
   };
 
   const waitForMatterAvailability = async (matterId: string) => {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       try {
-        await refreshActiveAtlasMatterState(matterId);
+        await refreshActiveAtlasMatterState(matterId, { full: true });
         return true;
       } catch (error) {
         const message =
@@ -4963,7 +5213,7 @@ const MatterSection = ({
       if (!response.ok || !payload?.success) {
         throw new Error(payload?.error || "Failed to cancel atlas research.");
       }
-      await refreshActiveAtlasMatterState(matterId);
+      await refreshActiveAtlasMatterState(matterId, { full: true });
       setSummaryGenerationStateByMatterId((current) => ({
         ...current,
         [matterId]: { running: false, error: "" },

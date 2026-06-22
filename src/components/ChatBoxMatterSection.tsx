@@ -60,6 +60,26 @@ const TYPEWRITER_DELAY_MS = 8;
 const TYPEWRITER_CHUNK_SIZE = 4;
 const TYPEWRITER_CLOSE_DELAY_MS = 180;
 
+const stripMarkdownFormatting = (value: string) =>
+  String(value || "")
+    .replace(/^```[a-zA-Z0-9_-]*\n?/gm, "")
+    .replace(/```$/gm, "")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/_([^_\n]+)_/g, "$1")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
 const ChatBoxMatterSection = ({
   open,
   matterTitle,
@@ -116,7 +136,13 @@ const ChatBoxMatterSection = ({
         role: "assistant",
         text: openingMessage,
       },
-      ...messages,
+      ...messages.map((message) => ({
+        ...message,
+        text:
+          message.role === "assistant"
+            ? stripMarkdownFormatting(message.text)
+            : message.text,
+      })),
     ],
     [messages, openingMessage],
   );
