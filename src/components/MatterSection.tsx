@@ -1067,6 +1067,15 @@ const MatterSection = ({
   const [matterSearchError, setMatterSearchError] = useState("");
   const [matterSearchInfo, setMatterSearchInfo] = useState("");
   const autoStartedAtlasMatterIdsRef = useRef<Set<string>>(new Set());
+  const atlasRunRequestsRef = useRef<Partial<Record<string, Promise<void>>>>(
+    {},
+  );
+  const atlasFullRefreshRequestsRef = useRef<
+    Partial<Record<string, Promise<void>>>
+  >({});
+  const atlasAvailabilityChecksRef = useRef<
+    Partial<Record<string, Promise<boolean>>>
+  >({});
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(
     null,
   );
@@ -1947,8 +1956,11 @@ const MatterSection = ({
     [activeFrontendBrief?.summary],
   );
   const activeAtlasSummary = useMemo(
-    () => String(activeAtlasMatterBrief?.brief || "").trim(),
-    [activeAtlasMatterBrief?.brief],
+    () =>
+      String(
+        activeAtlasMatterBrief?.summaryBrief || activeAtlasMatterBrief?.brief || "",
+      ).trim(),
+    [activeAtlasMatterBrief?.brief, activeAtlasMatterBrief?.summaryBrief],
   );
   const atlasDraftQueue = useMemo(
     () =>
@@ -1980,7 +1992,9 @@ const MatterSection = ({
         String(latestAtlasMeta?.version || ""),
         String(latestAtlasMeta?.created_at || ""),
         String(activeAtlasMatterBrief.workflowId || ""),
-        String(activeAtlasMatterBrief.brief || ""),
+        String(
+          activeAtlasMatterBrief.summaryBrief || activeAtlasMatterBrief.brief || "",
+        ),
       ].join("::");
     }
     if (activeFrontendBrief) {
@@ -2299,6 +2313,14 @@ const MatterSection = ({
     const blockingItems = Array.isArray(activeAtlasNextSteps.blockingItems)
       ? activeAtlasNextSteps.blockingItems
       : [];
+    const ambiguities = Array.isArray(activeAtlasNextSteps.ambiguities)
+      ? activeAtlasNextSteps.ambiguities
+      : [];
+    const askAiEligibleQuestions = Array.isArray(
+      activeAtlasNextSteps.askAiEligibleQuestions,
+    )
+      ? activeAtlasNextSteps.askAiEligibleQuestions
+      : [];
     const nextStepHighlightTerms = [
       "blocked",
       "ready",
@@ -2353,6 +2375,58 @@ const MatterSection = ({
               <small className="matterNextStepDraftType">
                 {activeAtlasNextSteps.researchTrace.error}
               </small>
+            ) : null}
+          </article>
+        ) : null}
+        {blockingItems.length || ambiguities.length ? (
+          <article className="matterNextStepsPanel">
+            <div className="matterNextStepCardHead">
+              <strong>What still needs support</strong>
+            </div>
+            {blockingItems.length ? (
+              <ul className="matterBulletList">
+                {blockingItems.map((item) => (
+                  <li key={`next-step-blocker-${item}`}>
+                    {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {ambiguities.length ? (
+              <>
+                <p className="matterNextStepsPreview">
+                  Ambiguities still present in the prompt or uploaded record:
+                </p>
+                <ul className="matterBulletList">
+                  {ambiguities.map((item) => (
+                    <li key={`next-step-ambiguity-${item}`}>
+                      {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {askAiEligibleQuestions.length ? (
+              <div className="matterNextStepsAccordionBody">
+                <ul className="matterBulletList">
+                  {askAiEligibleQuestions.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.question}</strong>
+                      {item.whyItMatters ? ` ${item.whyItMatters}` : ""}
+                      <span className="matterChecklistActionButtonWrap">
+                        <button
+                          type="button"
+                          className="matterChecklistAskAiButton"
+                          onClick={() => openMissingProofInMatterChat(item.question)}
+                          aria-label="Ask AI for help"
+                        >
+                          Ask AI
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
           </article>
         ) : null}
@@ -2504,59 +2578,32 @@ const MatterSection = ({
       ],
     },
     workflow_confirmation_needed: {
-      label: "Workflow confirmation",
-      message: "Waiting for workflow confirmation before deeper research starts.",
-      rotationMessages: [
-        "Preparing the best-matching workflow options.",
-        "Checking whether the selected workflow fits the uploaded record.",
-      ],
-    },
-    evidence_matrix_running: {
-      label: "Building evidence map",
+      label: "Classification verification",
       message:
-        "Checking what the uploaded record already supports and where factual proof is still missing.",
+        "Verifying the Atlas classification before the research branches begin.",
       rotationMessages: [
-        "Checking what the uploaded record already supports.",
-        "Separating framework clauses from factual proof gaps.",
-        "Building the evidence map for the selected workflow.",
-      ],
-    },
-    workflow_gap_check_running: {
-      label: "Checking workflow requirements",
-      message:
-        "Comparing atlas-required facts and documents against the uploaded record.",
-      rotationMessages: [
-        "Comparing workflow requirements against the uploaded record.",
-        "Checking which case-specific facts are already supported.",
-        "Identifying critical gaps before deeper research.",
-      ],
-    },
-    workflow_gap_checkpoint: {
-      label: "Missing inputs checkpoint",
-      message: "Preparing any critical case-specific questions or document requests.",
-      rotationMessages: [
-        "Preparing targeted questions from the workflow gaps.",
-        "Checking whether limited research can continue safely.",
+        "Checking whether the selected Atlas workflow fits the uploaded record.",
+        "Verifying the classification before deeper research begins.",
       ],
     },
     decider_research_running: {
-      label: "Workflow research",
+      label: "Parallel research branches",
       message:
-        "Researching the selected workflow against the uploaded record and public legal sources.",
+        "Building the draft path and the case-search path in parallel from the uploaded matter and selected Atlas workflow.",
       rotationMessages: [
-        "Researching the selected workflow against the uploaded record.",
-        "Pulling procedure-focused legal guidance from public sources.",
-        "Grounding the workflow against the current matter facts.",
+        "Reading the uploaded matter packet and selected Atlas workflow.",
+        "Determining likely draft actions and checking for material ambiguities.",
+        "Generating issue-focused case queries from the matter and prompt.",
       ],
     },
     case_research_running: {
-      label: "Case analog research",
+      label: "Case verification",
       message:
-        "Finding similar cases and procedural patterns for the selected workflow.",
+        "Filtering search results down to verified official cases relevant to this matter.",
       rotationMessages: [
-        "Finding similar official cases for this workflow.",
-        "Resolving official court or tribunal sources.",
-        "Matching the most relevant pages and excerpts.",
+        "Searching only the approved case-source domains.",
+        "Verifying which official cases are truly analogous.",
+        "Discarding weak or generic references before drafting the brief.",
       ],
     },
     next_steps_running: {
@@ -2570,12 +2617,13 @@ const MatterSection = ({
       ],
     },
     atlas_brief_running: {
-      label: "Drafting matter brief",
-      message: "Preparing the concise atlas-backed matter brief.",
+      label: "Brief synthesis",
+      message:
+        "Preparing the summary brief and detailed agent brief from the matter, cases, and draft queue.",
       rotationMessages: [
-        "Preparing the concise matter brief.",
-        "Combining workflow, case, and document grounding.",
-        "Writing the final short brief for review.",
+        "Combining document grounding, case verification, and draft sequencing.",
+        "Writing the user-facing summary and detailed agent brief.",
+        "Finalizing the cases and drafts panels for review.",
       ],
     },
     atlas_brief_ready: {
@@ -2614,12 +2662,8 @@ const MatterSection = ({
       "orientation_running",
       "base_recognition_running",
       "workflow_confirmation_needed",
-      "evidence_matrix_running",
-      "workflow_gap_check_running",
-      "workflow_gap_checkpoint",
       "decider_research_running",
       "case_research_running",
-      "next_steps_running",
       "atlas_brief_running",
       "atlas_brief_ready",
       "atlas_cancelling",
@@ -2989,10 +3033,23 @@ const MatterSection = ({
         [activeMatter.id]: {
           ...entry,
           running: false,
+          error:
+            status === "atlas_failed"
+              ? normalizeInline(
+                  activeAnalysisState?.error ||
+                    entry.error ||
+                    "Matter atlas research failed.",
+                )
+              : entry.error,
         },
       };
     });
-  }, [activeAnalysisState?.status, activeMatter?.id, activePrimarySummary]);
+  }, [
+    activeAnalysisState?.error,
+    activeAnalysisState?.status,
+    activeMatter?.id,
+    activePrimarySummary,
+  ]);
 
   useEffect(() => {
     if (!activeMatter?.id || isMockMatterId(activeMatter.id)) return;
@@ -5001,195 +5058,227 @@ const MatterSection = ({
     options?: { full?: boolean },
   ) => {
     const includeFull = options?.full === true;
-    const response = await fetch(
-      buildApiUrl(
-        `/api/matters/${encodeURIComponent(matterId)}/atlas-research/latest?view=${includeFull ? "full" : "status"}`,
-      ),
-    );
-    const payload = (await response.json()) as {
-      success?: boolean;
-      matter?: {
+    if (includeFull && atlasFullRefreshRequestsRef.current[matterId]) {
+      return atlasFullRefreshRequestsRef.current[matterId];
+    }
+    const task = (async () => {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(matterId)}/atlas-research/latest?view=${includeFull ? "full" : "status"}`,
+        ),
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        matter?: {
+          status?: MatterRecord["status"];
+          job_id?: string | null;
+          versionFingerprint?: string | null;
+          contextcore?: MatterRecord["contextcore"];
+          intelligence_statuses?: MatterRecord["intelligence_statuses"];
+          analysis_state?: MatterRecord["analysis_state"];
+          classification?: MatterRecord["classification"];
+          classification_meta?: MatterRecord["classification_meta"];
+          extracted_fields_status?: MatterRecord["extractedFieldsStatus"];
+          extracted_fields_error?: string | null;
+        } | null;
+        analysis_state?: MatterRecord["analysis_state"];
+        status?: string;
+        payload_ready?: boolean;
+        baseRecognition?: AtlasBaseRecognitionResult | null;
+        workflowConfirmation?: AtlasWorkflowConfirmation | null;
+        gapCheckpoint?: AtlasGapCheckpoint | null;
+        deciderResearch?: AtlasDeciderResearchResult | null;
+        caseResearch?: AtlasCaseResearchResult | null;
+        nextStepsAnalysis?: AtlasNextStepsAnalysis | null;
+        brief?: AtlasMatterBrief | null;
+        atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
+      };
+      if (!response.ok || !payload?.success || !payload.matter) {
+        throw new Error("Failed to refresh atlas matter state.");
+      }
+
+      const matterPatch: {
         status?: MatterRecord["status"];
-        job_id?: string | null;
-        versionFingerprint?: string | null;
+        job_id?: string;
+        versionFingerprint?: string | undefined;
         contextcore?: MatterRecord["contextcore"];
         intelligence_statuses?: MatterRecord["intelligence_statuses"];
         analysis_state?: MatterRecord["analysis_state"];
         classification?: MatterRecord["classification"];
         classification_meta?: MatterRecord["classification_meta"];
-        extracted_fields_status?: MatterRecord["extractedFieldsStatus"];
-        extracted_fields_error?: string | null;
-      } | null;
-      analysis_state?: MatterRecord["analysis_state"];
-      status?: string;
-      payload_ready?: boolean;
-      baseRecognition?: AtlasBaseRecognitionResult | null;
-      workflowConfirmation?: AtlasWorkflowConfirmation | null;
-      gapCheckpoint?: AtlasGapCheckpoint | null;
-      deciderResearch?: AtlasDeciderResearchResult | null;
-      caseResearch?: AtlasCaseResearchResult | null;
-      nextStepsAnalysis?: AtlasNextStepsAnalysis | null;
-      brief?: AtlasMatterBrief | null;
-      atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
-    };
-    if (!response.ok || !payload?.success || !payload.matter) {
-      throw new Error("Failed to refresh atlas matter state.");
-    }
+      } = {
+        status: payload.matter.status,
+        job_id: payload.matter.job_id || "",
+        analysis_state: payload.analysis_state || payload.matter.analysis_state,
+      };
+      if (payload.matter.contextcore !== undefined) {
+        matterPatch.contextcore = payload.matter.contextcore;
+      }
+      if (payload.matter.intelligence_statuses !== undefined) {
+        matterPatch.intelligence_statuses = payload.matter.intelligence_statuses;
+      }
+      if (payload.matter.versionFingerprint !== undefined) {
+        matterPatch.versionFingerprint =
+          payload.matter.versionFingerprint || undefined;
+      }
+      if (payload.matter.classification !== undefined) {
+        matterPatch.classification = payload.matter.classification;
+      }
+      if (payload.matter.classification_meta !== undefined) {
+        matterPatch.classification_meta = payload.matter.classification_meta;
+      }
 
-    const matterPatch: {
-      status?: MatterRecord["status"];
-      job_id?: string;
-      versionFingerprint?: string | undefined;
-      contextcore?: MatterRecord["contextcore"];
-      intelligence_statuses?: MatterRecord["intelligence_statuses"];
-      analysis_state?: MatterRecord["analysis_state"];
-      classification?: MatterRecord["classification"];
-      classification_meta?: MatterRecord["classification_meta"];
-    } = {
-      status: payload.matter.status,
-      job_id: payload.matter.job_id || "",
-      analysis_state: payload.analysis_state || payload.matter.analysis_state,
-    };
-    if (payload.matter.contextcore !== undefined) {
-      matterPatch.contextcore = payload.matter.contextcore;
-    }
-    if (payload.matter.intelligence_statuses !== undefined) {
-      matterPatch.intelligence_statuses = payload.matter.intelligence_statuses;
-    }
-    if (payload.matter.versionFingerprint !== undefined) {
-      matterPatch.versionFingerprint =
-        payload.matter.versionFingerprint || undefined;
-    }
-    if (payload.matter.classification !== undefined) {
-      matterPatch.classification = payload.matter.classification;
-    }
-    if (payload.matter.classification_meta !== undefined) {
-      matterPatch.classification_meta = payload.matter.classification_meta;
-    }
+      mergeMatterAtlasLatest(matterId, {
+        matter: matterPatch,
+        extractedFieldsStatus:
+          payload.matter.extracted_fields_status || undefined,
+        extractedFieldsError: payload.matter.extracted_fields_error,
+        atlasBaseRecognition: includeFull ? payload.baseRecognition : undefined,
+        atlasWorkflowConfirmation: includeFull
+          ? payload.workflowConfirmation
+          : undefined,
+        atlasGapCheckpoint: includeFull ? payload.gapCheckpoint : undefined,
+        atlasDeciderResearch: includeFull ? payload.deciderResearch : undefined,
+        atlasCaseResearch: includeFull ? payload.caseResearch : undefined,
+        atlasNextSteps: includeFull ? payload.nextStepsAnalysis : undefined,
+        atlasMatterBrief: includeFull ? payload.brief : undefined,
+        atlasUserInputs: includeFull ? payload.atlasUserInputs : undefined,
+      });
 
-    mergeMatterAtlasLatest(matterId, {
-      matter: matterPatch,
-      extractedFieldsStatus:
-        payload.matter.extracted_fields_status || undefined,
-      extractedFieldsError: payload.matter.extracted_fields_error,
-      atlasBaseRecognition: includeFull ? payload.baseRecognition : undefined,
-      atlasWorkflowConfirmation: includeFull
-        ? payload.workflowConfirmation
-        : undefined,
-      atlasGapCheckpoint: includeFull ? payload.gapCheckpoint : undefined,
-      atlasDeciderResearch: includeFull ? payload.deciderResearch : undefined,
-      atlasCaseResearch: includeFull ? payload.caseResearch : undefined,
-      atlasNextSteps: includeFull ? payload.nextStepsAnalysis : undefined,
-      atlasMatterBrief: includeFull ? payload.brief : undefined,
-      atlasUserInputs: includeFull ? payload.atlasUserInputs : undefined,
+      const latestStatus = String(
+        payload.status ||
+          payload.analysis_state?.status ||
+          payload.matter.analysis_state?.status ||
+          "",
+      ).trim();
+      if (
+        !includeFull &&
+        (payload.payload_ready || shouldFetchFullAtlasPayload(latestStatus))
+      ) {
+        await refreshActiveAtlasMatterState(matterId, { full: true });
+      }
+    })();
+    if (!includeFull) {
+      return task;
+    }
+    atlasFullRefreshRequestsRef.current[matterId] = task.finally(() => {
+      delete atlasFullRefreshRequestsRef.current[matterId];
     });
-
-    const latestStatus = String(
-      payload.status ||
-        payload.analysis_state?.status ||
-        payload.matter.analysis_state?.status ||
-        "",
-    ).trim();
-    if (
-      !includeFull &&
-      (payload.payload_ready || shouldFetchFullAtlasPayload(latestStatus))
-    ) {
-      await refreshActiveAtlasMatterState(matterId, { full: true });
-    }
+    return atlasFullRefreshRequestsRef.current[matterId];
   };
 
   const waitForMatterAvailability = async (matterId: string) => {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      try {
-        await refreshActiveAtlasMatterState(matterId, { full: true });
-        return true;
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Matter not ready yet.";
-        if (!/not found/i.test(message)) {
-          throw error;
-        }
-      }
-      await sleep(500);
+    if (atlasAvailabilityChecksRef.current[matterId]) {
+      return atlasAvailabilityChecksRef.current[matterId];
     }
-    return false;
+    const task = (async () => {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+          await refreshActiveAtlasMatterState(matterId, { full: true });
+          return true;
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Matter not ready yet.";
+          if (!/not found/i.test(message)) {
+            throw error;
+          }
+        }
+        await sleep(500);
+      }
+      return false;
+    })();
+    atlasAvailabilityChecksRef.current[matterId] = task.finally(() => {
+      delete atlasAvailabilityChecksRef.current[matterId];
+    });
+    return atlasAvailabilityChecksRef.current[matterId];
   };
 
   const runMatterAtlasResearch = async (
     matterId: string,
     options?: { continueWithLimitedResearch?: boolean },
   ) => {
-    try {
-      const isAvailable = await waitForMatterAvailability(matterId);
-      if (!isAvailable) {
-        throw new Error(
-          "Matter was uploaded, but the research workspace is not ready yet. Please retry in a moment.",
-        );
-      }
-      setSummaryGenerationStateByMatterId((current) => ({
-        ...current,
-        [matterId]: { running: true, error: "" },
-      }));
-      const response = await fetch(
-        buildApiUrl(
-          `/api/matters/${encodeURIComponent(matterId)}/atlas-research/run`,
-        ),
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            continueWithLimitedResearch: Boolean(
-              options?.continueWithLimitedResearch,
-            ),
-          }),
-        },
-      );
-      const payload = (await response.json()) as {
-        success?: boolean;
-        status?: string;
-        recognition?: AtlasBaseRecognitionResult;
-        checkpoint?: AtlasGapCheckpoint;
-        brief?: AtlasMatterBrief;
-        deciderResearch?: AtlasDeciderResearchResult;
-        caseResearch?: AtlasCaseResearchResult;
-        error?: string;
-        meta?: Record<string, unknown>;
-      };
-
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error || "Matter legal brief request failed.");
-      }
-
-      await refreshMattersFromServer();
-      if (payload.status === "needs_confirmation") {
-        console.log("[atlas][base-recognition]", payload.recognition);
-        return;
-      }
-      if (payload.status === "running") {
-        return;
-      }
-      if (
-        payload.status === "needs_user_input" ||
-        payload.status === "needs_more_documents"
-      ) {
-        console.log("[atlas][gap-checkpoint]", payload.checkpoint);
-        return;
-      }
-    } catch (error) {
-      setSummaryGenerationStateByMatterId((current) => ({
-        ...current,
-        [matterId]: {
-          running: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Matter atlas research request failed.",
-        },
-      }));
-      console.error("[atlas-research][failed]", error);
+    if (atlasRunRequestsRef.current[matterId]) {
+      return atlasRunRequestsRef.current[matterId];
     }
+    const task = (async () => {
+      try {
+        const isAvailable = await waitForMatterAvailability(matterId);
+        if (!isAvailable) {
+          throw new Error(
+            "Matter was uploaded, but the research workspace is not ready yet. Please retry in a moment.",
+          );
+        }
+        setSummaryGenerationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: { running: true, error: "" },
+        }));
+        const response = await fetch(
+          buildApiUrl(
+            `/api/matters/${encodeURIComponent(matterId)}/atlas-research/run`,
+          ),
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              continueWithLimitedResearch: Boolean(
+                options?.continueWithLimitedResearch,
+              ),
+            }),
+          },
+        );
+        const payload = (await response.json()) as {
+          success?: boolean;
+          status?: string;
+          recognition?: AtlasBaseRecognitionResult;
+          checkpoint?: AtlasGapCheckpoint;
+          brief?: AtlasMatterBrief;
+          deciderResearch?: AtlasDeciderResearchResult;
+          caseResearch?: AtlasCaseResearchResult;
+          error?: string;
+          meta?: Record<string, unknown>;
+        };
+
+        if (!response.ok || !payload?.success) {
+          throw new Error(
+            payload?.error || "Matter legal brief request failed.",
+          );
+        }
+
+        await refreshMattersFromServer();
+        if (payload.status === "needs_confirmation") {
+          console.log("[atlas][base-recognition]", payload.recognition);
+          return;
+        }
+        if (payload.status === "running") {
+          return;
+        }
+        if (
+          payload.status === "needs_user_input" ||
+          payload.status === "needs_more_documents"
+        ) {
+          console.log("[atlas][gap-checkpoint]", payload.checkpoint);
+          return;
+        }
+      } catch (error) {
+        setSummaryGenerationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: {
+            running: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Matter atlas research request failed.",
+          },
+        }));
+        console.error("[atlas-research][failed]", error);
+      }
+    })();
+    atlasRunRequestsRef.current[matterId] = task.finally(() => {
+      delete atlasRunRequestsRef.current[matterId];
+    });
+    return atlasRunRequestsRef.current[matterId];
   };
 
   const cancelMatterAtlasResearch = async (matterId: string) => {
@@ -8251,6 +8340,23 @@ const MatterSection = ({
                       {activeAtlasMatterBrief.confidence}
                     </span>
                   </div>
+                  {activeAtlasMatterBrief.detailedBrief ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Brief</p>
+                          <h3>Detailed agent brief</h3>
+                        </div>
+                      </div>
+                      <div className="matterReadableTextBlock">
+                        {splitReadableParagraphs(
+                          activeAtlasMatterBrief.detailedBrief,
+                        ).map((paragraph, index) => (
+                          <p key={`facts-atlas-detailed-${index}`}>{paragraph}</p>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                   {activeAtlasDeciderResearch ? (
                     <section className="matterAnalysisPanel">
                       <div className="matterAnalysisPanelHead">
@@ -8286,6 +8392,50 @@ const MatterSection = ({
                       ) : null}
                     </section>
                   ) : null}
+                  {activeAtlasMatterBrief.recordSupports?.length ||
+                  activeAtlasMatterBrief.recordDoesNotSupportYet?.length ||
+                  activeAtlasMatterBrief.recordContradicts?.length ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Grounding</p>
+                          <h3>Supported, unresolved, and contradicted points</h3>
+                        </div>
+                      </div>
+                      {activeAtlasMatterBrief.recordSupports?.length ? (
+                        <>
+                          <strong>Supported by the uploaded record</strong>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordSupports.map((item) => (
+                              <li key={`facts-support-${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
+                      {activeAtlasMatterBrief.recordDoesNotSupportYet?.length ? (
+                        <>
+                          <strong>Not yet supported</strong>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordDoesNotSupportYet.map(
+                              (item) => (
+                                <li key={`facts-unsupported-${item}`}>{item}</li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                      {activeAtlasMatterBrief.recordContradicts?.length ? (
+                        <>
+                          <strong>Contradicted by the current record</strong>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordContradicts.map((item) => (
+                              <li key={`facts-contradiction-${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
+                    </section>
+                  ) : null}
                   {activeAtlasCaseResearch ? (
                     <section className="matterAnalysisPanel">
                       <div className="matterAnalysisPanelHead">
@@ -8303,6 +8453,24 @@ const MatterSection = ({
                           )}
                         </ul>
                       ) : null}
+                    </section>
+                  ) : null}
+                  {activeAtlasMatterBrief.citations?.length ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Cases</p>
+                          <h3>Verified citations used in the brief</h3>
+                        </div>
+                      </div>
+                      <ul className="matterBulletList">
+                        {activeAtlasMatterBrief.citations.map((item) => (
+                          <li key={`${item.title}-${item.citation}`}>
+                            <strong>{item.title}</strong>
+                            {item.citation ? ` (${item.citation})` : ""}
+                          </li>
+                        ))}
+                      </ul>
                     </section>
                   ) : null}
                 </article>
@@ -10740,6 +10908,18 @@ const MatterSection = ({
             <div className="matterBriefDetailBody">
               {activeAtlasMatterBrief ? (
                 <>
+                  {activeAtlasMatterBrief.detailedBrief ? (
+                    <section className="matterBriefDetailSection">
+                      <h3>Detailed brief</h3>
+                      <div className="matterReadableTextBlock">
+                        {splitReadableParagraphs(
+                          activeAtlasMatterBrief.detailedBrief,
+                        ).map((paragraph, index) => (
+                          <p key={`atlas-detailed-brief-${index}`}>{paragraph}</p>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                   {activeAtlasDeciderResearch ? (
                     <section className="matterBriefDetailSection">
                       <h3>Workflow grounding</h3>
@@ -10773,6 +10953,45 @@ const MatterSection = ({
                       ) : null}
                     </section>
                   ) : null}
+                  {activeAtlasMatterBrief.recordSupports?.length ||
+                  activeAtlasMatterBrief.recordDoesNotSupportYet?.length ||
+                  activeAtlasMatterBrief.recordContradicts?.length ? (
+                    <section className="matterBriefDetailSection">
+                      <h3>Grounding summary</h3>
+                      {activeAtlasMatterBrief.recordSupports?.length ? (
+                        <>
+                          <h4>Supported by the record</h4>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordSupports.map((item) => (
+                              <li key={`atlas-support-${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
+                      {activeAtlasMatterBrief.recordDoesNotSupportYet?.length ? (
+                        <>
+                          <h4>Not yet supported</h4>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordDoesNotSupportYet.map(
+                              (item) => (
+                                <li key={`atlas-unsupported-${item}`}>{item}</li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                      {activeAtlasMatterBrief.recordContradicts?.length ? (
+                        <>
+                          <h4>Contradicted by the current record</h4>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordContradicts.map((item) => (
+                              <li key={`atlas-contradiction-${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
+                    </section>
+                  ) : null}
 
                   {activeAtlasCaseResearch ? (
                     <section className="matterBriefDetailSection">
@@ -10786,6 +11005,19 @@ const MatterSection = ({
                           )}
                         </ul>
                       ) : null}
+                    </section>
+                  ) : null}
+                  {activeAtlasMatterBrief.citations?.length ? (
+                    <section className="matterBriefDetailSection">
+                      <h3>Verified citations</h3>
+                      <ul className="matterBulletList">
+                        {activeAtlasMatterBrief.citations.map((item) => (
+                          <li key={`${item.title}-${item.citation}`}>
+                            <strong>{item.title}</strong>
+                            {item.citation ? ` (${item.citation})` : ""}
+                          </li>
+                        ))}
+                      </ul>
                     </section>
                   ) : null}
                 </>

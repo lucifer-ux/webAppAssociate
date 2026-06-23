@@ -762,6 +762,13 @@ export type AtlasBaseRecognitionResult = {
   forumMismatch?: boolean;
   triggerMatchPenaltyApplied?: boolean;
   requiresConfirmation?: boolean;
+  verification?: {
+    agrees: boolean;
+    recommendedWorkflowId: string | null;
+    verifiedConfidence: number;
+    reason: string;
+    requiresConfirmation: boolean;
+  } | null;
   atlasRequirementsPreview: AtlasRequirementsPreview | null;
   checkpoint: {
     type: "workflow_confirmation";
@@ -908,6 +915,12 @@ export type AtlasNextStepsAnalysis = {
   }>;
   whyTheseNext: string[];
   blockingItems: string[];
+  ambiguities?: string[];
+  askAiEligibleQuestions?: Array<{
+    id: string;
+    question: string;
+    whyItMatters: string;
+  }>;
   confidence: "high" | "medium" | "low";
   shouldContinueResearch: boolean;
   followUpQueries: string[];
@@ -924,6 +937,8 @@ export type AtlasMatterBrief = {
   matterId: string;
   workflowId: string;
   brief: string;
+  summaryBrief?: string;
+  detailedBrief?: string;
   wordCount: number;
   confidence: "high" | "medium" | "low";
   usedWorkflow: {
@@ -936,6 +951,14 @@ export type AtlasMatterBrief = {
     patternCount: number;
   };
   remainingGaps: string[];
+  recordSupports?: string[];
+  recordDoesNotSupportYet?: string[];
+  recordContradicts?: string[];
+  citations?: Array<{
+    title: string;
+    citation: string;
+    url: string;
+  }>;
 };
 
 export type LatestExecutiveSummaryRecord = {
