@@ -853,6 +853,14 @@ export type AtlasDeciderResearchResult = {
 
 export type AtlasCaseResearchResult = {
   workflowId: string;
+  progress?: {
+    step: string;
+    message: string;
+    query?: string;
+    totalCandidates?: number;
+    retainedCount?: number;
+    updatedAt?: string;
+  };
   similarCases: Array<{
     title: string;
     officialDocumentUrl: string;
@@ -873,12 +881,59 @@ export type AtlasCaseResearchResult = {
   procedurePatterns: string[];
   sourceLinks: string[];
   openQuestions: string[];
+  rankedCandidates?: Array<{
+    title: string;
+    officialUrl: string;
+    referenceUrl?: string;
+    supportedProposition?: string;
+    propositionSupportStatus?: string | null;
+    baseScore?: number;
+    fetchedScore?: number;
+    finalScore?: number;
+    fetchStatus?: string;
+    note?: string;
+  }>;
+  debugQueries?: string[];
+  debugSummary?: {
+    iterations?: number;
+    candidateCount: number;
+    retainedCount: number;
+    discardedCount: number;
+  };
+  debugIterations?: Array<{
+    iteration: number;
+    queries: string[];
+    issueFocus?: string[];
+    retryFocus?: string[];
+    candidateCount: number;
+    retainedCount: number;
+    discardedCount: number;
+    retainedCases?: Array<{
+      title: string;
+      officialUrl: string;
+      supportedProposition?: string;
+      propositionSupportStatus?: string | null;
+    }>;
+    discardedCases?: Array<{
+      title: string;
+      officialUrl: string;
+      referenceUrl: string;
+      pageHint: number | null;
+      note: string;
+      supportedProposition?: string;
+      resolvedProposition?: string;
+      propositionMatchType?: string | null;
+    }>;
+  }>;
   debugReferences?: Array<{
     title: string;
     officialUrl: string;
     referenceUrl: string;
     pageHint: number | null;
     note: string;
+    supportedProposition?: string;
+    resolvedProposition?: string;
+    propositionMatchType?: string | null;
   }>;
 };
 

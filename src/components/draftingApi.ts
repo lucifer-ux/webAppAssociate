@@ -144,6 +144,35 @@ export type DraftContext = {
     completedAt?: string;
     failedAt?: string;
   };
+  citationReview?: {
+    requiresCaseCitations?: boolean;
+    reason?: string;
+    atlasCaseCount?: number;
+    additionalCaseCount?: number;
+    visibleAuthorityCount?: number;
+    deterministicAppendixApplied?: boolean;
+    propositionCatalog?: Array<{
+      proposition_label?: string;
+      section_heading?: string;
+      proposition_text?: string;
+    }>;
+    selectedAuthorities?: Array<{
+      title?: string;
+      citation?: string;
+      url?: string;
+      proposition?: string;
+      proposition_label?: string;
+      proposition_section?: string;
+    }>;
+  };
+  singleDraftRedline?: {
+    removedParagraphs?: string[];
+    addedParagraphs?: string[];
+  };
+  singleDraftFormattingRedline?: {
+    removedParagraphs?: string[];
+    addedParagraphs?: string[];
+  };
   source?: string;
   recommendation?: MatterDraftRecommendation;
   [key: string]: unknown;
