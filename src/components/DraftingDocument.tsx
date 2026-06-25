@@ -100,6 +100,7 @@ type DraftingDocumentProps = {
   onSelectAnnotation: (id: string) => void;
   onAcceptComment: (id: string) => void;
   onRejectComment: (id: string) => void;
+  onRevertComment?: (id: string) => void;
   onUpdateComment: (id: string, note: string) => void;
   onDeleteComment: (id: string) => void;
   onAddReply: (id: string, note: string) => void;
@@ -184,6 +185,44 @@ const getSelectionExcerpt = (editor: Editor | null) => {
   const { from, to, empty } = editor.state.selection;
   if (empty) return "";
   return editor.state.doc.textBetween(from, to, " ").trim();
+};
+
+const normalizeCommentNeedle = (value: string) =>
+  String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+const findCommentTextRange = (
+  editor: Editor | null,
+  comment: DraftComment,
+): { from: number; to: number } | null => {
+  if (!editor) return null;
+  const needles = [
+    comment.status === "accepted" ? comment.appliedText : "",
+    comment.status === "accepted" ? comment.originalText : "",
+    comment.excerpt,
+    comment.appliedText,
+    comment.suggestedText,
+  ]
+    .map((item) => normalizeCommentNeedle(String(item || "")))
+    .filter(Boolean);
+  if (!needles.length) return null;
+
+  let found: { from: number; to: number } | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (found || !node.isText || !node.text) return false;
+    const haystack = normalizeCommentNeedle(node.text);
+    const needle = needles.find((item) => haystack.includes(item));
+    if (!needle) return;
+    const rawIndex = node.text.toLowerCase().indexOf(needle);
+    if (rawIndex >= 0) {
+      found = {
+        from: pos + rawIndex,
+        to: pos + rawIndex + needle.length,
+      };
+      return false;
+    }
+    return;
+  });
+  return found;
 };
 
 const getSelectedBlockId = (editor: Editor | null) => {
@@ -336,6 +375,7 @@ const DraftingDocument = forwardRef<
       onSelectAnnotation,
       onAcceptComment,
       onRejectComment,
+      onRevertComment,
       onUpdateComment,
       onDeleteComment,
       onAddReply,
@@ -557,8 +597,9 @@ const DraftingDocument = forwardRef<
 
         comments.forEach((comment) => {
           try {
+            const resolvedRange = findCommentTextRange(editorInstance, comment);
             const coords = editorInstance.view.coordsAtPos(
-              clampPosition(comment.from, maxPos),
+              clampPosition(resolvedRange?.from || comment.from, maxPos),
             );
             nextLayout[comment.id] = Math.max(0, coords.top - sheetRect.top);
           } catch {
@@ -704,10 +745,15 @@ const DraftingDocument = forwardRef<
       if (!editor || !activeAnnotationId) return;
       const comment = comments.find((item) => item.id === activeAnnotationId);
       if (!comment) return;
+      const resolvedRange = findCommentTextRange(editor, comment);
+      const maxPos = editor.state.doc.content.size;
       editor
         .chain()
         .focus()
-        .setTextSelection({ from: comment.from, to: comment.to })
+        .setTextSelection({
+          from: clampPosition(resolvedRange?.from || comment.from, maxPos),
+          to: clampPosition(resolvedRange?.to || comment.to, maxPos),
+        })
         .scrollIntoView()
         .run();
     }, [activeAnnotationId, comments, editor]);
@@ -1203,6 +1249,11 @@ const DraftingDocument = forwardRef<
                     <Button type="button" onClick={() => onRejectComment(comment.id)}>
                       Reject
                     </Button>
+                    {comment.isAskAiSuggestion && comment.status === "accepted" ? (
+                      <Button type="button" onClick={() => onRevertComment?.(comment.id)}>
+                        Revert
+                      </Button>
+                    ) : null}
                     <Button type="button" onClick={() => onAcceptComment(comment.id)}>
                       Accept
                     </Button>
@@ -1436,14 +1487,16 @@ const DraftingDocument = forwardRef<
                 <section className="commentDiffCard before">
                   <span>Before</span>
                   <pre>
-                    {expandedComment.excerpt ||
+                    {expandedComment.originalText ||
+                      expandedComment.excerpt ||
                       "No original excerpt available."}
                   </pre>
                 </section>
                 <section className="commentDiffCard after">
                   <span>After</span>
                   <pre>
-                    {expandedComment.suggestedText ||
+                    {expandedComment.appliedText ||
+                      expandedComment.suggestedText ||
                       expandedComment.note ||
                       "No replacement text suggested."}
                   </pre>
@@ -1514,6 +1567,14 @@ const DraftingDocument = forwardRef<
                   >
                     Reject
                   </Button>
+                  {expandedComment.isAskAiSuggestion && expandedComment.status === "accepted" ? (
+                    <Button
+                      type="button"
+                      onClick={() => onRevertComment?.(expandedComment.id)}
+                    >
+                      Revert
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     onClick={() => onAcceptComment(expandedComment.id)}

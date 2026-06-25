@@ -564,7 +564,10 @@ export const buildDraftingExtensions = (options: {
   onSaveShortcut?: () => void;
   onOpenFindShortcut?: () => void;
 }) => [
-  StarterKit,
+  StarterKit.configure({
+    link: false,
+    underline: false,
+  }),
   TextStyle,
   Underline,
   TextAlign.configure({

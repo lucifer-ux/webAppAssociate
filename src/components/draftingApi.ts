@@ -231,6 +231,9 @@ export type DraftComment = {
   sourcePointers?: Array<Record<string, unknown>>;
   blockId?: string;
   suggestedText?: string;
+  originalText?: string;
+  appliedText?: string;
+  isAskAiSuggestion?: boolean;
   sectionId?: string;
   sectionTitle?: string;
 };
@@ -459,6 +462,27 @@ export const formatDraft = async (draftId: string) => {
   return payload;
 };
 
+export const askDraftAi = async (input: {
+  draftId: string;
+  message: string;
+}) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(input.draftId)}/ask-ai`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({ message: input.message }),
+    },
+  );
+  return readJson<{
+    success: true;
+    answer: string;
+    annotations: DraftComment[];
+    sourcePointers?: Array<Record<string, unknown>>;
+    meta?: Record<string, unknown>;
+  }>(response);
+};
+
 export const getDraftReview = async (draftId: string) => {
   const response = await fetch(
     buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/review`),
@@ -559,146 +583,6 @@ export type DraftIdentificationResult = {
   usedFallback?: boolean;
 };
 
-export type DraftGenerationQuestion = {
-  id: string;
-  question: string;
-  whyItMatters: string;
-  answerType:
-    | "yes_no"
-    | "short_text"
-    | "date"
-    | "amount"
-    | "choice"
-    | "document_upload"
-    | string;
-  options?: string[];
-  suggestedAnswer?: string | null;
-  priority?: string;
-  linkedIssue?: string;
-  linkedMissingInputIds?: string[];
-  interactionType?: string;
-};
-
-export type DraftGenerationRequestedDocument = {
-  id: string;
-  label: string;
-  whyNeeded: string;
-  unlocks: string;
-  priority?: string;
-  linkedIssue?: string;
-  linkedMissingInputIds?: string[];
-  acceptedTypes?: string[];
-  interactionType?: string;
-  strengthensClaims?: boolean;
-  blocks?: boolean;
-};
-
-export type DraftGenerationCheckpoint = {
-  matterId: string;
-  draftType: string;
-  title: string;
-  status:
-    | "needs_user_input"
-    | "review_ready_with_optional_inputs"
-    | "needs_user_action"
-    | "blocked"
-    | string;
-  readinessStatus?: "ready" | "review_ready" | "needs_user_input" | "blocked" | string;
-  messageToUser: string;
-  consequenceIfSkipped: string;
-  questions: DraftGenerationQuestion[];
-  requestedDocuments: DraftGenerationRequestedDocument[];
-  blockingItems: string[];
-  unsafeClaims: string[];
-  gapClusters?: Record<string, number>;
-  recommendedAlternativeDraftType?: string | null;
-  recommendedAlternativeTitle?: string | null;
-  recommendedActions: Array<{
-    id: string;
-    label: string;
-    description: string;
-  }>;
-};
-
-export type DraftGenerationThread = {
-  id: string;
-  ownerUserId: string;
-  matterId: string;
-  draftId: string | null;
-  selectedDraftType: string;
-  status: string;
-  graphState: Record<string, unknown>;
-  checkpointPayload: DraftGenerationCheckpoint | null;
-  uiSummary: {
-    threadId?: string;
-    matterId?: string;
-    draftId?: string | null;
-    selectedDraftType?: string;
-    readiness?: Record<string, unknown> | null;
-    sectionStatuses?: Array<{
-      sectionId: string;
-      title: string;
-      status: string;
-      sourceRefCount?: number;
-      warningCount?: number;
-    }>;
-    generationProgress?: {
-      currentStep?: string;
-      totalSections?: number;
-      completedSections?: number;
-      currentSectionTitle?: string | null;
-    };
-    blockers?: string[];
-    riskFlags?: string[];
-    draftScope?: Record<string, unknown> | null;
-    format?: {
-      draftFamily?: string;
-      confidence?: string;
-      cacheStatus?: string;
-      sources?: Array<{
-        type?: string;
-        title?: string;
-        url?: string;
-        file_name?: string;
-      }>;
-    } | null;
-    gapOwnership?: Record<string, number>;
-    criticReport?: {
-      draft_quality_report?: string;
-      blocking_issues?: unknown[];
-      warnings?: unknown[];
-      suggested_fixes?: unknown[];
-      ready_for_lawyer_review?: boolean;
-    } | null;
-    sourceCoverage?: {
-      requirementCount?: number;
-      verifiedCount?: number;
-      userSuppliedCount?: number;
-    };
-  };
-  draftMeta?: {
-    id: string | null;
-    title?: string | null;
-    saveVersion?: number | null;
-    contentHash?: string | null;
-    updatedAt?: string | null;
-    lastSavedAt?: string | null;
-    generationStatus?: string | null;
-  } | null;
-  lastError: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type DraftGenerationStartResponse =
-  {
-    success: true;
-    status: "started";
-    threadId: string;
-    draft: DraftDetail;
-    checkpoint?: DraftGenerationCheckpoint | null;
-  };
-
 export type SingleDraftStreamRequest = {
   matterId: string;
   draftType: string;
@@ -728,31 +612,6 @@ export const generateDraftFormat = async (input: {
   return payload.proposal;
 };
 
-export const startMatterDraftGeneration = async (input: {
-  matterId: string;
-  draftType: string;
-  draftKey?: string;
-  draftTitle?: string;
-  source?: "atlas_next_steps";
-  requestedFrom?: "overview" | "drafts";
-}) => {
-  const response = await fetch(
-    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/start`),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({
-        draftType: input.draftType,
-        draftKey: input.draftKey || "",
-        draftTitle: input.draftTitle || "",
-        source: input.source || "atlas_next_steps",
-        requestedFrom: input.requestedFrom || "overview",
-      }),
-    },
-  );
-  return readJson<DraftGenerationStartResponse>(response);
-};
-
 export const openSingleDraftStream = async (
   input: SingleDraftStreamRequest,
   signal?: AbortSignal,
@@ -772,97 +631,6 @@ export const openSingleDraftStream = async (
       }),
     },
   );
-};
-
-export const identifyMatterDraft = async (input: {
-  matterId: string;
-  draftType: string;
-  draftKey?: string;
-  draftTitle?: string;
-}) => {
-  const response = await fetch(
-    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/draft-identification`),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({
-        draftType: input.draftType,
-        draftKey: input.draftKey || "",
-        draftTitle: input.draftTitle || "",
-      }),
-    },
-  );
-  const payload = await readJson<{
-    success: true;
-    identification: DraftIdentificationResult;
-  }>(response);
-  return payload.identification;
-};
-
-export const continueMatterDraftGeneration = async (input: {
-  matterId: string;
-  threadId: string;
-  chosenAction: string;
-  answers: Array<{
-    questionId: string;
-    answer: string | boolean;
-    answerType?: string;
-  }>;
-}) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}/continue`,
-    ),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({
-        chosenAction: input.chosenAction,
-        answers: input.answers,
-      }),
-    },
-  );
-  return readJson<{
-    success: true;
-    status: "started";
-    threadId: string;
-    draft: DraftDetail;
-  }>(response);
-};
-
-export const cancelMatterDraftGeneration = async (input: {
-  matterId: string;
-  threadId: string;
-}) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}/cancel`,
-    ),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({}),
-    },
-  );
-  return readJson<{ success: true; thread: DraftGenerationThread }>(response);
-};
-
-export const getMatterDraftGenerationThread = async (input: {
-  matterId: string;
-  threadId: string;
-}) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}`,
-    ),
-    {
-      headers: buildDraftHeaders(false),
-    },
-  );
-  const payload = await readJson<{ success: true; thread: DraftGenerationThread }>(
-    response,
-  );
-  return payload.thread;
 };
 
 export const getNextStepTemplate = async (input: {
