@@ -199,7 +199,10 @@ const SINGLE_DRAFT_STAGE_ORDER = [
   "loading_context",
   "matter_grounding",
   "targeted_grounding",
-  "drafting",
+  "query_enhancement",
+  "reference_retrieval",
+  "skeleton_generation",
+  "draft_finalization",
   "case_citation_review",
   "formatting",
   "saving",
@@ -215,16 +218,55 @@ const appendLimitedEntries = (current: string[], next: string, maxEntries = 80) 
   return deduped.slice(-maxEntries);
 };
 
-const chunkWords = (text: string, size = 150) => {
-  const words = String(text || "")
-    .split(/\s+/)
-    .map((word) => word.trim())
-    .filter(Boolean);
-  const chunks: string[] = [];
-  for (let index = 0; index < words.length; index += size) {
-    chunks.push(words.slice(index, index + size).join(" "));
+const summarizeSingleDraftThought = (value: string, maxChars = 180) => {
+  const normalized = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\[[A-Z_]+\]/g, "")
+    .trim();
+  if (!normalized) return "";
+  const firstSentence =
+    normalized.match(/^(.{24,}?[.!?])\s/)?.[1] ||
+    normalized
+      .split(/(?<=\.)\s+(?=[A-Z])/)
+      .find((item) => item.trim().length >= 24) ||
+    normalized;
+  const compact = firstSentence.trim();
+  if (compact.length <= maxChars) return compact;
+  return `${compact.slice(0, maxChars - 1).replace(/\s+\S*$/, "")}.`;
+};
+
+const stageLabelForThought = (stage: string) => {
+  switch (stage) {
+    case "loading_context":
+      return "Context";
+    case "matter_grounding":
+    case "targeted_grounding":
+      return "Matter";
+    case "query_enhancement":
+      return "Query";
+    case "reference_retrieval":
+      return "Reference";
+    case "skeleton_generation":
+      return "Skeleton";
+    case "draft_finalization":
+      return "Finalizer";
+    case "case_citation_review":
+      return "Citations";
+    case "formatting":
+      return "Formatter";
+    case "saving":
+      return "Saving";
+    default:
+      return "Drafting";
   }
-  return chunks;
+};
+
+const splitSingleDraftThought = (entry: string) => {
+  const normalized = String(entry || "").trim();
+  const match = normalized.match(/^([^:]{2,24}):\s*(.+)$/);
+  return match
+    ? { label: match[1], text: match[2] }
+    : { label: "Drafting", text: normalized };
 };
 
 const makeTextNodesWithBreaks = (text: string): JSONContent[] => {
@@ -585,9 +627,6 @@ const DraftingPage = () => {
   const [singleDraftStreamState, setSingleDraftStreamState] =
     useState<SingleDraftStreamState | null>(null);
   const [singleDraftTypedThinking, setSingleDraftTypedThinking] = useState("");
-  const [singleDraftAnimatingPageIndex, setSingleDraftAnimatingPageIndex] = useState(-1);
-  const [singleDraftCommittedPageCount, setSingleDraftCommittedPageCount] = useState(0);
-  const singleDraftAnimationRef = useRef({ running: false, seenCount: 0 });
   const singleDraftCritiqueRequestRef = useRef("");
   const singleDraftFormattingRequestRef = useRef("");
   const singleDraftFormattingRetryRef = useRef("");
@@ -667,22 +706,16 @@ const DraftingPage = () => {
     if (liveEntry && (!entries.length || entries[entries.length - 1] !== liveEntry)) {
       entries.push(liveEntry);
     }
-    return entries.slice(-80);
-  }, [
-    singleDraftStreamState,
-  ]);
-  const singleDraftThinkingPages = useMemo(
-    () => chunkWords(singleDraftThinkingTranscript.join(" "), 150),
+    return entries.slice(-24);
+  }, [singleDraftStreamState]);
+  const singleDraftRecentThoughts = useMemo(
+    () => singleDraftThinkingTranscript.slice(-5, -1),
     [singleDraftThinkingTranscript],
   );
-  const singleDraftCompletedPages = useMemo(
-    () => singleDraftThinkingPages.slice(0, singleDraftCommittedPageCount),
-    [singleDraftCommittedPageCount, singleDraftThinkingPages],
-  );
-  const singleDraftCurrentPage =
-    singleDraftAnimatingPageIndex >= 0
-      ? singleDraftThinkingPages[singleDraftAnimatingPageIndex] || ""
-      : "";
+  const singleDraftCurrentThought = useMemo(() => {
+    const liveEntry = String(singleDraftStreamState?.thinkingText || "").trim();
+    return liveEntry || singleDraftThinkingTranscript[singleDraftThinkingTranscript.length - 1] || "";
+  }, [singleDraftStreamState?.thinkingText, singleDraftThinkingTranscript]);
   const singleDraftExecutionSteps = useMemo(() => {
     const currentStage = String(singleDraftStreamState?.stage || "");
     const currentIndex = SINGLE_DRAFT_STAGE_ORDER.indexOf(
@@ -692,7 +725,10 @@ const DraftingPage = () => {
       { id: "loading_context", label: "Load matter context" },
       { id: "matter_grounding", label: "Use matter grounding" },
       { id: "targeted_grounding", label: "Fetch missing document facts" },
-      { id: "drafting", label: "Generate draft text" },
+      { id: "query_enhancement", label: "Refine draft request" },
+      { id: "reference_retrieval", label: "Pull reference guidance" },
+      { id: "skeleton_generation", label: "Generate draft skeleton" },
+      { id: "draft_finalization", label: "Finalize draft content" },
       { id: "case_citation_review", label: "Check case citations" },
       { id: "formatting", label: "Format the structure" },
       { id: "saving", label: "Save to draft workspace" },
@@ -862,9 +898,14 @@ const DraftingPage = () => {
     if (sourceDocumentFromQuery || !matterIdFromQuery || !startDraftFromQuery) {
       return;
     }
+    if (!selectedMatterDraftId) {
+      setSaveStatus("error");
+      setLoadError("This drafting test needs a real saved matter, not a mock-only matter.");
+      return;
+    }
 
     const requestKey = [
-      matterIdFromQuery,
+      selectedMatterDraftId,
       startDraftFromQuery,
       draftKeyFromQuery,
       draftLabelFromQuery,
@@ -875,7 +916,6 @@ const DraftingPage = () => {
 
     setSaveStatus("loading");
     setLoadError("");
-    singleDraftAnimationRef.current = { running: false, seenCount: 0 };
     singleDraftTimingRef.current = {
       startedAt: performance.now(),
       currentStage: "loading_context",
@@ -888,19 +928,17 @@ const DraftingPage = () => {
       formattingStartedAt: 0,
     };
     logDraftTiming("draft_run_started", {
-      matterId: matterIdFromQuery,
+      matterId: selectedMatterDraftId,
       requestedDraftType: startDraftFromQuery,
       requestedDraftLabel: draftLabelFromQuery || startDraftFromQuery,
     });
     logDraftTiming("stage_started", {
-      matterId: matterIdFromQuery,
+      matterId: selectedMatterDraftId,
       draftId: "",
       stage: "loading_context",
       totalElapsedMs: 0,
       totalElapsedSeconds: 0,
     });
-    setSingleDraftAnimatingPageIndex(-1);
-    setSingleDraftCommittedPageCount(0);
     setSingleDraftStreamState({
       draftId: "",
       title: draftLabelFromQuery || startDraftFromQuery,
@@ -931,13 +969,15 @@ const DraftingPage = () => {
 
     const handleStreamEvent = async (eventName: string, payload: Record<string, unknown>) => {
       if (cancelled) return;
-      const pushThinkingEntry = (nextText: string) => {
-        const normalized = String(nextText || "").trim();
-        if (!normalized) return;
+      const pushThinkingEntry = (nextText: string, label?: string) => {
+        const summary = summarizeSingleDraftThought(nextText);
+        if (!summary) return;
         setSingleDraftStreamState((current) => {
           if (!current) return current;
+          const nextLabel = label || stageLabelForThought(current.stage);
+          const normalized = `${nextLabel}: ${summary}`;
           const nextHistory = current.thinkingText
-            ? appendLimitedEntries(current.thinkingHistory, current.thinkingText)
+            ? appendLimitedEntries(current.thinkingHistory, current.thinkingText, 24)
             : current.thinkingHistory;
           return {
             ...current,
@@ -976,7 +1016,7 @@ const DraftingPage = () => {
         case "status": {
           const tracker = singleDraftTimingRef.current;
           const now = performance.now();
-          const nextStage = String(payload.stage || tracker.currentStage || "drafting");
+          const nextStage = String(payload.stage || tracker.currentStage || "skeleton_generation");
           if (nextStage && nextStage !== tracker.currentStage) {
             markSingleDraftStageComplete(now, "status_transition");
             beginSingleDraftStage(nextStage, now, String(payload.message || "").trim());
@@ -985,7 +1025,7 @@ const DraftingPage = () => {
             current
               ? {
                   ...current,
-                  stage: String(payload.stage || current.stage || "drafting"),
+                  stage: String(payload.stage || current.stage || "skeleton_generation"),
                   statusMessage: String(payload.message || current.statusMessage || ""),
                 }
               : current,
@@ -1001,7 +1041,7 @@ const DraftingPage = () => {
           tracker.currentDocumentStartedAt = performance.now();
           tracker.totalDocuments = Number(payload.total || tracker.totalDocuments || 0);
           logDraftTiming("document_started", {
-            matterId: matterIdFromQuery,
+            matterId: selectedMatterDraftId,
             draftId: tracker.draftId,
             fileName: tracker.currentDocumentFileName,
             index: Number(payload.index || tracker.completedDocuments + 1),
@@ -1022,7 +1062,7 @@ const DraftingPage = () => {
           const source = String(payload.source || "").trim();
           if (source === "matter_cache") {
             logDraftTiming("document_grounded_from_matter", {
-              matterId: matterIdFromQuery,
+              matterId: selectedMatterDraftId,
               draftId: tracker.draftId,
               fileName,
               index: Number(payload.index || 0),
@@ -1039,7 +1079,7 @@ const DraftingPage = () => {
                 : 0;
             tracker.completedDocuments += 1;
             logDraftTiming("document_complete", {
-              matterId: matterIdFromQuery,
+              matterId: selectedMatterDraftId,
               draftId: tracker.draftId,
               fileName,
               completedDocuments: tracker.completedDocuments,
@@ -1053,7 +1093,7 @@ const DraftingPage = () => {
               ...(source ? { source } : {}),
             });
           }
-          pushThinkingEntry(`${fileName}: ${note}`);
+          pushThinkingEntry(`${fileName}: ${note}`, "Matter");
           break;
         }
         case "provider_switch": {
@@ -1062,6 +1102,7 @@ const DraftingPage = () => {
             reason
               ? `Switching model provider. ${reason}`
               : "Switching model provider.",
+            "Model",
           );
           break;
         }
@@ -1077,7 +1118,6 @@ const DraftingPage = () => {
             singleDraftTimingRef.current.draftId = streamedDraftId;
           }
           setSingleDraftTypedThinking("");
-          setSingleDraftAnimatingPageIndex(-1);
           setSingleDraftStreamState((current) =>
             current
               ? {
@@ -1108,7 +1148,7 @@ const DraftingPage = () => {
           }
           completed = true;
           logDraftTiming("draft_run_complete", {
-            matterId: matterIdFromQuery,
+            matterId: selectedMatterDraftId,
             draftId: finalDraftId || singleDraftTimingRef.current.draftId,
             totalElapsedMs: Math.max(0, completedAt - singleDraftTimingRef.current.startedAt),
             totalElapsedSeconds: formatTimingSeconds(
@@ -1116,9 +1156,6 @@ const DraftingPage = () => {
             ),
           });
           setSingleDraftTypedThinking("");
-          setSingleDraftAnimatingPageIndex(-1);
-          setSingleDraftCommittedPageCount(0);
-          singleDraftAnimationRef.current = { running: false, seenCount: 0 };
           setSingleDraftStreamState(null);
           break;
         }
@@ -1136,7 +1173,7 @@ const DraftingPage = () => {
       try {
         const response = await openSingleDraftStream(
           {
-            matterId: matterIdFromQuery,
+            matterId: selectedMatterDraftId,
             draftType: startDraftFromQuery,
             draftKey: draftKeyFromQuery || undefined,
             draftTitle: draftLabelFromQuery || undefined,
@@ -1199,9 +1236,6 @@ const DraftingPage = () => {
         if (cancelled || controller.signal.aborted || completed) return;
         draftGenerationStartRequestRef.current = "";
         setSingleDraftTypedThinking("");
-        setSingleDraftAnimatingPageIndex(-1);
-        setSingleDraftCommittedPageCount(0);
-        singleDraftAnimationRef.current = { running: false, seenCount: 0 };
         setSingleDraftStreamState(null);
         setActiveDraft(null);
         setSaveStatus("error");
@@ -1229,6 +1263,7 @@ const DraftingPage = () => {
     matterIdFromQuery,
     navigate,
     requestedFromQuery,
+    selectedMatterDraftId,
     sourceDocumentFromQuery,
     startDraftFromQuery,
   ]);
@@ -1417,7 +1452,39 @@ const DraftingPage = () => {
         : null;
     const singleDraftStatus = String(singleDraftStreamContext?.status || "").trim();
     const latestCritiqueStatus = String(latestCritiqueContext?.status || "").trim();
+    const isMockPipelineCheck =
+      [
+        activeDraft?.templateId,
+        activeDraft?.title,
+        activeDraft?.context?.selectedDraftType,
+        activeDraft?.context?.enhancedDraftQuery &&
+        typeof activeDraft.context.enhancedDraftQuery === "object"
+          ? (activeDraft.context.enhancedDraftQuery as Record<string, unknown>).source
+          : "",
+        activeDraft?.context?.singleDraftStream &&
+        typeof activeDraft.context.singleDraftStream === "object"
+          ? (activeDraft.context.singleDraftStream as Record<string, unknown>).pipelineVersion
+          : "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes("mock_pipeline_reference_check") ||
+      (
+        String(activeDraft?.title || "").toLowerCase() ===
+          "suit for recovery under order xxxvii cpc" &&
+        String(activeDraft?.context?.selectedDraftType || "")
+          .toLowerCase()
+          .includes("i_want_to_draft_a_civil_pleadings_suit_for_recovery")
+      );
     if (!draftId || singleDraftStatus !== "completed") {
+      setStreamedCritiqueState((current) =>
+        current.status === "running"
+          ? { status: "idle", message: "", commentCount: 0 }
+          : current,
+      );
+      return;
+    }
+    if (isMockPipelineCheck) {
       setStreamedCritiqueState((current) =>
         current.status === "running"
           ? { status: "idle", message: "", commentCount: 0 }
@@ -1674,62 +1741,36 @@ const DraftingPage = () => {
   useEffect(() => {
     if (!isSingleDraftStreaming || isSingleDraftFormattingStage) {
       setSingleDraftTypedThinking("");
-      setSingleDraftAnimatingPageIndex(-1);
-      singleDraftAnimationRef.current.running = false;
       return;
     }
-    if (!singleDraftThinkingPages.length) {
+    if (!singleDraftCurrentThought) {
       setSingleDraftTypedThinking("");
-      setSingleDraftAnimatingPageIndex(-1);
       return;
     }
     let cancelled = false;
     let intervalId: number | null = null;
-    let timeoutId: number | null = null;
-
-    const runQueue = () => {
-      if (cancelled || singleDraftAnimationRef.current.running) return;
-      if (singleDraftAnimationRef.current.seenCount >= singleDraftThinkingPages.length) return;
-
-      const targetIndex = singleDraftAnimationRef.current.seenCount;
-      const words =
-        singleDraftThinkingPages[targetIndex]?.split(/\s+/).filter(Boolean) || [];
-      singleDraftAnimationRef.current.running = true;
-      setSingleDraftAnimatingPageIndex(targetIndex);
-      setSingleDraftTypedThinking("");
-      let wordIndex = 0;
-
-      intervalId = window.setInterval(() => {
-        if (cancelled) {
-          if (intervalId) window.clearInterval(intervalId);
-          return;
-        }
-        wordIndex += 3;
-        setSingleDraftTypedThinking(words.slice(0, wordIndex).join(" "));
-        if (wordIndex >= words.length) {
-          if (intervalId) window.clearInterval(intervalId);
-          singleDraftAnimationRef.current.seenCount = targetIndex + 1;
-          setSingleDraftCommittedPageCount(targetIndex + 1);
-          timeoutId = window.setTimeout(() => {
-            if (cancelled) return;
-            singleDraftAnimationRef.current.running = false;
-            runQueue();
-          }, 220);
-        }
-      }, 28);
-    };
-
-    runQueue();
+    let charIndex = 0;
+    setSingleDraftTypedThinking("");
+    intervalId = window.setInterval(() => {
+      if (cancelled) {
+        if (intervalId) window.clearInterval(intervalId);
+        return;
+      }
+      charIndex += 5;
+      setSingleDraftTypedThinking(singleDraftCurrentThought.slice(0, charIndex));
+      if (charIndex >= singleDraftCurrentThought.length && intervalId) {
+        window.clearInterval(intervalId);
+      }
+    }, 18);
 
     return () => {
       cancelled = true;
       if (intervalId) window.clearInterval(intervalId);
-      if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, [
     isSingleDraftFormattingStage,
     isSingleDraftStreaming,
-    singleDraftThinkingPages,
+    singleDraftCurrentThought,
   ]);
 
   const applyCommand = (command: string, value?: string) => {
@@ -2360,22 +2401,36 @@ const DraftingPage = () => {
               </p>
               <div className="singleDraftThinkingHero">
                 <div className="singleDraftThinkingViewport">
+                  {singleDraftRecentThoughts.length ? (
+                    <div className="singleDraftCollapsedThoughts" aria-label="Recent draft reasoning">
+                      {singleDraftRecentThoughts.map((entry, index) => {
+                        const thought = splitSingleDraftThought(entry);
+                        return (
+                          <div
+                            className="singleDraftCollapsedThought"
+                            key={`${thought.label}-${index}-${thought.text.slice(0, 24)}`}
+                          >
+                            <span>{thought.label}</span>
+                            <p>{thought.text}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                   <p className="singleDraftThinkingTyped">
                     {singleDraftTypedThinking ||
                       (isSingleDraftFormattingStage
                         ? "Draft generated. Formatting it properly."
-                        : singleDraftCurrentPage ||
+                        : singleDraftCurrentThought ||
                           "Associate is thinking through the matter.")}
                     <span className="singleDraftThinkingCursor" aria-hidden="true" />
                   </p>
                 </div>
                 <div className="singleDraftThinkingMeta">
+                  <span>{singleDraftThinkingTranscript.length} concise updates</span>
                   <span>
-                    {singleDraftCommittedPageCount +
-                      (singleDraftAnimatingPageIndex >= 0 ? 1 : 0)}{" "}
-                    chunks streamed
+                    {stageLabelForThought(singleDraftStreamState?.stage || "")} stage
                   </span>
-                  <span>{singleDraftThinkingTranscript.length} stream events</span>
                 </div>
               </div>
             </div>
@@ -2406,19 +2461,26 @@ const DraftingPage = () => {
               <section className="singleDraftExecutionPanel">
                 <p className="draftTemplateEyebrow">Thinking Stream</p>
                 <div className="singleDraftChunkStack">
-                  {singleDraftCompletedPages.map((chunk, index) => (
-                    <article className="singleDraftChunkCard" key={`chunk-${index}`}>
-                      <p>{chunk}</p>
-                    </article>
-                  ))}
-                  {singleDraftTypedThinking ? (
-                    <article className="singleDraftChunkCard isActive">
-                      <p>
-                        {singleDraftTypedThinking}
-                        <span className="singleDraftThinkingCursor" aria-hidden="true" />
-                      </p>
-                    </article>
-                  ) : null}
+                  {singleDraftThinkingTranscript.slice(-6).map((entry, index, list) => {
+                    const thought = splitSingleDraftThought(entry);
+                    const isActive = index === list.length - 1;
+                    return (
+                      <article
+                        className={`singleDraftChunkCard ${isActive ? "isActive" : ""}`}
+                        key={`${thought.label}-${index}-${thought.text.slice(0, 32)}`}
+                      >
+                        <span>{thought.label}</span>
+                        <p>
+                          {isActive && singleDraftTypedThinking
+                            ? singleDraftTypedThinking.replace(/^[^:]{2,24}:\s*/, "")
+                            : thought.text}
+                          {isActive && singleDraftTypedThinking ? (
+                            <span className="singleDraftThinkingCursor" aria-hidden="true" />
+                          ) : null}
+                        </p>
+                      </article>
+                    );
+                  })}
                 </div>
               </section>
               {isSingleDraftFormattingStage ? (

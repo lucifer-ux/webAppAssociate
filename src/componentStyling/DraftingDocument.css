@@ -277,17 +277,60 @@
 }
 
 .singleDraftThinkingViewport {
-  min-height: 300px;
+  min-height: 190px;
   max-width: 560px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.singleDraftCollapsedThoughts {
+  display: grid;
+  gap: 8px;
+}
+
+.singleDraftCollapsedThought {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  opacity: 0.78;
+}
+
+.singleDraftCollapsedThought > span,
+.singleDraftChunkCard > span {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid rgba(112, 13, 13, 0.18);
+  background: rgba(112, 13, 13, 0.06);
+  font-family: "Work Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #700d0d;
+}
+
+.singleDraftCollapsedThought p {
+  margin: 0;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #695b51;
 }
 
 .singleDraftThinkingTyped {
   margin: 0;
   font-family: "Newsreader", serif;
-  font-size: clamp(24px, 2.3vw, 32px);
+  font-size: clamp(21px, 2vw, 28px);
   line-height: 1.42;
   color: #382b26;
   white-space: pre-wrap;
+  min-height: 4.2em;
 }
 
 .singleDraftThinkingCursor {
@@ -401,6 +444,8 @@
   border-left: 2px solid #700d0d;
   padding: 14px 14px 14px 16px;
   background: rgba(255, 255, 255, 0.72);
+  display: grid;
+  gap: 8px;
 }
 
 .singleDraftChunkCard.isActive {
@@ -410,9 +455,9 @@
 
 .singleDraftChunkCard p {
   margin: 0;
-  font-family: "Newsreader", serif;
-  font-size: 18px;
-  line-height: 1.58;
+  font-family: "Work Sans", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
   color: #3f322d;
 }
 
@@ -757,10 +802,15 @@
   flex: 0 0 340px;
   min-width: 0;
   position: sticky;
-  top: 210px;
+  top: 204px;
   align-self: flex-start;
   display: grid;
   gap: 18px;
+  max-height: calc(100vh - 224px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
 }
 
 .draftNavigatorCard {
@@ -775,6 +825,9 @@
 .draftNavigatorList {
   display: grid;
   gap: 6px;
+  max-height: min(42vh, 420px);
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .draftNavigatorItem {
@@ -1968,7 +2021,7 @@
   }
 
   .singleDraftThinkingViewport {
-    min-height: 200px;
+    min-height: 170px;
   }
 
   .singleDraftThinkingHero,

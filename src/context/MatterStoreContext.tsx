@@ -391,6 +391,8 @@ export type MatterRecord = MatterUploadPayload & {
   latestAtlasNextSteps?: MatterProcessedResult["latest_atlas_next_steps"];
   atlasMatterBrief?: MatterProcessedResult["atlas_matter_brief"];
   latestAtlasMatterBrief?: MatterProcessedResult["latest_atlas_matter_brief"];
+  matterUnderstandingV2?: MatterProcessedResult["matter_understanding_v2"];
+  latestMatterUnderstandingV2?: MatterProcessedResult["latest_matter_understanding_v2"];
   atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
   groundAnalysis?: MatterProcessedResult["ground_analysis"];
   documentSignalPayloads?: MatterProcessedResult["document_signal_payloads"];
@@ -988,6 +990,123 @@ export type AtlasNextStepsAnalysis = {
   } | null;
 };
 
+export type MatterUnderstandingV2 = {
+  version: number;
+  run_id: string;
+  generated_at: string;
+  status: "completed" | "partial" | "failed";
+  model_trace?: {
+    provider?: string;
+    orchestrator_model?: string | null;
+    signal_model?: string | null;
+    classifier_model?: string | null;
+    researcher_model?: string | null;
+    verifier_model?: string | null;
+    sdk_used?: boolean;
+    fallback_used?: boolean;
+    errors?: string[];
+  };
+  classification: {
+    primary_category: string;
+    secondary_categories: string[];
+    governing_statutes: string[];
+    typical_forum: string;
+    jurisdiction: string;
+    procedural_stage: string;
+    client_posture: "claimant" | "respondent" | "unknown";
+    dispute_value_band: string;
+    trigger_event: string;
+    confidence: number;
+    ambiguities: string[];
+    reasoning_summary?: string;
+  };
+  matter_brief: {
+    summary: string;
+    current_posture: string;
+    key_facts: string[];
+    record_supports: string[];
+  };
+  legal_analysis: {
+    direct_answer: {
+      short_answer: string;
+      answer_type: "yes" | "no" | "likely_yes" | "likely_no" | "depends" | "insufficient_information";
+      confidence: number;
+      conditions: string[];
+    };
+    issue_analyses: Array<{
+      issue_id: string;
+      issue: string;
+      conclusion: string;
+      supporting_facts: string[];
+      supporting_clauses: Array<{
+        clause: string;
+        document: string;
+        text_summary: string;
+        application: string;
+      }>;
+      risks: string[];
+      missing_facts: string[];
+    }>;
+  };
+  standard_practice: {
+    what_is_usually_done: string[];
+    typical_timeline: string;
+    common_pitfalls: string[];
+    relevant_precedents: Array<{
+      case_name: string;
+      relevance: string;
+      citation: string;
+      source_url: string;
+    }>;
+  };
+  issues_and_ambiguities: Array<{
+    issue: string;
+    why_it_matters: string;
+    severity: "critical" | "high" | "medium" | "low";
+    needs_user_input: boolean;
+  }>;
+  missing_information: Array<{
+    missing_item: string;
+    why_needed: string;
+    how_to_collect: "upload_document" | "user_answer" | "web_search" | "system_retrieval";
+    question?: string;
+    options?: string[];
+  }>;
+  next_steps: Array<{
+    step: string;
+    urgency: "immediate" | "within_7_days" | "within_30_days" | "advisory";
+    owner: "lawyer" | "client" | "system";
+    rationale: string;
+    depends_on: string[];
+  }>;
+  timeline: Array<{
+    date: string;
+    event: string;
+    source_document: string;
+    legal_effect: string;
+    confidence: "high" | "medium" | "low";
+  }>;
+  draft_sequence: Array<{
+    draft_type: string;
+    title: string;
+    urgency: "immediate" | "standard" | "advisory";
+    gates: string[];
+    rationale: string;
+    is_primary_legal_draft: boolean;
+  }>;
+  research_sources: Array<{
+    title: string;
+    url: string;
+    source_name: string;
+    legal_proposition: string;
+  }>;
+  clarifications_obtained: Array<{
+    question: string;
+    answer: string;
+    answered_at: string;
+  }>;
+};
+
 export type AtlasMatterBrief = {
   matterId: string;
   workflowId: string;
@@ -1211,6 +1330,8 @@ export type MatterProcessedResult = {
   latest_atlas_next_steps?: Record<string, unknown> | null;
   atlas_matter_brief?: AtlasMatterBrief | null;
   latest_atlas_matter_brief?: Record<string, unknown> | null;
+  matter_understanding_v2?: MatterUnderstandingV2 | null;
+  latest_matter_understanding_v2?: Record<string, unknown> | null;
   atlas_user_inputs?: Array<{
     id: string;
     questionId: string;
@@ -1760,6 +1881,9 @@ const buildMatterRecord = (
     atlasMatterBrief: result.atlas_matter_brief || undefined,
     latestAtlasMatterBrief:
       result.latest_atlas_matter_brief || undefined,
+    matterUnderstandingV2: result.matter_understanding_v2 || undefined,
+    latestMatterUnderstandingV2:
+      result.latest_matter_understanding_v2 || undefined,
     atlasUserInputs: result.atlas_user_inputs || undefined,
     groundAnalysis: result.ground_analysis || undefined,
     documentSignalPayloads: result.document_signal_payloads || undefined,

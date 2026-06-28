@@ -4990,32 +4990,85 @@
 
 .matterResearchLiveThread {
   display: grid;
-  gap: 14px;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #e5d8c9;
+  border-radius: 10px;
+  background: #f8f0e8;
+  box-shadow: 0 18px 42px rgba(73, 48, 27, 0.08);
 }
 
 .matterResearchLiveThreadHead {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
+  min-height: 46px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(139, 111, 77, 0.12);
+  background: #eee2d6;
 }
 
 .matterResearchLiveThreadHead span {
-  color: #8d6a3f;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #261d15;
   font-family: "IBM Plex Mono", "Work Sans", sans-serif;
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.68rem;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.matterResearchLiveThreadHead span::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  display: inline-block;
+  background:
+    linear-gradient(90deg, transparent 42%, #a17422 42% 58%, transparent 58%),
+    linear-gradient(0deg, transparent 42%, #a17422 42% 58%, transparent 58%);
+  transform: rotate(45deg);
+}
+
+.matterResearchThinkingStepsButton {
+  appearance: none;
+  border: 1px solid rgba(118, 93, 65, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 250, 244, 0.74);
+  color: #71583d;
+  min-height: 22px;
+  padding: 0 9px;
+  font-family: "IBM Plex Mono", "Work Sans", sans-serif;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+
+.matterResearchThinkingStepsButton::before {
+  content: "⊙";
+  margin-right: 4px;
+  font-size: 0.65rem;
 }
 
 .matterResearchTimeline {
   display: grid;
   gap: 0;
   overflow: hidden;
-  perspective: 1200px;
-  transform-style: preserve-3d;
-  padding-top: 10px;
-  padding-bottom: 8px;
+  min-height: 250px;
+  padding: 30px 28px 30px 72px;
+  position: relative;
+  background: #fbf5ee;
+}
+
+.matterResearchTimeline::before {
+  content: "";
+  position: absolute;
+  left: 44px;
+  top: 30px;
+  bottom: 30px;
+  width: 1px;
+  background: #eaded1;
 }
 
 .matterResearchTimelineEntry {
@@ -5033,68 +5086,87 @@
 }
 
 .matterResearchTimelineEntry:not(:first-child) {
-  margin-top: -18px;
+  margin-top: 34px;
 }
 
 .matterResearchTimelineEntry.age-3 {
   z-index: 1;
-  opacity: 0.12;
-  transform: translateY(-42px) scale(0.95) translateZ(-90px);
-  filter: blur(0.55px) saturate(0.76);
+  opacity: 0.28;
+  transform: translateY(0);
+  filter: saturate(0.76);
 }
 
 .matterResearchTimelineEntry.age-2 {
   z-index: 2;
-  opacity: 0.26;
-  transform: translateY(-28px) scale(0.968) translateZ(-60px);
+  opacity: 0.42;
+  transform: translateY(0);
   filter: saturate(0.86);
 }
 
 .matterResearchTimelineEntry.age-1 {
   z-index: 3;
-  opacity: 0.48;
-  transform: translateY(-14px) scale(0.985) translateZ(-28px);
+  opacity: 0.64;
+  transform: translateY(0);
 }
 
 .matterResearchTimelineEntry.age-0 {
   z-index: 4;
   opacity: 1;
-  transform: translateY(0) scale(1) translateZ(0);
+  transform: translateY(0);
 }
 
 .matterResearchTimelineBody {
   display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 6px;
   align-items: start;
-  padding: 14px 16px;
-  border: 1px solid rgba(185, 151, 91, 0.14);
-  border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(255, 253, 249, 0.98), rgba(252, 246, 237, 0.96));
+  min-height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.matterResearchTimelineBody::before {
+  content: "";
+  position: absolute;
+  left: -39px;
+  top: -2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid #ead8bf;
+  background: #fbf5ee;
+  box-shadow: 0 0 0 7px #fbf5ee;
+}
+
+.matterResearchTimelineEntry.is-newest .matterResearchTimelineBody::before {
+  border-color: #c49a54;
+  background: #fff9ef;
   box-shadow:
-    0 10px 24px rgba(92, 67, 32, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(10px);
+    0 0 0 7px #fbf5ee,
+    inset 0 0 0 4px #fff9ef,
+    inset 0 0 0 6px #c49a54;
 }
 
 .matterResearchTimelineBody strong {
   display: inline-flex;
   align-items: center;
-  color: #91673a;
+  color: #a07122;
   font-family: "IBM Plex Mono", "Work Sans", sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
   padding-top: 2px;
 }
 
 .matterResearchTimelineBody p {
   margin: 0;
-  color: #30251b;
+  color: #5d544c;
   font-family: "IBM Plex Sans", "Work Sans", sans-serif;
-  font-size: 0.96rem;
+  font-size: 0.8rem;
   line-height: 1.45;
   min-height: 1.45em;
   white-space: normal;
@@ -5112,12 +5184,51 @@
   height: 1em;
   margin-left: 3px;
   vertical-align: text-bottom;
-  background: rgba(185, 151, 91, 0.9);
+  background: rgba(160, 113, 34, 0.9);
   animation: matterResearchCursorBlink 0.9s steps(1) infinite;
 }
 
 .matterResearchLiveThreadIdle .matterResearchTimelineBody {
-  grid-template-columns: 160px minmax(0, 1fr);
+  grid-template-columns: 1fr;
+}
+
+.matterResearchEvidenceStrength {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px minmax(84px, auto);
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-top: 1px solid rgba(139, 111, 77, 0.12);
+  background: #eee2d6;
+  color: #8a641e;
+  font-family: "IBM Plex Mono", "Work Sans", sans-serif;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.matterResearchEvidenceMeter {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(139, 111, 77, 0.18);
+  overflow: hidden;
+}
+
+.matterResearchEvidenceMeterFill {
+  height: 100%;
+  border-radius: inherit;
+  background: #9a721f;
+  transition: width 0.45s ease;
+}
+
+.matterResearchEvidenceStrength strong {
+  color: #8a641e;
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: right;
 }
 
 @keyframes matterResearchLineEnter {
@@ -6322,5 +6433,112 @@
 
   .matterClarificationGhostCard {
     width: calc(100% - 24px);
+  }
+}
+
+.matterUnderstandingPanel {
+  border-color: rgba(14, 116, 144, 0.28);
+  background:
+    linear-gradient(135deg, rgba(236, 254, 255, 0.92), rgba(255, 255, 255, 0.96));
+}
+
+.matterUnderstandingMetaGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.matterUnderstandingMetaGrid span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #334155;
+  font-size: 0.88rem;
+}
+
+.matterUnderstandingMetaGrid strong {
+  color: #0f172a;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.matterUnderstandingTraceList {
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.matterNextStepAccordionList {
+  display: grid;
+  gap: 10px;
+}
+
+.matterNextStepDisclosure {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  overflow: hidden;
+}
+
+.matterNextStepDisclosure summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.matterNextStepDisclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.matterNextStepDisclosure summary span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.matterNextStepDisclosure summary strong {
+  color: #1f2937;
+  font-size: 0.95rem;
+}
+
+.matterNextStepDisclosure summary small {
+  color: #7c6a58;
+  font-size: 0.74rem;
+  text-transform: capitalize;
+}
+
+.matterNextStepDisclosure summary svg {
+  flex-shrink: 0;
+  color: #9a721f;
+  transition: transform 0.18s ease;
+}
+
+.matterNextStepDisclosure[open] summary svg {
+  transform: rotate(90deg);
+}
+
+.matterNextStepDisclosure .matterNextStepsAccordionBody {
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+  padding: 12px 14px 14px;
+}
+
+.matterNextStepDisclosure .matterNextStepsAccordionBody p {
+  margin: 0 0 10px;
+  color: #4b5563;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .matterUnderstandingMetaGrid {
+    grid-template-columns: 1fr;
   }
 }

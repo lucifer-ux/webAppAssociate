@@ -42,6 +42,7 @@ import {
   type FrontendBriefArtifact,
   type MatterDraftRecommendation,
   type MatterDraftRecommendations,
+  type MatterUnderstandingV2,
   type MatterProcessedResult,
   type MatterRecord,
   type MatterSignalSourceRef,
@@ -168,6 +169,325 @@ const normalizeInline = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+type MatterUnderstandingStreamEvent = {
+  event: string;
+  data: Record<string, unknown>;
+};
+
+type MatterLiveFeedEntry = {
+  id: string;
+  title: string;
+  message: string;
+  tone: "done" | "current" | "attention";
+  progress: number;
+};
+
+const MATTER_UNDERSTANDING_STAGE_FEED: Record<
+  string,
+  { title: string; message: string; progress: number }
+> = {
+  matter_understanding: {
+    title: "Opening matter record",
+    message: "Preparing the uploaded record and matter context for analysis.",
+    progress: 5,
+  },
+  signal_extraction: {
+    title: "Reading legal signals",
+    message:
+      "Identifying parties, dates, statutes, monetary figures, demands, and dispute triggers.",
+    progress: 12,
+  },
+  answer_planning: {
+    title: "Planning answer scope",
+    message:
+      "Converting the user prompt into specific legal questions the brief must answer.",
+    progress: 22,
+  },
+  legal_primitive_extraction: {
+    title: "Extracting operative provisions",
+    message:
+      "Pulling clauses, obligations, rights, risks, notices, deadlines, and factual admissions from the record.",
+    progress: 36,
+  },
+  timeline_building: {
+    title: "Building chronology",
+    message:
+      "Sequencing legally significant events and linking them to source documents.",
+    progress: 48,
+  },
+  matter_state_building: {
+    title: "Assessing matter posture",
+    message:
+      "Determining party posture, procedural maturity, readiness, and premature actions.",
+    progress: 58,
+  },
+  classification: {
+    title: "Classifying legal workflow",
+    message:
+      "Identifying matter category, governing statutes, forum, jurisdiction, and dispute posture.",
+    progress: 68,
+  },
+  legal_grounding: {
+    title: "Searching public legal sources",
+    message:
+      "Looking for Indian legal authorities and procedural guidance relevant to the matter.",
+    progress: 76,
+  },
+  orchestration: {
+    title: "Drafting matter brief",
+    message:
+      "Synthesizing facts, clauses, timeline, classification, and sources into the final legal understanding.",
+    progress: 86,
+  },
+  verification: {
+    title: "Checking support",
+    message:
+      "Verifying conclusions against uploaded documents and legal-source grounding.",
+    progress: 94,
+  },
+  coverage_verification: {
+    title: "Checking answer coverage",
+    message:
+      "Confirming the final brief addresses the user’s questions and flags remaining gaps.",
+    progress: 98,
+  },
+};
+
+const MATTER_UNDERSTANDING_SECTION_FEED: Record<
+  string,
+  { title: string; message: string; progress: number }
+> = {
+  signals: {
+    title: "Signals extracted",
+    message:
+      "Core parties, dates, statutes, demands, and clauses have been identified.",
+    progress: 18,
+  },
+  answer_plan: {
+    title: "Question plan ready",
+    message:
+      "The analysis plan is set and the system is moving into document-grounded extraction.",
+    progress: 28,
+  },
+  legal_analysis: {
+    title: "Legal primitives extracted",
+    message:
+      "Issue buckets and source-backed legal primitives are ready for synthesis.",
+    progress: 42,
+  },
+  clause_matrix: {
+    title: "Clause matrix assembled",
+    message:
+      "Important contractual provisions have been organized for final analysis.",
+    progress: 44,
+  },
+  timeline: {
+    title: "Chronology ready",
+    message:
+      "Key events have been ordered with legal effect and document support.",
+    progress: 52,
+  },
+  matter_state: {
+    title: "Matter state mapped",
+    message:
+      "Current posture, readiness, and next-action constraints are identified.",
+    progress: 62,
+  },
+  classification: {
+    title: "Workflow classified",
+    message:
+      "Matter type, forum, statutes, and procedural stage are set for grounding.",
+    progress: 70,
+  },
+  research_sources: {
+    title: "Public sources found",
+    message:
+      "Legal-source grounding has been collected for procedure and standard practice.",
+    progress: 82,
+  },
+  verification: {
+    title: "Verification complete",
+    message:
+      "The draft understanding has been checked against the record and source grounding.",
+    progress: 96,
+  },
+  coverage_verification: {
+    title: "Coverage checked",
+    message:
+      "The system has checked whether the final answer covers the requested questions.",
+    progress: 99,
+  },
+};
+
+const MATTER_UNDERSTANDING_AGENT_STAGE: Record<string, string> = {
+  signal_extractor: "signal_extraction",
+  answer_planner: "answer_planning",
+  legal_primitive_extractor: "legal_primitive_extraction",
+  timeline_builder: "timeline_building",
+  matter_state_builder: "matter_state_building",
+  classifier: "classification",
+  orchestrator: "orchestration",
+  verifier: "verification",
+  coverage_verifier: "coverage_verification",
+};
+
+const matterAgentTitle = (agent: string) => {
+  const normalized = normalizeInline(agent).replace(/_/g, " ");
+  if (!normalized) return "Running analysis";
+  return normalized
+    .split(" ")
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+};
+
+const buildMatterUnderstandingLiveFeed = (
+  events: MatterUnderstandingStreamEvent[],
+  running: boolean,
+) => {
+  const entries: MatterLiveFeedEntry[] = [];
+  let progress = running ? 4 : 0;
+
+  events.forEach((item, index) => {
+    const event = String(item.event || "");
+    const data = item.data || {};
+    if (event === "stage_started" || event === "stage_complete") {
+      const stage = String(data.stage || "");
+      const copy = MATTER_UNDERSTANDING_STAGE_FEED[stage];
+      if (!copy) return;
+      const nextProgress =
+        event === "stage_complete"
+          ? Math.min(99, copy.progress + 4)
+          : copy.progress;
+      progress = Math.max(progress, nextProgress);
+      entries.push({
+        id: `understanding_${event}_${stage}_${index}`,
+        title:
+          event === "stage_complete" ? `${copy.title} complete` : copy.title,
+        message:
+          event === "stage_complete"
+            ? `${copy.message} Complete.`
+            : copy.message,
+        tone: event === "stage_complete" ? "done" : "current",
+        progress: nextProgress,
+      });
+    }
+    if (event === "agent_started" || event === "agent_done") {
+      const agent = String(data.agent || "");
+      if (!agent) return;
+      const elapsedMs = Number(data.elapsedMs || 0);
+      const elapsedText = elapsedMs
+        ? ` Completed in ${Math.round(elapsedMs / 1000)}s.`
+        : "";
+      const title = matterAgentTitle(agent);
+      const stageCopy =
+        MATTER_UNDERSTANDING_STAGE_FEED[
+          MATTER_UNDERSTANDING_AGENT_STAGE[agent] || agent
+        ];
+      const nextProgress = stageCopy?.progress || progress;
+      progress = Math.max(
+        progress,
+        event === "agent_done" ? nextProgress + 3 : nextProgress,
+      );
+      entries.push({
+        id: `understanding_${event}_${agent}_${index}`,
+        title: event === "agent_done" ? `${title} complete` : title,
+        message:
+          event === "agent_done"
+            ? `Checkpoint complete.${elapsedText}`
+            : stageCopy?.message ||
+              "Processing the next checkpoint in the matter analysis.",
+        tone: event === "agent_done" ? "done" : "current",
+        progress,
+      });
+    }
+    if (event === "section_complete") {
+      const section = String(data.section || "");
+      const copy = MATTER_UNDERSTANDING_SECTION_FEED[section];
+      if (!copy) return;
+      progress = Math.max(progress, copy.progress);
+      entries.push({
+        id: `understanding_section_${section}_${index}`,
+        title: copy.title,
+        message: copy.message,
+        tone: "done",
+        progress: copy.progress,
+      });
+    }
+    if (event === "tool_call") {
+      const tool = String(data.tool || "");
+      const query = normalizeInline(String(data.query || ""));
+      const isSkipped = tool === "exa_search_skipped";
+      progress = Math.max(progress, 78);
+      entries.push({
+        id: `understanding_tool_${tool}_${index}`,
+        title: isSkipped ? "Public search skipped" : "Searching public filings",
+        message: isSkipped
+          ? "The record appears document-first, so external grounding is being skipped for this pass."
+          : query
+            ? `Searching public sources for ${clipText(query, 88)}`
+            : "Searching public sources for relevant Indian legal guidance.",
+        tone: isSkipped ? "done" : "current",
+        progress,
+      });
+    }
+    if (event === "user_question" || event === "run_paused") {
+      progress = Math.max(progress, 64);
+      entries.push({
+        id: `understanding_pause_${event}_${index}`,
+        title: "Input needed",
+        message: String(
+          data.question ||
+            data.reason ||
+            "The system needs one clarification before continuing.",
+        ),
+        tone: "attention",
+        progress,
+      });
+    }
+    if (event === "final" || event === "done") {
+      progress = 100;
+      entries.push({
+        id: `understanding_${event}_${index}`,
+        title: "Brief ready",
+        message:
+          "Matter analysis is complete and the structured brief is ready.",
+        tone: "done",
+        progress,
+      });
+    }
+    if (event === "error") {
+      entries.push({
+        id: `understanding_error_${index}`,
+        title: "Analysis interrupted",
+        message: String(data.error || "The matter analysis could not finish."),
+        tone: "attention",
+        progress,
+      });
+    }
+  });
+
+  if (!entries.length && running) {
+    entries.push({
+      id: "understanding_boot",
+      title: "Opening matter record",
+      message:
+        "Preparing the uploaded documents and starting the matter-analysis stream.",
+      tone: "current",
+      progress,
+    });
+  }
+
+  const visibleEntries = entries.slice(-3).map((entry, index, source) => ({
+    ...entry,
+    visibleAge: source.length - index - 1,
+  }));
+
+  return {
+    entries: visibleEntries,
+    progress: Math.max(0, Math.min(100, progress)),
+  };
+};
+
 const formatUnknownLabel = (value: unknown) => {
   if (typeof value === "string") return normalizeInline(value);
   if (typeof value === "number" || typeof value === "boolean") {
@@ -228,11 +548,17 @@ const dedupeEvidenceItems = (
   const seen = new Set<string>();
   return items.filter((item) => {
     const key = [
-      String(item.documentName || "").trim().toLowerCase(),
+      String(item.documentName || "")
+        .trim()
+        .toLowerCase(),
       item.pageNumber == null ? "" : String(item.pageNumber),
-      String(item.section || "").trim().toLowerCase(),
+      String(item.section || "")
+        .trim()
+        .toLowerCase(),
       normalizeInline(item.excerpt).toLowerCase(),
-      String(item.slot || "").trim().toLowerCase(),
+      String(item.slot || "")
+        .trim()
+        .toLowerCase(),
     ].join("::");
     if (seen.has(key)) return false;
     seen.add(key);
@@ -257,7 +583,8 @@ const buildEvidenceReferenceFromSourceRefs = (
       .map((ref, index) => ({
         id: `derived_evidence_${index}`,
         evidenceAnswerId:
-          String(ref.evidenceAnswerId || "").trim() || `derived_evidence_${index}`,
+          String(ref.evidenceAnswerId || "").trim() ||
+          `derived_evidence_${index}`,
         documentName: String(ref.documentName || "").trim(),
         pageNumber:
           typeof ref.pageNumber === "number" && Number.isFinite(ref.pageNumber)
@@ -281,11 +608,13 @@ const buildEvidenceReferenceFromSourceRefs = (
   }
   return {
     evidenceItems,
-    citationGroups: Array.from(grouped.entries()).map(([title, evidenceIds]) => ({
-      id: `citation_group_${title.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
-      title,
-      evidenceIds,
-    })),
+    citationGroups: Array.from(grouped.entries()).map(
+      ([title, evidenceIds]) => ({
+        id: `citation_group_${title.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+        title,
+        evidenceIds,
+      }),
+    ),
   };
 };
 
@@ -1071,6 +1400,41 @@ const MatterSection = ({
     {},
   );
   const atlasEventSourceRefs = useRef<Partial<Record<string, EventSource>>>({});
+  const matterUnderstandingAbortRefs = useRef<
+    Partial<Record<string, AbortController>>
+  >({});
+  const autoStartedMatterUnderstandingRef = useRef<Set<string>>(new Set());
+  const [matterUnderstandingByMatterId, setMatterUnderstandingByMatterId] =
+    useState<Record<string, MatterUnderstandingV2 | null>>({});
+  const [
+    matterUnderstandingEventsByMatterId,
+    setMatterUnderstandingEventsByMatterId,
+  ] = useState<
+    Record<string, Array<{ event: string; data: Record<string, unknown> }>>
+  >({});
+  const [
+    matterUnderstandingRunningByMatterId,
+    setMatterUnderstandingRunningByMatterId,
+  ] = useState<Record<string, boolean>>({});
+  const [
+    matterUnderstandingErrorByMatterId,
+    setMatterUnderstandingErrorByMatterId,
+  ] = useState<Record<string, string>>({});
+  const [
+    matterUnderstandingPendingQuestionByMatterId,
+    setMatterUnderstandingPendingQuestionByMatterId,
+  ] = useState<
+    Record<
+      string,
+      {
+        runId: string;
+        questionId: string;
+        question: string;
+        options: string[];
+        reason?: string;
+      } | null
+    >
+  >({});
   const atlasFullRefreshRequestsRef = useRef<
     Partial<Record<string, Promise<void>>>
   >({});
@@ -1743,19 +2107,22 @@ const MatterSection = ({
           derivedRefs.push({
             documentName: String(sourceRef.file_name || "Matter record").trim(),
             pageNumber:
-              typeof sourceRef.page === "number" && Number.isFinite(sourceRef.page)
+              typeof sourceRef.page === "number" &&
+              Number.isFinite(sourceRef.page)
                 ? sourceRef.page
                 : null,
             section:
-              String(sourceRef.section_id || sourceRef.clause_id || "").trim() ||
-              null,
+              String(
+                sourceRef.section_id || sourceRef.clause_id || "",
+              ).trim() || null,
             excerpt:
               String(sourceRef.quote || sourceRef.fact || "").trim() ||
               String(factRecord.assertion || "").trim(),
             slot: "Extracted fact",
             confidence: "medium",
             evidenceAnswerId:
-              String(factRecord.fact_id || "").trim() || `secondary_fact_${index}`,
+              String(factRecord.fact_id || "").trim() ||
+              `secondary_fact_${index}`,
           });
         });
       });
@@ -1766,7 +2133,8 @@ const MatterSection = ({
         derivedRefs.push({
           documentName: String(sourceRef.file_name || "Matter record").trim(),
           pageNumber:
-            typeof sourceRef.page === "number" && Number.isFinite(sourceRef.page)
+            typeof sourceRef.page === "number" &&
+            Number.isFinite(sourceRef.page)
               ? sourceRef.page
               : null,
           section:
@@ -1775,7 +2143,8 @@ const MatterSection = ({
           excerpt:
             String(sourceRef.quote || sourceRef.fact || "").trim() ||
             String(card.factText || "").trim(),
-          slot: String(card.title || "Ground analysis").trim() || "Ground analysis",
+          slot:
+            String(card.title || "Ground analysis").trim() || "Ground analysis",
           confidence: "medium",
           evidenceAnswerId: card.id,
         });
@@ -1823,14 +2192,17 @@ const MatterSection = ({
               sourceRef.file_name || payload.file_name || "Matter record",
             ).trim(),
             pageNumber:
-              typeof sourceRef.page === "number" && Number.isFinite(sourceRef.page)
+              typeof sourceRef.page === "number" &&
+              Number.isFinite(sourceRef.page)
                 ? sourceRef.page
                 : null,
             section:
-              String(sourceRef.section_id || sourceRef.clause_id || "").trim() ||
-              null,
+              String(
+                sourceRef.section_id || sourceRef.clause_id || "",
+              ).trim() || null,
             excerpt:
-              String(sourceRef.quote || sourceRef.fact || "").trim() || group.label,
+              String(sourceRef.quote || sourceRef.fact || "").trim() ||
+              group.label,
             slot: group.label,
             confidence: "medium",
             evidenceAnswerId: `signal_${payloadIndex}_${groupIndex}`,
@@ -1858,7 +2230,8 @@ const MatterSection = ({
         derivedRefs.push({
           documentName: title,
           pageNumber:
-            typeof item?.pageNumber === "number" && Number.isFinite(item.pageNumber)
+            typeof item?.pageNumber === "number" &&
+            Number.isFinite(item.pageNumber)
               ? item.pageNumber
               : null,
           section: citation || sourceCourt || null,
@@ -1920,8 +2293,12 @@ const MatterSection = ({
     briefPoints.length +
     groundAnalysisCards.length +
     secondaryVerifiedFactCount +
-    (normalizeInline(String(activeFrontendBrief?.summary || "")).length ? 1 : 0) +
-    (normalizeInline(String(activeAtlasMatterBrief?.brief || "")).length ? 1 : 0);
+    (normalizeInline(String(activeFrontendBrief?.summary || "")).length
+      ? 1
+      : 0) +
+    (normalizeInline(String(activeAtlasMatterBrief?.brief || "")).length
+      ? 1
+      : 0);
   const missingProofItems = useMemo(() => {
     if (activeAtlasMatterBrief?.remainingGaps?.length) {
       return activeAtlasMatterBrief.remainingGaps
@@ -1954,7 +2331,9 @@ const MatterSection = ({
   const activeAtlasSummary = useMemo(
     () =>
       String(
-        activeAtlasMatterBrief?.summaryBrief || activeAtlasMatterBrief?.brief || "",
+        activeAtlasMatterBrief?.summaryBrief ||
+          activeAtlasMatterBrief?.brief ||
+          "",
       ).trim(),
     [activeAtlasMatterBrief?.brief, activeAtlasMatterBrief?.summaryBrief],
   );
@@ -1965,7 +2344,102 @@ const MatterSection = ({
         : [],
     [activeAtlasNextSteps?.draftQueue],
   );
-  const activePrimarySummary = activeAtlasSummary || activeFrontendSummary;
+  const activeMatterUnderstanding = useMemo(
+    () =>
+      activeMatter?.id
+        ? matterUnderstandingByMatterId[activeMatter.id] ||
+          activeMatter.matterUnderstandingV2 ||
+          null
+        : null,
+    [
+      activeMatter?.id,
+      activeMatter?.matterUnderstandingV2,
+      matterUnderstandingByMatterId,
+    ],
+  );
+  const matterUnderstandingDrafts = useMemo(
+    () =>
+      Array.isArray(activeMatterUnderstanding?.draft_sequence)
+        ? activeMatterUnderstanding.draft_sequence
+        : [],
+    [activeMatterUnderstanding?.draft_sequence],
+  );
+  const matterUnderstandingTimeline = useMemo(
+    () =>
+      Array.isArray(activeMatterUnderstanding?.timeline)
+        ? activeMatterUnderstanding.timeline
+        : [],
+    [activeMatterUnderstanding?.timeline],
+  );
+  const matterUnderstandingResearchAuthorities = useMemo(() => {
+    const precedents = Array.isArray(
+      activeMatterUnderstanding?.standard_practice?.relevant_precedents,
+    )
+      ? activeMatterUnderstanding.standard_practice.relevant_precedents.map(
+          (item, index) => ({
+            id: `understanding-precedent-${index}`,
+            title: item.case_name || item.citation || "Relevant precedent",
+            source: item.citation || item.source_url || "",
+            url: item.source_url || "",
+            summary: item.relevance || "",
+            kind: "Precedent",
+          }),
+        )
+      : [];
+    const sources = Array.isArray(activeMatterUnderstanding?.research_sources)
+      ? activeMatterUnderstanding.research_sources.map((item, index) => ({
+          id: `understanding-source-${index}`,
+          title: item.title || item.source_name || "Legal source",
+          source: item.source_name || item.url || "",
+          url: item.url || "",
+          summary: item.legal_proposition || "",
+          kind: "Source",
+        }))
+      : [];
+    const seen = new Set<string>();
+    return [...precedents, ...sources].filter((item) => {
+      const key = `${item.title}::${item.url}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return item.title || item.summary || item.url;
+    });
+  }, [
+    activeMatterUnderstanding?.research_sources,
+    activeMatterUnderstanding?.standard_practice?.relevant_precedents,
+  ]);
+  const activeMatterUnderstandingEvents = useMemo(
+    () =>
+      activeMatter?.id
+        ? matterUnderstandingEventsByMatterId[activeMatter.id] || []
+        : [],
+    [activeMatter?.id, matterUnderstandingEventsByMatterId],
+  );
+  const activeMatterUnderstandingRunning = activeMatter?.id
+    ? matterUnderstandingRunningByMatterId[activeMatter.id] === true
+    : false;
+  const activeMatterUnderstandingError = activeMatter?.id
+    ? matterUnderstandingErrorByMatterId[activeMatter.id] || ""
+    : "";
+  const activeMatterUnderstandingPendingQuestion = activeMatter?.id
+    ? matterUnderstandingPendingQuestionByMatterId[activeMatter.id] || null
+    : null;
+  const isMatterUnderstandingAwaitingInput = Boolean(
+    activeMatterUnderstandingPendingQuestion,
+  );
+  const activeMatterUnderstandingLiveFeed = useMemo(
+    () =>
+      buildMatterUnderstandingLiveFeed(
+        activeMatterUnderstandingEvents,
+        activeMatterUnderstandingRunning,
+      ),
+    [activeMatterUnderstandingEvents, activeMatterUnderstandingRunning],
+  );
+  const activeUnderstandingSummary = useMemo(
+    () => String(activeMatterUnderstanding?.matter_brief?.summary || "").trim(),
+    [activeMatterUnderstanding?.matter_brief?.summary],
+  );
+  const activePrimarySummary =
+    activeUnderstandingSummary || activeAtlasSummary || activeFrontendSummary;
   const activeBriefAnimationSignature = useMemo(() => {
     if (!activeMatter?.id || !activePrimarySummary) return "";
     const latestAtlasMeta =
@@ -1989,7 +2463,9 @@ const MatterSection = ({
         String(latestAtlasMeta?.created_at || ""),
         String(activeAtlasMatterBrief.workflowId || ""),
         String(
-          activeAtlasMatterBrief.summaryBrief || activeAtlasMatterBrief.brief || "",
+          activeAtlasMatterBrief.summaryBrief ||
+            activeAtlasMatterBrief.brief ||
+            "",
         ),
       ].join("::");
     }
@@ -2293,16 +2769,22 @@ const MatterSection = ({
   const renderAtlasCaseDebug = () => {
     if (!activeAtlasCaseResearch) return null;
     const progress = activeAtlasCaseResearch.progress || null;
-    const rankedCandidates = Array.isArray(activeAtlasCaseResearch.rankedCandidates)
+    const rankedCandidates = Array.isArray(
+      activeAtlasCaseResearch.rankedCandidates,
+    )
       ? activeAtlasCaseResearch.rankedCandidates
       : [];
     const debugQueries = Array.isArray(activeAtlasCaseResearch.debugQueries)
       ? activeAtlasCaseResearch.debugQueries
       : [];
-    const debugIterations = Array.isArray(activeAtlasCaseResearch.debugIterations)
+    const debugIterations = Array.isArray(
+      activeAtlasCaseResearch.debugIterations,
+    )
       ? activeAtlasCaseResearch.debugIterations
       : [];
-    const debugReferences = Array.isArray(activeAtlasCaseResearch.debugReferences)
+    const debugReferences = Array.isArray(
+      activeAtlasCaseResearch.debugReferences,
+    )
       ? activeAtlasCaseResearch.debugReferences
       : [];
     const debugSummary = activeAtlasCaseResearch.debugSummary || null;
@@ -2332,10 +2814,12 @@ const MatterSection = ({
         ) : null}
         {debugSummary ? (
           <p className="matterBodySubtle">
-            {debugSummary.iterations ? `${debugSummary.iterations} iterations run. ` : ""}
+            {debugSummary.iterations
+              ? `${debugSummary.iterations} iterations run. `
+              : ""}
             {debugSummary.candidateCount} candidates found,{" "}
-            {debugSummary.retainedCount} retained,{" "}
-            {debugSummary.discardedCount} discarded.
+            {debugSummary.retainedCount} retained, {debugSummary.discardedCount}{" "}
+            discarded.
           </p>
         ) : null}
         {debugQueries.length ? (
@@ -2363,11 +2847,17 @@ const MatterSection = ({
             </div>
             <ul className="matterBulletList">
               {rankedCandidates.map((item, index) => (
-                <li key={`ranked-case-${item.officialUrl || item.title}-${index}`}>
+                <li
+                  key={`ranked-case-${item.officialUrl || item.title}-${index}`}
+                >
                   <strong>{item.title}</strong>
-                  {typeof item.finalScore === "number" ? ` — score ${item.finalScore}` : ""}
+                  {typeof item.finalScore === "number"
+                    ? ` — score ${item.finalScore}`
+                    : ""}
                   {item.fetchStatus ? ` (${item.fetchStatus})` : ""}
-                  {item.supportedProposition ? ` — ${item.supportedProposition}` : ""}
+                  {item.supportedProposition
+                    ? ` — ${item.supportedProposition}`
+                    : ""}
                 </li>
               ))}
             </ul>
@@ -2384,25 +2874,33 @@ const MatterSection = ({
                   <div className="matterCaseSummary">
                     <p>
                       <strong>Iteration {iteration.iteration}:</strong>{" "}
-                      {iteration.candidateCount} candidates, {iteration.retainedCount} retained,{" "}
+                      {iteration.candidateCount} candidates,{" "}
+                      {iteration.retainedCount} retained,{" "}
                       {iteration.discardedCount} discarded.
                     </p>
-                    {Array.isArray(iteration.issueFocus) && iteration.issueFocus.length ? (
+                    {Array.isArray(iteration.issueFocus) &&
+                    iteration.issueFocus.length ? (
                       <p>
-                        <strong>Issue focus:</strong> {iteration.issueFocus.join("; ")}
+                        <strong>Issue focus:</strong>{" "}
+                        {iteration.issueFocus.join("; ")}
                       </p>
                     ) : null}
-                    {Array.isArray(iteration.retryFocus) && iteration.retryFocus.length ? (
+                    {Array.isArray(iteration.retryFocus) &&
+                    iteration.retryFocus.length ? (
                       <p>
-                        <strong>Retry focus:</strong> {iteration.retryFocus.join("; ")}
+                        <strong>Retry focus:</strong>{" "}
+                        {iteration.retryFocus.join("; ")}
                       </p>
                     ) : null}
-                    {Array.isArray(iteration.queries) && iteration.queries.length ? (
+                    {Array.isArray(iteration.queries) &&
+                    iteration.queries.length ? (
                       <p>
-                        <strong>Queries:</strong> {iteration.queries.join(" | ")}
+                        <strong>Queries:</strong>{" "}
+                        {iteration.queries.join(" | ")}
                       </p>
                     ) : null}
-                    {Array.isArray(iteration.retainedCases) && iteration.retainedCases.length ? (
+                    {Array.isArray(iteration.retainedCases) &&
+                    iteration.retainedCases.length ? (
                       <div>
                         <p>
                           <strong>Retained:</strong>
@@ -2477,13 +2975,218 @@ const MatterSection = ({
       </article>
     );
   };
+  const renderPendingMatterUnderstandingQuestion = () =>
+    activeMatterUnderstandingPendingQuestion && activeMatter?.id ? (
+      <article className="matterNextStepsPanel matterUnderstandingPanel">
+        <div className="matterNextStepCardHead">
+          <strong>Answer needed to continue matter understanding</strong>
+        </div>
+        <p className="matterNextStepsPreview">
+          {activeMatterUnderstandingPendingQuestion.question}
+        </p>
+        {activeMatterUnderstandingPendingQuestion.reason ? (
+          <small className="matterNextStepDraftType">
+            {activeMatterUnderstandingPendingQuestion.reason}
+          </small>
+        ) : null}
+        <div className="matterChecklistActionButtonWrap">
+          {activeMatterUnderstandingPendingQuestion.options.map((option) => (
+            <Button
+              key={`${activeMatterUnderstandingPendingQuestion.questionId}-${option}`}
+              type="button"
+              className="matterStartDraftingBtn"
+              disabled={activeMatterUnderstandingRunning}
+              onClick={() =>
+                void answerMatterUnderstandingQuestion(
+                  activeMatter.id,
+                  activeMatterUnderstandingPendingQuestion,
+                  option,
+                )
+              }
+            >
+              {option}
+            </Button>
+          ))}
+        </div>
+      </article>
+    ) : null;
+
+  const renderMatterUnderstandingAnalysis = () => {
+    if (!activeMatterUnderstanding) return null;
+    const understanding = activeMatterUnderstanding;
+    const issues = Array.isArray(understanding.issues_and_ambiguities)
+      ? understanding.issues_and_ambiguities
+      : [];
+    const missing = Array.isArray(understanding.missing_information)
+      ? understanding.missing_information
+      : [];
+    const nextSteps = Array.isArray(understanding.next_steps)
+      ? understanding.next_steps
+      : [];
+    if (!issues.length && !missing.length && !nextSteps.length) return null;
+    return (
+      <section className="matterAnalysisPanel">
+        <div className="matterAnalysisPanelHead">
+          <div>
+            <p className="matterEyebrow">Matter Understanding</p>
+            <h3>Issues, ambiguities, and what likely comes next</h3>
+          </div>
+        </div>
+        {issues.length || missing.length ? (
+          <article className="matterNextStepsPanel">
+            <div className="matterNextStepCardHead">
+              <strong>Issues and ambiguities</strong>
+            </div>
+            {issues.length ? (
+              <ul className="matterBulletList">
+                {issues.map((item, index) => (
+                  <li key={`understanding-analysis-issue-${index}`}>
+                    <strong>{item.issue}</strong>
+                    {item.why_it_matters ? ` — ${item.why_it_matters}` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {missing.length ? (
+              <div className="matterNextStepsAccordionBody">
+                <ul className="matterBulletList">
+                  {missing.map((item, index) => (
+                    <li key={`understanding-analysis-missing-${index}`}>
+                      <strong>{item.missing_item}</strong>
+                      {item.question ? ` — ${item.question}` : ""}
+                      {Array.isArray(item.options) && item.options.length
+                        ? ` Options: ${item.options.join(", ")}`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </article>
+        ) : null}
+        {nextSteps.length ? (
+          <article className="matterNextStepsPanel">
+            <div className="matterNextStepCardHead">
+              <strong>What likely comes next</strong>
+            </div>
+            <div className="matterNextStepAccordionList">
+              {nextSteps.map((item, index) => (
+                <details
+                  className="matterNextStepDisclosure"
+                  key={`understanding-analysis-next-${index}`}
+                >
+                  <summary>
+                    <span>
+                      <strong>{item.step}</strong>
+                      <small>
+                        {item.urgency?.replace(/_/g, " ") || "advisory"} ·{" "}
+                        {item.owner || "lawyer"}
+                      </small>
+                    </span>
+                    <ChevronRight size={16} />
+                  </summary>
+                  <div className="matterNextStepsAccordionBody">
+                    {item.rationale ? <p>{item.rationale}</p> : null}
+                    {item.depends_on?.length ? (
+                      <ul className="matterBulletList">
+                        {item.depends_on.map((dependency) => (
+                          <li key={`${item.step}-${dependency}`}>
+                            {dependency}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </article>
+        ) : null}
+      </section>
+    );
+  };
+
   const renderAtlasNextSteps = () => {
+    if (activeMatterUnderstanding) {
+      const understanding = activeMatterUnderstanding;
+      return (
+        <div className="matterNextStepsStack">
+          <article className="matterNextStepsPanel matterUnderstandingPanel">
+            <div className="matterNextStepCardHead">
+              <strong>Matter understanding</strong>
+              <Button
+                type="button"
+                className="matterStartDraftingBtn"
+                disabled={
+                  !activeMatter?.id ||
+                  activeMatterUnderstandingRunning ||
+                  Boolean(activeMatterUnderstandingPendingQuestion)
+                }
+                onClick={() =>
+                  activeMatter?.id
+                    ? void runMatterUnderstanding(activeMatter.id)
+                    : undefined
+                }
+              >
+                {activeMatterUnderstandingRunning ? "Running..." : "Refresh"}
+              </Button>
+            </div>
+            <p className="matterNextStepsPreview">
+              {understanding.matter_brief?.summary ||
+                "The new matter-understanding engine returned a structured result."}
+            </p>
+            <div className="matterUnderstandingMetaGrid">
+              <span>
+                <strong>Category</strong>
+                {understanding.classification?.primary_category || "unknown"}
+              </span>
+              <span>
+                <strong>Stage</strong>
+                {understanding.classification?.procedural_stage || "unknown"}
+              </span>
+            </div>
+            {understanding.model_trace?.fallback_used ? (
+              <small className="matterNextStepDraftType">
+                Deterministic fallback was used for at least part of this run.
+              </small>
+            ) : null}
+          </article>
+          {renderPendingMatterUnderstandingQuestion()}
+        </div>
+      );
+    }
+
     if (!activeAtlasNextSteps) {
       return (
-        <p className="matterDebriefEmpty">
-          Next procedural steps and draft suggestions will appear once the
-          research pass is complete.
-        </p>
+        <div className="matterNextStepsStack">
+          {renderPendingMatterUnderstandingQuestion()}
+          <p className="matterDebriefEmpty">
+            Next procedural steps and draft suggestions will appear once the
+            matter understanding pass is complete.
+            {activeMatter?.id ? (
+              <span className="matterChecklistActionButtonWrap">
+                <Button
+                  type="button"
+                  className="matterStartDraftingBtn"
+                  disabled={
+                    activeMatterUnderstandingRunning ||
+                    Boolean(activeMatterUnderstandingPendingQuestion)
+                  }
+                  onClick={() => void runMatterUnderstanding(activeMatter.id)}
+                >
+                  {activeMatterUnderstandingRunning
+                    ? "Understanding..."
+                    : "Run matter understanding"}
+                </Button>
+              </span>
+            ) : null}
+            {activeMatterUnderstandingError ? (
+              <span className="matterNextStepDraftType">
+                {activeMatterUnderstandingError}
+              </span>
+            ) : null}
+          </p>
+        </div>
       );
     }
 
@@ -2523,6 +3226,7 @@ const MatterSection = ({
     ].filter(Boolean);
     return (
       <div className="matterNextStepsStack">
+        {renderPendingMatterUnderstandingQuestion()}
         {!draftQueue.length ? (
           <article className="matterNextStepsPanel">
             <div className="matterNextStepCardHead">
@@ -2600,7 +3304,9 @@ const MatterSection = ({
                         <button
                           type="button"
                           className="matterChecklistAskAiButton"
-                          onClick={() => openMissingProofInMatterChat(item.question)}
+                          onClick={() =>
+                            openMissingProofInMatterChat(item.question)
+                          }
                           aria-label="Ask AI for help"
                         >
                           Ask AI
@@ -2616,57 +3322,59 @@ const MatterSection = ({
         {draftQueue.length ? (
           <article className="matterNextStepsPanel">
             <div className="matterNextStepsStack">
-              {draftQueue.map((item) => (
+              {draftQueue.map((item) =>
                 (() => {
-                  const dependencies = visibleDraftDependencies(item.unblocksWhen);
-                  return (
-                <article
-                  className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
-                  key={item.id}
-                >
-                  <div className="matterNextStepCardHead">
-                    <strong>{item.title}</strong>
-                    <Button
-                      type="button"
-                      className="matterStartDraftingBtn"
-                      onClick={() =>
-                        void startAtlasDraftGeneration(
-                          {
-                            id: item.id,
-                            draftType: item.draftType,
-                            title: item.title,
-                          },
-                          "overview",
-                        )
-                      }
-                    >
-                      Start drafting
-                    </Button>
-                  </div>
-                  <p className="matterNextStepsPreview">
-                    {renderEmphasizedInlineText(
-                      item.description,
-                      nextStepHighlightTerms,
-                    )}
-                  </p>
-                  {dependencies.length ? (
-                    <div className="matterNextStepsAccordionBody">
-                      <ul className="matterBulletList">
-                        {dependencies.map((dependency: string) => (
-                          <li key={`${item.id}-${dependency}`}>
-                            {renderEmphasizedInlineText(
-                              dependency,
-                              nextStepHighlightTerms,
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </article>
+                  const dependencies = visibleDraftDependencies(
+                    item.unblocksWhen,
                   );
-                })()
-              ))}
+                  return (
+                    <article
+                      className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
+                      key={item.id}
+                    >
+                      <div className="matterNextStepCardHead">
+                        <strong>{item.title}</strong>
+                        <Button
+                          type="button"
+                          className="matterStartDraftingBtn"
+                          onClick={() =>
+                            void startAtlasDraftGeneration(
+                              {
+                                id: item.id,
+                                draftType: item.draftType,
+                                title: item.title,
+                              },
+                              "overview",
+                            )
+                          }
+                        >
+                          Start drafting
+                        </Button>
+                      </div>
+                      <p className="matterNextStepsPreview">
+                        {renderEmphasizedInlineText(
+                          item.description,
+                          nextStepHighlightTerms,
+                        )}
+                      </p>
+                      {dependencies.length ? (
+                        <div className="matterNextStepsAccordionBody">
+                          <ul className="matterBulletList">
+                            {dependencies.map((dependency: string) => (
+                              <li key={`${item.id}-${dependency}`}>
+                                {renderEmphasizedInlineText(
+                                  dependency,
+                                  nextStepHighlightTerms,
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })(),
+              )}
             </div>
           </article>
         ) : null}
@@ -2679,7 +3387,8 @@ const MatterSection = ({
                 onClick={() =>
                   setExpandedNextStepIds((current) => ({
                     ...current,
-                    ["why-these-steps-matter"]: !current["why-these-steps-matter"],
+                    ["why-these-steps-matter"]:
+                      !current["why-these-steps-matter"],
                   }))
                 }
                 aria-expanded={Boolean(
@@ -2707,7 +3416,10 @@ const MatterSection = ({
                   <ul className="matterBulletList">
                     {whyTheseNext.map((item) => (
                       <li key={`why-next-${item}`}>
-                        {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
+                        {renderEmphasizedInlineText(
+                          item,
+                          nextStepHighlightTerms,
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -2744,7 +3456,8 @@ const MatterSection = ({
   > = {
     orientation_running: {
       label: "Reading matter record",
-      message: "Reading the uploaded record, matter goal, and document structure.",
+      message:
+        "Reading the uploaded record, matter goal, and document structure.",
       rotationMessages: [
         "Reading the uploaded record and matter goal.",
         "Identifying document type, parties, clauses, and section headings.",
@@ -2835,7 +3548,9 @@ const MatterSection = ({
     atlas_needs_review: {
       label: "Needs review",
       message: "Atlas research completed with issues that need review.",
-      rotationMessages: ["Atlas research completed with issues that need review."],
+      rotationMessages: [
+        "Atlas research completed with issues that need review.",
+      ],
     },
   };
   const buildAtlasStatusOnlyFeed = (
@@ -2866,11 +3581,7 @@ const MatterSection = ({
         id,
         label: config.label,
         state:
-          id === "atlas_failed"
-            ? status === id
-              ? "attention"
-              : state
-            : state,
+          id === "atlas_failed" ? (status === id ? "attention" : state) : state,
         message: config.message,
         rotationMessages: config.rotationMessages || [],
       };
@@ -2888,7 +3599,8 @@ const MatterSection = ({
   const analysisProgressMessages = useMemo<AnalysisProgressMessage[]>(() => {
     const atlasStatus = String(activeAnalysisState?.status || "").trim();
     const atlasFeed =
-      Array.isArray(activeAnalysisState?.feed) && activeAnalysisState.feed.length
+      Array.isArray(activeAnalysisState?.feed) &&
+      activeAnalysisState.feed.length
         ? activeAnalysisState.feed
         : atlasStatusFeedConfig[atlasStatus]
           ? buildAtlasStatusOnlyFeed(atlasStatus)
@@ -3041,7 +3753,9 @@ const MatterSection = ({
     : "";
   const shouldShowProgressThread =
     activeSummaryRunState.running ||
-    (!activePrimarySummary && Boolean(activeMatter));
+    (!activePrimarySummary &&
+      Boolean(activeMatter) &&
+      !isMatterUnderstandingAwaitingInput);
   const activeAtlasLiveEvents = activeMatter?.id
     ? atlasLiveEventsByMatterId[activeMatter.id] || []
     : [];
@@ -3074,7 +3788,10 @@ const MatterSection = ({
   }, [analysisProgressMessages, activeProgressDisplayText]);
   const atlasLiveTimelineEntries = useMemo(() => {
     return activeAtlasLiveEvents
-      .filter((item) => item.type !== "atlas_snapshot" && item.type !== "stream_connected")
+      .filter(
+        (item) =>
+          item.type !== "atlas_snapshot" && item.type !== "stream_connected",
+      )
       .map((item) => {
         const customTitle = normalizeInline(String(item.payload?.title || ""));
         const stageLabel = item.payload?.stage
@@ -3083,7 +3800,9 @@ const MatterSection = ({
         const progressMessage = normalizeInline(
           String(item.payload?.progress?.message || ""),
         );
-        const fallbackMessage = normalizeInline(String(item.payload?.message || ""));
+        const fallbackMessage = normalizeInline(
+          String(item.payload?.message || ""),
+        );
         const message = progressMessage || fallbackMessage;
         const title =
           customTitle ||
@@ -3113,7 +3832,9 @@ const MatterSection = ({
                 : "current",
         };
       })
-      .filter((item) => item.message || item.query || item.rankedCandidates.length)
+      .filter(
+        (item) => item.message || item.query || item.rankedCandidates.length,
+      )
       .slice(-8);
   }, [activeAtlasLiveEvents]);
   const atlasAnimatedTimelineEntries = useMemo(() => {
@@ -3153,22 +3874,23 @@ const MatterSection = ({
     (!isAtlasMatterFlow ? activeClarificationCheckpoint?.questions : null) ||
     [];
   const isMatterResearchRunning =
-    isClarificationAdvancing ||
-    activeSummaryRunState.running ||
-    isExtractionRunning ||
-    isIndexingRunning ||
-    Boolean(
-      activeAnalysisState?.status &&
-      atlasRunningStatuses.has(String(activeAnalysisState.status)),
-    ) ||
-    (!activePrimarySummary &&
-      Boolean(activeMatter) &&
-      !shouldShowClarificationState &&
-      !shouldShowWorkflowConfirmationState &&
-      !(
+    !isMatterUnderstandingAwaitingInput &&
+    (isClarificationAdvancing ||
+      activeSummaryRunState.running ||
+      isExtractionRunning ||
+      isIndexingRunning ||
+      Boolean(
         activeAnalysisState?.status &&
-        atlasPauseStatuses.has(String(activeAnalysisState.status))
-      ));
+        atlasRunningStatuses.has(String(activeAnalysisState.status)),
+      ) ||
+      (!activePrimarySummary &&
+        Boolean(activeMatter) &&
+        !shouldShowClarificationState &&
+        !shouldShowWorkflowConfirmationState &&
+        !(
+          activeAnalysisState?.status &&
+          atlasPauseStatuses.has(String(activeAnalysisState.status))
+        )));
   const isMatterStatePolling =
     Boolean(activeMatter?.id) &&
     (isExtractionRunning ||
@@ -3180,8 +3902,9 @@ const MatterSection = ({
       ));
   const hasActiveAtlasStream = Boolean(
     activeMatter?.id &&
-      atlasEventSourceRefs.current[activeMatter.id] &&
-      atlasEventSourceRefs.current[activeMatter.id]?.readyState !== EventSource.CLOSED,
+    atlasEventSourceRefs.current[activeMatter.id] &&
+    atlasEventSourceRefs.current[activeMatter.id]?.readyState !==
+      EventSource.CLOSED,
   );
   const clarificationQuestions = activeQuestionSet;
   const activeClarificationQuestion =
@@ -3198,9 +3921,11 @@ const MatterSection = ({
       ? "workflow confirmation"
       : shouldShowClarificationState
         ? "clarification checkpoint"
-        : isMatterResearchRunning
-          ? "live execution"
-          : "research queued";
+        : isMatterUnderstandingAwaitingInput
+          ? "input needed"
+          : isMatterResearchRunning
+            ? "live execution"
+            : "research queued";
   const activeAnalysisStatus = String(activeAnalysisState?.status || "").trim();
   const canStartResearchFromUi =
     Boolean(activeMatter?.id) &&
@@ -3208,6 +3933,7 @@ const MatterSection = ({
     !activePrimarySummary &&
     !shouldShowWorkflowConfirmationState &&
     !shouldShowClarificationState &&
+    !isMatterUnderstandingAwaitingInput &&
     !isMatterResearchRunning;
   const isResearchStartBlockedByPreparation =
     isExtractionRunning || isIndexingRunning;
@@ -3218,16 +3944,37 @@ const MatterSection = ({
       : "Start research";
 
   const renderAtlasLiveActivity = () => {
-    const timelineEntries = atlasAnimatedTimelineEntries;
+    const isMatterUnderstandingFeed =
+      activeMatterUnderstandingRunning ||
+      activeMatterUnderstandingLiveFeed.entries.length > 0;
+    const timelineEntries = isMatterUnderstandingFeed
+      ? activeMatterUnderstandingLiveFeed.entries
+      : atlasAnimatedTimelineEntries;
     const activeTypedEntry =
-      timelineEntries.length > 0 ? timelineEntries[timelineEntries.length - 1] : null;
+      timelineEntries.length > 0
+        ? timelineEntries[timelineEntries.length - 1]
+        : null;
     if (!timelineEntries.length) {
       return null;
     }
+    const progressValue = isMatterUnderstandingFeed
+      ? activeMatterUnderstandingLiveFeed.progress
+      : Math.min(96, Math.max(8, 18 + timelineEntries.length * 18));
+    const progressLabel =
+      progressValue >= 92
+        ? "High"
+        : progressValue >= 60
+          ? "Moderate to High"
+          : progressValue >= 32
+            ? "Moderate"
+            : "Starting";
     return (
       <div className="matterResearchLiveThread">
         <div className="matterResearchLiveThreadHead">
-          <span>Working...</span>
+          <span>Live Feed</span>
+          <button type="button" className="matterResearchThinkingStepsButton">
+            View Thinking Steps
+          </button>
         </div>
         {timelineEntries.length ? (
           <div className="matterResearchTimeline">
@@ -3238,29 +3985,39 @@ const MatterSection = ({
                   ? activeTypedEntry.message.slice(0, atlasLiveTypewriterCount)
                   : entry.message;
               return (
-              <article
-                key={entry.id}
-                className={`matterResearchTimelineEntry is-${entry.tone} age-${entry.visibleAge} ${isNewest ? "is-newest" : ""}`}
-              >
-                <div className="matterResearchTimelineBody">
-                  <strong>{entry.title}</strong>
-                  {entry.message ? (
-                    <p>
-                      {typedMessage}
-                      {isNewest && activeTypedEntry ? (
-                        <span
-                          className="matterResearchTypeCursor"
-                          aria-hidden="true"
-                        />
-                      ) : null}
-                    </p>
-                  ) : null}
-                </div>
-              </article>
+                <article
+                  key={entry.id}
+                  className={`matterResearchTimelineEntry is-${entry.tone} age-${entry.visibleAge} ${isNewest ? "is-newest" : ""}`}
+                >
+                  <div className="matterResearchTimelineBody">
+                    <strong>{entry.title}</strong>
+                    {entry.message ? (
+                      <p>
+                        {typedMessage}
+                        {isNewest && activeTypedEntry ? (
+                          <span
+                            className="matterResearchTypeCursor"
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
+                </article>
               );
             })}
           </div>
         ) : null}
+        <div className="matterResearchEvidenceStrength">
+          <span>Preliminary evidence strength</span>
+          <div className="matterResearchEvidenceMeter">
+            <div
+              className="matterResearchEvidenceMeterFill"
+              style={{ width: `${progressValue}%` }}
+            />
+          </div>
+          <strong>{progressLabel}</strong>
+        </div>
       </div>
     );
   };
@@ -3278,8 +4035,11 @@ const MatterSection = ({
             <button
               type="button"
               className="matterResearchStartBtn"
-              disabled={isResearchStartBlockedByPreparation}
-              onClick={() => void runMatterAtlasResearch(activeMatter.id)}
+              disabled={
+                isResearchStartBlockedByPreparation ||
+                Boolean(activeMatterUnderstandingPendingQuestion)
+              }
+              onClick={() => void runMatterUnderstanding(activeMatter.id)}
             >
               {researchStartButtonLabel}
             </button>
@@ -3296,20 +4056,61 @@ const MatterSection = ({
         </div>
       </div>
       <div className="matterResearchCommandSurface">
-        {renderAtlasLiveActivity() || (
+        {activeMatterUnderstandingPendingQuestion && activeMatter ? (
           <div className="matterResearchLiveThread matterResearchLiveThreadIdle">
             <div className="matterResearchLiveThreadHead">
-              <span>Working...</span>
+              <span>Input needed</span>
             </div>
             <div className="matterResearchTimeline">
               <article className="matterResearchTimelineEntry age-0 is-newest">
                 <div className="matterResearchTimelineBody">
-                  <strong>Status</strong>
-                  <p>{activeProgressDisplayText}</p>
+                  <strong>
+                    {activeMatterUnderstandingPendingQuestion.question}
+                  </strong>
+                  {activeMatterUnderstandingPendingQuestion.reason ? (
+                    <p>{activeMatterUnderstandingPendingQuestion.reason}</p>
+                  ) : null}
+                  <div className="matterChecklistActionButtonWrap">
+                    {activeMatterUnderstandingPendingQuestion.options.map(
+                      (option) => (
+                        <Button
+                          key={`${activeMatterUnderstandingPendingQuestion.questionId}-${option}`}
+                          type="button"
+                          className="matterStartDraftingBtn"
+                          disabled={activeMatterUnderstandingRunning}
+                          onClick={() =>
+                            void answerMatterUnderstandingQuestion(
+                              activeMatter.id,
+                              activeMatterUnderstandingPendingQuestion,
+                              option,
+                            )
+                          }
+                        >
+                          {option}
+                        </Button>
+                      ),
+                    )}
+                  </div>
                 </div>
               </article>
             </div>
           </div>
+        ) : (
+          renderAtlasLiveActivity() || (
+            <div className="matterResearchLiveThread matterResearchLiveThreadIdle">
+              <div className="matterResearchLiveThreadHead">
+                <span>Working...</span>
+              </div>
+              <div className="matterResearchTimeline">
+                <article className="matterResearchTimelineEntry age-0 is-newest">
+                  <div className="matterResearchTimelineBody">
+                    <strong>Status</strong>
+                    <p>{activeProgressDisplayText}</p>
+                  </div>
+                </article>
+              </div>
+            </div>
+          )
         )}
       </div>
     </article>
@@ -3390,7 +4191,7 @@ const MatterSection = ({
       hasActiveAtlasStream &&
       (Boolean(
         activeAnalysisState?.status &&
-          atlasRunningStatuses.has(String(activeAnalysisState.status)),
+        atlasRunningStatuses.has(String(activeAnalysisState.status)),
       ) ||
         Boolean(activeSummaryRunState.running));
     if (shouldSkipPollingForStream) {
@@ -3512,19 +4313,27 @@ const MatterSection = ({
 
   useEffect(() => {
     if (!activeMatter?.id || isMockMatterId(activeMatter.id)) return;
+    if (activeMatterUnderstandingPendingQuestion) return;
     if (activePrimarySummary) return;
-    if (activeSummaryRunState.running || isExtractionRunning || isIndexingRunning) {
+    if (
+      activeSummaryRunState.running ||
+      isExtractionRunning ||
+      isIndexingRunning ||
+      activeMatterUnderstandingRunning
+    ) {
       return;
     }
-    if (activeAnalysisStatus) return;
+    if (activeMatter?.matterUnderstandingV2) return;
     if (autoStartedAtlasMatterIdsRef.current.has(activeMatter.id)) return;
     autoStartedAtlasMatterIdsRef.current.add(activeMatter.id);
-    void runMatterAtlasResearch(activeMatter.id);
+    void runMatterUnderstanding(activeMatter.id);
   }, [
-    activeAnalysisStatus,
     activeMatter?.id,
+    activeMatter?.matterUnderstandingV2,
+    activeMatterUnderstandingPendingQuestion,
     activePrimarySummary,
     activeSummaryRunState.running,
+    activeMatterUnderstandingRunning,
     isExtractionRunning,
     isIndexingRunning,
   ]);
@@ -3888,7 +4697,22 @@ const MatterSection = ({
     ? atlasDraftQueue
     : draftRecommendationItems;
   const draftPanelCount = draftPanelItems.length;
-  const factCoverageCount = analysisReferenceCount || 0;
+  const matterUnderstandingAnalysisCount = activeMatterUnderstanding
+    ? (activeMatterUnderstanding.issues_and_ambiguities?.length || 0) +
+      (activeMatterUnderstanding.missing_information?.length || 0) +
+      (activeMatterUnderstanding.next_steps?.length || 0) +
+      (activeMatterUnderstanding.legal_analysis?.issue_analyses?.length || 0)
+    : 0;
+  const matterUnderstandingRunTimelineCount = activeMatterUnderstandingEvents.filter(
+    (item) =>
+      item.event === "stage_started" ||
+      item.event === "stage_complete" ||
+      item.event === "agent_done" ||
+      item.event === "section_complete" ||
+      item.event === "tool_call",
+  ).length;
+  const factCoverageCount =
+    matterUnderstandingAnalysisCount || analysisReferenceCount || 0;
   const workspaceTabs: Array<{
     id: MatterWorkspaceTab;
     label: string;
@@ -3906,14 +4730,21 @@ const MatterSection = ({
       count:
         activeEvidenceReference?.evidenceItems?.length ||
         activeAtlasCaseResearch?.similarCases?.length ||
+        matterUnderstandingResearchAuthorities.length ||
         briefEvidenceCount ||
         0,
     },
-    { id: "drafts", label: "Drafts", count: draftPanelCount },
+    {
+      id: "drafts",
+      label: "Drafts",
+      count: matterUnderstandingDrafts.length || draftPanelCount,
+    },
     {
       id: "timeline",
       label: "Timeline",
       count:
+        matterUnderstandingTimeline.length ||
+        matterUnderstandingRunTimelineCount ||
         (isAtlasMatterFlow ? atlasDraftQueue.length : 0) ||
         briefPoints.length ||
         groundAnalysisCards.length,
@@ -3922,6 +4753,65 @@ const MatterSection = ({
   ];
 
   const timelineItems = useMemo(() => {
+    if (matterUnderstandingTimeline.length) {
+      return matterUnderstandingTimeline.slice(0, 14).map((item, index) => ({
+        id: `understanding-timeline-${index}`,
+        title: item.event || "Matter event",
+        detail: item.legal_effect || item.source_document || "",
+        source: [item.date, item.source_document].filter(Boolean).join(" · "),
+        step: index + 1,
+      }));
+    }
+    if (activeMatterUnderstandingEvents.length) {
+      const runEvents = activeMatterUnderstandingEvents
+        .filter(
+          (item) =>
+            item.event === "stage_started" ||
+            item.event === "stage_complete" ||
+            item.event === "agent_done" ||
+            item.event === "section_complete" ||
+            item.event === "tool_call" ||
+            item.event === "final" ||
+            item.event === "done",
+        )
+        .slice(-14);
+      if (runEvents.length) {
+        return runEvents.map((item, index) => {
+          const stage = String(item.data.stage || "").replace(/_/g, " ");
+          const agent = String(item.data.agent || "").replace(/_/g, " ");
+          const section = String(item.data.section || "").replace(/_/g, " ");
+          const tool = String(item.data.tool || "").replace(/_/g, " ");
+          const elapsedMs = Number(item.data.elapsedMs || 0);
+          const title =
+            item.event === "stage_started"
+              ? `Started ${stage || "analysis stage"}`
+              : item.event === "stage_complete"
+                ? `Completed ${stage || "analysis stage"}`
+                : item.event === "agent_done"
+                  ? `${agent || "Agent"} completed`
+                  : item.event === "section_complete"
+                    ? `${section || "Section"} ready`
+                    : item.event === "tool_call"
+                      ? `Ran ${tool || "research tool"}`
+                      : "Matter analysis complete";
+          const detail =
+            item.event === "tool_call" && item.data.query
+              ? String(item.data.query)
+              : elapsedMs
+                ? `Completed in ${Math.round(elapsedMs / 1000)}s.`
+                : item.event === "final" || item.event === "done"
+                  ? "The structured matter understanding is ready."
+                  : "Research checkpoint recorded during the analysis run.";
+          return {
+            id: `understanding-run-timeline-${index}`,
+            title,
+            detail,
+            source: "Matter understanding stream",
+            step: index + 1,
+          };
+        });
+      }
+    }
     if (isAtlasMatterFlow && atlasDraftQueue.length) {
       return atlasDraftQueue.slice(0, 8).map((item, index) => {
         const dependencyText = Array.isArray(item.unblocksWhen)
@@ -3963,10 +4853,17 @@ const MatterSection = ({
       id: `${card.id}-timeline`,
       title: card.title,
       detail: card.factText,
-        source: card.sourceFiles[0] || "",
-        step: index + 1,
-      }));
-  }, [atlasDraftQueue, briefPoints, groundAnalysisCards, isAtlasMatterFlow]);
+      source: card.sourceFiles[0] || "",
+      step: index + 1,
+    }));
+  }, [
+    atlasDraftQueue,
+    briefPoints,
+    groundAnalysisCards,
+    isAtlasMatterFlow,
+    activeMatterUnderstandingEvents,
+    matterUnderstandingTimeline,
+  ]);
   const findDocumentBySource = (
     sourceName: string,
     sourceRef?: MatterSignalSourceRef | null,
@@ -5205,7 +6102,11 @@ const MatterSection = ({
         missingSignals: ["remedy sequencing", "delay allocation"],
       },
     ],
-    matchedSignals: ["contract dispute", "milestone delay", "liquidated damages"],
+    matchedSignals: [
+      "contract dispute",
+      "milestone delay",
+      "liquidated damages",
+    ],
     conflictingSignals: [],
     forumMismatch: false,
     triggerMatchPenaltyApplied: false,
@@ -5273,7 +6174,9 @@ const MatterSection = ({
       },
     ],
     requestedDocuments: [],
-    missingWorkflowRequirements: ["Explicit confirmation of any approved milestone extension"],
+    missingWorkflowRequirements: [
+      "Explicit confirmation of any approved milestone extension",
+    ],
     supportedWorkflowRequirements: [
       "Base contract terms",
       "Delay allegations",
@@ -5321,7 +6224,8 @@ const MatterSection = ({
     progress,
     similarCases: [
       {
-        title: "Mehra Exports Pvt. Ltd. v. CloudServ Technologies Pvt. Ltd. (2024)",
+        title:
+          "Mehra Exports Pvt. Ltd. v. CloudServ Technologies Pvt. Ltd. (2024)",
         officialDocumentUrl: "#",
         officialViewerUrl: "#",
         officialSourceType: "html",
@@ -5332,7 +6236,8 @@ const MatterSection = ({
         relevantExcerptTitle: "Delay allocation and extension mechanism",
         officialCitation: "Mock Citation 2024",
         note: "Illustrative authority for the UI preview path.",
-        facts: "Supplier delay and milestone slippage in a commercial services contract.",
+        facts:
+          "Supplier delay and milestone slippage in a commercial services contract.",
         legalQuestion:
           "Whether the delay stayed within contractor risk or moved under an approved extension mechanism.",
         holding:
@@ -5384,7 +6289,9 @@ const MatterSection = ({
     },
   });
 
-  const createMockAtlasNextSteps = (_matterId: string): AtlasNextStepsAnalysis => ({
+  const createMockAtlasNextSteps = (
+    _matterId: string,
+  ): AtlasNextStepsAnalysis => ({
     matterId: _matterId,
     workflowId: "adv-contractreview",
     doNow: [
@@ -5529,7 +6436,9 @@ const MatterSection = ({
               state: "done",
             }
           : null,
-      ].filter(Boolean) as NonNullable<MatterRecord["analysis_state"]>["whatWeFound"],
+      ].filter(Boolean) as NonNullable<
+        MatterRecord["analysis_state"]
+      >["whatWeFound"],
       pendingClarification: checkpoint || null,
       canContinueWithLimitedSummary: Boolean(
         checkpoint?.canContinueWithLimitedResearch,
@@ -5538,32 +6447,33 @@ const MatterSection = ({
     };
     next.matter.intelligence_statuses = {
       ...(next.matter.intelligence_statuses || {}),
-      executive_summary: status === "atlas_brief_ready" ? "ready" : "processing",
+      executive_summary:
+        status === "atlas_brief_ready" ? "ready" : "processing",
     };
     next.atlas_base_recognition =
       recognition !== undefined
         ? recognition
-        : next.atlas_base_recognition ?? null;
+        : (next.atlas_base_recognition ?? null);
     next.atlas_workflow_confirmation =
       confirmation !== undefined
         ? confirmation
-        : next.atlas_workflow_confirmation ?? null;
+        : (next.atlas_workflow_confirmation ?? null);
     next.atlas_gap_checkpoint =
       checkpoint !== undefined
         ? checkpoint
-        : next.atlas_gap_checkpoint ?? null;
+        : (next.atlas_gap_checkpoint ?? null);
     next.atlas_decider_research =
       deciderResearch !== undefined
         ? deciderResearch
-        : next.atlas_decider_research ?? null;
+        : (next.atlas_decider_research ?? null);
     next.atlas_case_research =
       caseResearch !== undefined
         ? caseResearch
-        : next.atlas_case_research ?? null;
+        : (next.atlas_case_research ?? null);
     next.atlas_next_steps =
-      nextSteps !== undefined ? nextSteps : next.atlas_next_steps ?? null;
+      nextSteps !== undefined ? nextSteps : (next.atlas_next_steps ?? null);
     next.atlas_matter_brief =
-      brief !== undefined ? brief : next.atlas_matter_brief ?? null;
+      brief !== undefined ? brief : (next.atlas_matter_brief ?? null);
     return next;
   };
 
@@ -5975,7 +6885,9 @@ const MatterSection = ({
 
   const appendAtlasLiveEvent = (matterId: string, event: AtlasLiveEvent) => {
     setAtlasLiveEventsByMatterId((current) => {
-      const existing = Array.isArray(current[matterId]) ? current[matterId] : [];
+      const existing = Array.isArray(current[matterId])
+        ? current[matterId]
+        : [];
       if (existing.some((item) => item.id === event.id)) {
         return current;
       }
@@ -6049,6 +6961,288 @@ const MatterSection = ({
     }
   };
 
+  const appendMatterUnderstandingEvent = (
+    matterId: string,
+    event: string,
+    data: Record<string, unknown>,
+  ) => {
+    setMatterUnderstandingEventsByMatterId((current) => {
+      const existing = current[matterId] || [];
+      return {
+        ...current,
+        [matterId]: [...existing, { event, data }].slice(-60),
+      };
+    });
+  };
+
+  const parseSseEventBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    let event = "message";
+    const dataLines: string[] = [];
+    lines.forEach((line) => {
+      if (line.startsWith("event:")) {
+        event = line.slice("event:".length).trim() || "message";
+      } else if (line.startsWith("data:")) {
+        dataLines.push(line.slice("data:".length).trimStart());
+      }
+    });
+    const rawData = dataLines.join("\n");
+    let data: Record<string, unknown> = {};
+    try {
+      data = rawData ? (JSON.parse(rawData) as Record<string, unknown>) : {};
+    } catch {
+      data = { raw: rawData };
+    }
+    return { event, data };
+  };
+
+  const runMatterUnderstanding = async (
+    matterId: string,
+    resumeRunId?: string,
+  ) => {
+    const normalizedMatterId = String(matterId || "").trim();
+    if (!normalizedMatterId || isMockMatterId(normalizedMatterId)) return;
+    if (matterUnderstandingRunningByMatterId[normalizedMatterId]) return;
+    const normalizedRunId = String(resumeRunId || "").trim();
+    if (
+      !normalizedRunId &&
+      matterUnderstandingPendingQuestionByMatterId[normalizedMatterId]
+    ) {
+      appendMatterUnderstandingEvent(normalizedMatterId, "run_blocked", {
+        reason:
+          "Answer the pending matter-understanding question before starting a new run.",
+      });
+      return;
+    }
+
+    matterUnderstandingAbortRefs.current[normalizedMatterId]?.abort();
+    const abortController = new AbortController();
+    matterUnderstandingAbortRefs.current[normalizedMatterId] = abortController;
+    setMatterUnderstandingRunningByMatterId((current) => ({
+      ...current,
+      [normalizedMatterId]: true,
+    }));
+    setMatterUnderstandingErrorByMatterId((current) => ({
+      ...current,
+      [normalizedMatterId]: "",
+    }));
+    if (!normalizedRunId) {
+      setMatterUnderstandingEventsByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]: [],
+      }));
+      setMatterUnderstandingPendingQuestionByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]: null,
+      }));
+    }
+
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(normalizedMatterId)}/understanding/stream`,
+        ),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            runId: normalizedRunId || undefined,
+            userPrompt:
+              activeMatter?.id === normalizedMatterId
+                ? activeMatter.user_message || activeMatter.title || ""
+                : "",
+          }),
+          signal: abortController.signal,
+        },
+      );
+      if (!response.ok || !response.body) {
+        throw new Error(`Matter understanding failed (${response.status})`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let done = false;
+      while (!done) {
+        const chunk = await reader.read();
+        done = chunk.done;
+        buffer += decoder.decode(chunk.value || new Uint8Array(), {
+          stream: !done,
+        });
+        let delimiterIndex = buffer.search(/\r?\n\r?\n/);
+        while (delimiterIndex >= 0) {
+          const block = buffer.slice(0, delimiterIndex);
+          buffer = buffer.slice(
+            delimiterIndex + (buffer[delimiterIndex] === "\r" ? 4 : 2),
+          );
+          delimiterIndex = buffer.search(/\r?\n\r?\n/);
+          if (!block.trim()) continue;
+          const parsed = parseSseEventBlock(block);
+          appendMatterUnderstandingEvent(
+            normalizedMatterId,
+            parsed.event,
+            parsed.data,
+          );
+          if (parsed.event === "user_question") {
+            const runId = String(parsed.data.runId || normalizedRunId || "");
+            const questionId = String(parsed.data.questionId || "");
+            const question = String(parsed.data.question || "");
+            const options = Array.isArray(parsed.data.options)
+              ? parsed.data.options
+                  .map((item) => String(item || ""))
+                  .filter(Boolean)
+              : [];
+            if (runId && questionId && question) {
+              setMatterUnderstandingPendingQuestionByMatterId((current) => ({
+                ...current,
+                [normalizedMatterId]: {
+                  runId,
+                  questionId,
+                  question,
+                  options,
+                  reason:
+                    typeof parsed.data.reason === "string"
+                      ? parsed.data.reason
+                      : undefined,
+                },
+              }));
+            }
+          }
+          if (parsed.event === "final") {
+            const understanding = parsed.data.understanding as
+              | MatterUnderstandingV2
+              | undefined;
+            if (understanding) {
+              setMatterUnderstandingPendingQuestionByMatterId((current) => ({
+                ...current,
+                [normalizedMatterId]: null,
+              }));
+              setMatterUnderstandingByMatterId((current) => ({
+                ...current,
+                [normalizedMatterId]: understanding,
+              }));
+              const updatedResult = parsed.data.result as
+                | MatterProcessedResult
+                | undefined;
+              if (updatedResult?.matter?.id) {
+                updateMatter(updatedResult);
+              }
+            }
+          }
+          if (parsed.event === "error") {
+            setMatterUnderstandingErrorByMatterId((current) => ({
+              ...current,
+              [normalizedMatterId]: String(
+                parsed.data.error || "Matter understanding failed.",
+              ),
+            }));
+          }
+        }
+      }
+    } catch (error) {
+      if ((error as Error)?.name !== "AbortError") {
+        setMatterUnderstandingErrorByMatterId((current) => ({
+          ...current,
+          [normalizedMatterId]:
+            error instanceof Error
+              ? error.message
+              : "Matter understanding failed.",
+        }));
+      }
+    } finally {
+      setMatterUnderstandingRunningByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]: false,
+      }));
+      if (
+        matterUnderstandingAbortRefs.current[normalizedMatterId] ===
+        abortController
+      ) {
+        delete matterUnderstandingAbortRefs.current[normalizedMatterId];
+      }
+    }
+  };
+
+  const answerMatterUnderstandingQuestion = async (
+    matterId: string,
+    question: {
+      runId: string;
+      questionId: string;
+      question: string;
+    },
+    answer: string,
+  ) => {
+    const normalizedMatterId = String(matterId || "").trim();
+    const runId = String(question?.runId || "").trim();
+    const questionId = String(question?.questionId || "").trim();
+    const cleanedAnswer = String(answer || "").trim();
+    if (!normalizedMatterId || !runId || !questionId || !cleanedAnswer) return;
+
+    setMatterUnderstandingErrorByMatterId((current) => ({
+      ...current,
+      [normalizedMatterId]: "",
+    }));
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(
+            normalizedMatterId,
+          )}/understanding/runs/${encodeURIComponent(runId)}/answer`,
+        ),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            questionId,
+            question: question.question,
+            answer: cleanedAnswer,
+          }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`Could not submit answer (${response.status})`);
+      }
+      appendMatterUnderstandingEvent(normalizedMatterId, "user_answer", {
+        runId,
+        questionId,
+        answer: cleanedAnswer,
+      });
+      setMatterUnderstandingPendingQuestionByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]: null,
+      }));
+      await runMatterUnderstanding(normalizedMatterId, runId);
+    } catch (error) {
+      setMatterUnderstandingErrorByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]:
+          error instanceof Error
+            ? error.message
+            : "Could not submit matter-understanding answer.",
+      }));
+    }
+  };
+
+  useEffect(() => {
+    const matterId = String(activeMatter?.id || "").trim();
+    if (!matterId || isMockMatterId(matterId)) return;
+    if (matterUnderstandingPendingQuestionByMatterId[matterId]) return;
+    if (activeMatter?.matterUnderstandingV2) return;
+    if (matterUnderstandingByMatterId[matterId]) return;
+    if (matterUnderstandingRunningByMatterId[matterId]) return;
+    if (autoStartedMatterUnderstandingRef.current.has(matterId)) return;
+    autoStartedMatterUnderstandingRef.current.add(matterId);
+    void runMatterUnderstanding(matterId);
+  }, [
+    activeMatter?.id,
+    activeMatter?.matterUnderstandingV2,
+    matterUnderstandingPendingQuestionByMatterId,
+    matterUnderstandingByMatterId,
+    matterUnderstandingRunningByMatterId,
+  ]);
+
   const applyAtlasLatestPayload = (
     matterId: string,
     payload: {
@@ -6111,7 +7305,8 @@ const MatterSection = ({
 
     mergeMatterAtlasLatest(matterId, {
       matter: matterPatch,
-      extractedFieldsStatus: payload.matter.extracted_fields_status || undefined,
+      extractedFieldsStatus:
+        payload.matter.extracted_fields_status || undefined,
       extractedFieldsError: payload.matter.extracted_fields_error,
       atlasBaseRecognition: includeFull ? payload.baseRecognition : undefined,
       atlasWorkflowConfirmation: includeFull
@@ -6284,7 +7479,8 @@ const MatterSection = ({
                 type: "stage_started",
                 payload: {
                   stage: "orientation",
-                  message: "Reading the record and building the initial matter orientation.",
+                  message:
+                    "Reading the record and building the initial matter orientation.",
                 },
               },
             },
@@ -6295,7 +7491,8 @@ const MatterSection = ({
                 type: "stage_started",
                 payload: {
                   stage: "base_recognition",
-                  message: "Classifying the matter and mapping it to the strongest workflow.",
+                  message:
+                    "Classifying the matter and mapping it to the strongest workflow.",
                 },
               },
             },
@@ -6476,13 +7673,37 @@ const MatterSection = ({
     },
     requestedFrom: "overview" | "drafts",
   ) => {
-    if (!activeMatter?.id) return;
+    const targetMatterId = activeMatter?.id
+      ? isMockMatterId(activeMatter.id)
+        ? matters.find((matter) => !isMockMatterId(matter.id))?.id || ""
+        : activeMatter.id
+      : "";
+    if (!targetMatterId) {
+      setDraftRecommendationError(
+        "This drafting test needs at least one real saved matter.",
+      );
+      return;
+    }
     navigate(
-      `/drafting?matter=${encodeURIComponent(activeMatter.id)}&startDraft=${encodeURIComponent(
+      `/drafting?matter=${encodeURIComponent(targetMatterId)}&startDraft=${encodeURIComponent(
         draftItem.draftType || draftItem.title,
       )}&draftLabel=${encodeURIComponent(draftItem.title)}&requestedFrom=${encodeURIComponent(
         requestedFrom,
       )}&draftKey=${encodeURIComponent(draftItem.id || "")}`,
+    );
+  };
+
+  const startMockPipelineDraftCheck = async (
+    requestedFrom: "overview" | "drafts",
+  ) => {
+    await startAtlasDraftGeneration(
+      {
+        id: "mock_pipeline_reference_check",
+        draftType:
+          "I want to draft a civil pleadings suit for recovery under Order 37 CPC",
+        title: "Suit for recovery under Order XXXVII CPC",
+      },
+      requestedFrom,
     );
   };
 
@@ -6599,7 +7820,8 @@ const MatterSection = ({
           step: "ranking",
           message:
             "Ranking the strongest authorities after comparing proposition support.",
-          query: "contractual extension of time supplier delay milestone breach",
+          query:
+            "contractual extension of time supplier delay milestone breach",
           totalCandidates: 5,
           retainedCount: 0,
           updatedAt: new Date().toISOString(),
@@ -6789,7 +8011,8 @@ const MatterSection = ({
         ...current,
         [matterId]: {
           submitting: false,
-          error: "No atlas subcategory is available to confirm for this matter.",
+          error:
+            "No atlas subcategory is available to confirm for this matter.",
         },
       }));
       return;
@@ -6803,7 +8026,7 @@ const MatterSection = ({
   };
 
   const logMatterUnderstandingAgents = async (matterId: string) => {
-    await runMatterAtlasResearch(matterId);
+    await runMatterUnderstanding(matterId);
   };
 
   const submitClarificationAnswers = async (
@@ -6833,7 +8056,8 @@ const MatterSection = ({
           baseResult.atlas_decider_research ||
           createMockAtlasDeciderResearch(matterId);
         const caseResearch =
-          baseResult.atlas_case_research || createMockAtlasCaseResearch(matterId);
+          baseResult.atlas_case_research ||
+          createMockAtlasCaseResearch(matterId);
         const nextSteps = createMockAtlasNextSteps(matterId);
         const brief = createMockAtlasBrief(matterId);
         const briefRunningResult = createMockAtlasResult({
@@ -7005,7 +8229,8 @@ const MatterSection = ({
           baseResult.atlas_decider_research ||
           createMockAtlasDeciderResearch(matterId);
         const caseResearch =
-          baseResult.atlas_case_research || createMockAtlasCaseResearch(matterId);
+          baseResult.atlas_case_research ||
+          createMockAtlasCaseResearch(matterId);
         const nextSteps = createMockAtlasNextSteps(matterId);
         const brief = createMockAtlasBrief(matterId);
         const briefRunningResult = createMockAtlasResult({
@@ -7328,7 +8553,9 @@ const MatterSection = ({
     setMatterTitleError("");
     try {
       const response = await fetch(
-        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/title`),
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/title`,
+        ),
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -8516,6 +9743,7 @@ const MatterSection = ({
           !activePrimarySummary &&
           (shouldShowWorkflowConfirmationState ||
             shouldShowClarificationState ||
+            isMatterUnderstandingAwaitingInput ||
             shouldShowProgressThread) ? (
             <section className="matterAnalysisWorkspace matterAnalysisWorkspaceBlocking">
               {activeSummaryRunState.error ? (
@@ -8530,9 +9758,9 @@ const MatterSection = ({
                 </article>
               ) : null}
 
-              {!shouldShowClarificationState ? (
-                renderMatterResearchCommandPanel()
-              ) : null}
+              {!shouldShowClarificationState
+                ? renderMatterResearchCommandPanel()
+                : null}
             </section>
           ) : (
             <section className="matterAnalysisWorkspace">
@@ -8580,9 +9808,6 @@ const MatterSection = ({
                               />
                             ) : null}
                           </p>
-                          <span className="matterSummaryPreviewHint">
-                            Click to open the research detail
-                          </span>
                         </button>
                         {isMatterStatePolling ? (
                           <div className="matterResearchPollingRow">
@@ -8600,7 +9825,8 @@ const MatterSection = ({
                       </article>
 
                       {missingProofItems.length ||
-                      activeAtlasNextSteps?.draftQueue?.length ? (
+                      activeAtlasNextSteps?.draftQueue?.length ||
+                      Boolean(activeMatterUnderstanding) ? (
                         <div className="matterAnalysisSecondaryGrid">
                           {missingProofItems.length &&
                           (!shouldAnimateBriefSections ||
@@ -8667,9 +9893,9 @@ const MatterSection = ({
                             <div className="matterAnalysisPanelHead">
                               <div>
                                 <p className="matterEyebrow">
-                                  Next Steps and Drafts
+                                  Matter Understanding
                                 </p>
-                                <h3>What likely comes next</h3>
+                                <h3>Current legal picture</h3>
                               </div>
                             </div>
                             {renderAtlasNextSteps()}
@@ -8689,17 +9915,17 @@ const MatterSection = ({
                               <h3>Comparable sources and references</h3>
                             </div>
                           </div>
-                          {activeAtlasCaseResearch?.similarCases?.length
-                            ? renderAtlasSimilarCases(
-                                activeAtlasCaseResearch.similarCases,
-                              )
-                            : (
-                                <p className="matterDebriefEmpty">
-                                  No cases survived verification for this run.
-                                  Review the debug panel below for search and
-                                  discard details.
-                                </p>
-                              )}
+                          {activeAtlasCaseResearch?.similarCases?.length ? (
+                            renderAtlasSimilarCases(
+                              activeAtlasCaseResearch.similarCases,
+                            )
+                          ) : (
+                            <p className="matterDebriefEmpty">
+                              No cases survived verification for this run.
+                              Review the debug panel below for search and
+                              discard details.
+                            </p>
+                          )}
                         </article>
                       ) : null}
                       {!shouldAnimateBriefSections || briefRevealStage >= 3
@@ -8820,9 +10046,9 @@ const MatterSection = ({
                     </>
                   ) : null}
 
-                  {!activePrimarySummary ? (
-                    renderMatterResearchCommandPanel()
-                  ) : null}
+                  {!activePrimarySummary
+                    ? renderMatterResearchCommandPanel()
+                    : null}
 
                   {!activePrimarySummary &&
                   activeAnalysisState?.whatWeFound?.length ? (
@@ -9239,22 +10465,24 @@ const MatterSection = ({
                         {secondaryClassificationMarkers.length ? (
                           <div className="matterSecondaryTagSection">
                             <div className="matterSecondaryTagList">
-                              {secondaryClassificationMarkers.map((marker, index) => (
-                                <span
-                                  key={`secondary-marker-${index}-${marker.slice(0, 48)}`}
-                                  className={`matterSecondaryTag ${
-                                    secondaryUserDefinedTags.some(
-                                      (tag) =>
-                                        tag.toLowerCase() ===
-                                        marker.toLowerCase(),
-                                    )
-                                      ? "isUserTag"
-                                      : ""
-                                  }`}
-                                >
-                                  {marker}
-                                </span>
-                              ))}
+                              {secondaryClassificationMarkers.map(
+                                (marker, index) => (
+                                  <span
+                                    key={`secondary-marker-${index}-${marker.slice(0, 48)}`}
+                                    className={`matterSecondaryTag ${
+                                      secondaryUserDefinedTags.some(
+                                        (tag) =>
+                                          tag.toLowerCase() ===
+                                          marker.toLowerCase(),
+                                      )
+                                        ? "isUserTag"
+                                        : ""
+                                    }`}
+                                  >
+                                    {marker}
+                                  </span>
+                                ),
+                              )}
                             </div>
                           </div>
                         ) : null}
@@ -9445,6 +10673,65 @@ const MatterSection = ({
                       </article>
                     ))}
                   </div>
+                ) : matterUnderstandingResearchAuthorities.length ? (
+                  <div className="matterCaseList">
+                    {matterUnderstandingResearchAuthorities.map(
+                      (item, index) => {
+                        const caseId = `${item.id}-${index}`;
+                        const isExpanded = Boolean(expandedCaseIds[caseId]);
+                        return (
+                          <article className="matterCaseRow" key={caseId}>
+                            <div className="matterCaseRowMain">
+                              <button
+                                type="button"
+                                className="matterCaseTitleLink"
+                                onClick={() => {
+                                  if (item.url) {
+                                    window.open(
+                                      item.url,
+                                      "_blank",
+                                      "noopener,noreferrer",
+                                    );
+                                  }
+                                }}
+                              >
+                                {item.title}
+                              </button>
+                              {item.summary ? (
+                                <button
+                                  type="button"
+                                  className="matterCaseSummaryToggle"
+                                  onClick={() =>
+                                    setExpandedCaseIds((current) => ({
+                                      ...current,
+                                      [caseId]: !current[caseId],
+                                    }))
+                                  }
+                                  aria-expanded={isExpanded}
+                                >
+                                  <span>Summary</span>
+                                  {isExpanded ? (
+                                    <ChevronDown size={16} />
+                                  ) : (
+                                    <ChevronRight size={16} />
+                                  )}
+                                </button>
+                              ) : null}
+                            </div>
+                            <small className="matterNextStepDraftType">
+                              {item.kind}
+                              {item.source ? ` · ${item.source}` : ""}
+                            </small>
+                            {isExpanded && item.summary ? (
+                              <div className="matterCaseSummary">
+                                <p>{item.summary}</p>
+                              </div>
+                            ) : null}
+                          </article>
+                        );
+                      },
+                    )}
+                  </div>
                 ) : activeAtlasCaseResearch?.similarCases?.length ? (
                   renderAtlasSimilarCases(activeAtlasCaseResearch.similarCases)
                 ) : activeAtlasCaseResearch?.debugReferences?.length ? (
@@ -9478,6 +10765,7 @@ const MatterSection = ({
                       {formatSummaryTypeLabel(activeBriefArtifact.summaryType)}
                     </span>
                   </div>
+                  {renderMatterUnderstandingAnalysis()}
                   {activeDetailedBrief?.contractualFramework?.length ? (
                     <section className="matterAnalysisPanel">
                       <div className="matterAnalysisPanelHead">
@@ -9592,6 +10880,7 @@ const MatterSection = ({
                       {activeAtlasMatterBrief.confidence}
                     </span>
                   </div>
+                  {renderMatterUnderstandingAnalysis()}
                   {activeAtlasMatterBrief.detailedBrief ? (
                     <section className="matterAnalysisPanel">
                       <div className="matterAnalysisPanelHead">
@@ -9604,7 +10893,9 @@ const MatterSection = ({
                         {splitReadableParagraphs(
                           activeAtlasMatterBrief.detailedBrief,
                         ).map((paragraph, index) => (
-                          <p key={`facts-atlas-detailed-${index}`}>{paragraph}</p>
+                          <p key={`facts-atlas-detailed-${index}`}>
+                            {paragraph}
+                          </p>
                         ))}
                       </div>
                     </section>
@@ -9651,26 +10942,33 @@ const MatterSection = ({
                       <div className="matterAnalysisPanelHead">
                         <div>
                           <p className="matterEyebrow">Grounding</p>
-                          <h3>Supported, unresolved, and contradicted points</h3>
+                          <h3>
+                            Supported, unresolved, and contradicted points
+                          </h3>
                         </div>
                       </div>
                       {activeAtlasMatterBrief.recordSupports?.length ? (
                         <>
                           <strong>Supported by the uploaded record</strong>
                           <ul className="matterBulletList">
-                            {activeAtlasMatterBrief.recordSupports.map((item) => (
-                              <li key={`facts-support-${item}`}>{item}</li>
-                            ))}
+                            {activeAtlasMatterBrief.recordSupports.map(
+                              (item) => (
+                                <li key={`facts-support-${item}`}>{item}</li>
+                              ),
+                            )}
                           </ul>
                         </>
                       ) : null}
-                      {activeAtlasMatterBrief.recordDoesNotSupportYet?.length ? (
+                      {activeAtlasMatterBrief.recordDoesNotSupportYet
+                        ?.length ? (
                         <>
                           <strong>Not yet supported</strong>
                           <ul className="matterBulletList">
                             {activeAtlasMatterBrief.recordDoesNotSupportYet.map(
                               (item) => (
-                                <li key={`facts-unsupported-${item}`}>{item}</li>
+                                <li key={`facts-unsupported-${item}`}>
+                                  {item}
+                                </li>
                               ),
                             )}
                           </ul>
@@ -9680,9 +10978,13 @@ const MatterSection = ({
                         <>
                           <strong>Contradicted by the current record</strong>
                           <ul className="matterBulletList">
-                            {activeAtlasMatterBrief.recordContradicts.map((item) => (
-                              <li key={`facts-contradiction-${item}`}>{item}</li>
-                            ))}
+                            {activeAtlasMatterBrief.recordContradicts.map(
+                              (item) => (
+                                <li key={`facts-contradiction-${item}`}>
+                                  {item}
+                                </li>
+                              ),
+                            )}
                           </ul>
                         </>
                       ) : null}
@@ -9739,6 +11041,7 @@ const MatterSection = ({
                       {groundAnalysisStatus || "not started"}
                     </span>
                   </div>
+                  {renderMatterUnderstandingAnalysis()}
                   {briefDisplayPayload?.warning ? (
                     <p className="matterWorkspaceWarning">
                       {briefDisplayPayload.warning}
@@ -9953,75 +11256,140 @@ const MatterSection = ({
                     ) : null}
                   </div>
                 </div>
-                {isAtlasMatterFlow ? (
+                {matterUnderstandingDrafts.length ? (
+                  <div className="matterNextStepsStack">
+                    {matterUnderstandingDrafts.map((item, index) => (
+                      <article
+                        className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
+                        key={`${item.draft_type || item.title}-${index}`}
+                      >
+                        <div className="matterNextStepCardHead">
+                          <strong>{item.title || item.draft_type}</strong>
+                          <Button
+                            type="button"
+                            className="matterStartDraftingBtn"
+                            onClick={() =>
+                              void startAtlasDraftGeneration(
+                                {
+                                  id: item.draft_type || item.title,
+                                  draftType: item.draft_type,
+                                  title: item.title,
+                                },
+                                "drafts",
+                              )
+                            }
+                          >
+                            Start drafting
+                          </Button>
+                        </div>
+                        <p className="matterNextStepsPreview">
+                          {item.rationale ||
+                            "Recommended by the matter understanding pass."}
+                        </p>
+                        <div className="matterDraftRecommendationFooter">
+                          <span>
+                            {item.urgency || "standard"}
+                            {item.is_primary_legal_draft
+                              ? " · primary legal draft"
+                              : " · supporting draft"}
+                          </span>
+                        </div>
+                        {item.gates?.length ? (
+                          <details className="matterNextStepDisclosure">
+                            <summary>
+                              <span>
+                                <strong>Readiness gates</strong>
+                                <small>
+                                  {item.gates.length} item
+                                  {item.gates.length === 1 ? "" : "s"}
+                                </small>
+                              </span>
+                              <ChevronRight size={16} />
+                            </summary>
+                            <div className="matterNextStepsAccordionBody">
+                              <ul className="matterBulletList">
+                                {item.gates.map((gate) => (
+                                  <li key={`${item.draft_type}-${gate}`}>
+                                    {gate}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </details>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                ) : isAtlasMatterFlow ? (
                   atlasDraftQueue.length ? (
                     <div className="matterNextStepsStack">
-                      {atlasDraftQueue.map((item) => (
+                      {atlasDraftQueue.map((item) =>
                         (() => {
                           const dependencies = visibleDraftDependencies(
                             item.unblocksWhen,
                           );
                           return (
-                        <article
-                          className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
-                          key={item.id}
-                        >
-                          <div className="matterNextStepCardHead">
-                            <strong>{item.title}</strong>
-                            <Button
-                              type="button"
-                              className="matterStartDraftingBtn"
-                              disabled={item.isStartable === false}
-                              onClick={() =>
-                                item.isStartable === false
-                                  ? undefined
-                                  : void startAtlasDraftGeneration(
-                                      {
-                                        id: item.id,
-                                        draftType: item.draftType,
-                                        title: item.title,
-                                      },
-                                      "drafts",
-                                    )
-                              }
+                            <article
+                              className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
+                              key={item.id}
                             >
-                              {item.isStartable === false
-                                ? "Not yet supported"
-                                : "Start drafting"}
-                            </Button>
-                          </div>
-                          <p className="matterNextStepsPreview">
-                            {renderEmphasizedInlineText(item.description, [
-                              "termination",
-                              "notice",
-                              "refund",
-                              "cure period",
-                              "material default",
-                              "proof",
-                              "upload",
-                              activeAtlasMatterBrief?.usedWorkflow?.name || "",
-                            ])}
-                          </p>
-                          {item.availabilityNote ? (
-                            <p className="matterNextStepsMeta">
-                              {item.availabilityNote}
-                            </p>
-                          ) : null}
-                          {dependencies.length ? (
-                            <div className="matterNextStepsAccordionBody">
-                              <ul className="matterBulletList">
-                                {dependencies.map((dependency: string) => (
-                                  <li key={`${item.id}-${dependency}`}>
-                                    {dependency}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                        </article>
+                              <div className="matterNextStepCardHead">
+                                <strong>{item.title}</strong>
+                                <Button
+                                  type="button"
+                                  className="matterStartDraftingBtn"
+                                  disabled={item.isStartable === false}
+                                  onClick={() =>
+                                    item.isStartable === false
+                                      ? undefined
+                                      : void startAtlasDraftGeneration(
+                                          {
+                                            id: item.id,
+                                            draftType: item.draftType,
+                                            title: item.title,
+                                          },
+                                          "drafts",
+                                        )
+                                  }
+                                >
+                                  {item.isStartable === false
+                                    ? "Not yet supported"
+                                    : "Start drafting"}
+                                </Button>
+                              </div>
+                              <p className="matterNextStepsPreview">
+                                {renderEmphasizedInlineText(item.description, [
+                                  "termination",
+                                  "notice",
+                                  "refund",
+                                  "cure period",
+                                  "material default",
+                                  "proof",
+                                  "upload",
+                                  activeAtlasMatterBrief?.usedWorkflow?.name ||
+                                    "",
+                                ])}
+                              </p>
+                              {item.availabilityNote ? (
+                                <p className="matterNextStepsMeta">
+                                  {item.availabilityNote}
+                                </p>
+                              ) : null}
+                              {dependencies.length ? (
+                                <div className="matterNextStepsAccordionBody">
+                                  <ul className="matterBulletList">
+                                    {dependencies.map((dependency: string) => (
+                                      <li key={`${item.id}-${dependency}`}>
+                                        {dependency}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                            </article>
                           );
-                        })()
-                      ))}
+                        })(),
+                      )}
                     </div>
                   ) : (
                     <p className="matterDebriefEmpty">
@@ -10029,6 +11397,48 @@ const MatterSection = ({
                       workflow research pass is complete.
                     </p>
                   )
+                ) : isMockModeEnabled && activeMatter ? (
+                  <>
+                    {startingDraftKey ? (
+                      <div className="matterInlineLoaderWrap">
+                        <Loader
+                          mode="inline"
+                          variant="spinner"
+                          eyebrow="Drafting"
+                          title="Creating draft workspace"
+                          message="Generating the draft, saving it, and preparing the editor."
+                        />
+                      </div>
+                    ) : null}
+                    <div className="matterDraftRecommendationGrid">
+                      <article className="matterDraftRecommendationCard isReady">
+                        <div className="matterDraftRecommendationTop">
+                          <h3>Mock pipeline check: Suit for recovery</h3>
+                          <span>TEST</span>
+                        </div>
+                        <p>
+                          Triggers the full start-draft pipeline with a fixed
+                          reference-heavy query before other rollout changes.
+                        </p>
+                        <small>
+                          Uses the normal drafting workspace route and is
+                          visible only while Mock mode is on.
+                        </small>
+                        <div className="matterDraftRecommendationFooter">
+                          <span>debug · reference-pipeline</span>
+                          <Button
+                            type="button"
+                            className="matterStartDraftingBtn"
+                            onClick={() =>
+                              void startMockPipelineDraftCheck("overview")
+                            }
+                          >
+                            Start mock draft
+                          </Button>
+                        </div>
+                      </article>
+                    </div>
+                  </>
                 ) : readyDraftRecommendations.length ? (
                   <>
                     {startingDraftKey ? (
@@ -10204,9 +11614,11 @@ const MatterSection = ({
                   <div>
                     <p className="matterEyebrow">Timeline</p>
                     <h2>
-                      {isAtlasMatterFlow
-                        ? "What action needs to happen when"
-                        : "Matter sequence"}
+                      {matterUnderstandingTimeline.length
+                        ? "Matter chronology"
+                        : isAtlasMatterFlow
+                          ? "What action needs to happen when"
+                          : "Matter sequence"}
                     </h2>
                   </div>
                 </div>
@@ -10229,7 +11641,9 @@ const MatterSection = ({
                   <p className="matterDebriefEmpty">
                     {isAtlasMatterFlow
                       ? "Action timing will appear here once the workflow sequence is fully assembled."
-                      : "A chronology will appear here once fact extraction has enough material."}
+                      : activeMatterUnderstanding
+                        ? "The matter-understanding timeline will appear here once chronology extraction finishes."
+                        : "A chronology will appear here once fact extraction has enough material."}
                   </p>
                 )}
               </article>
@@ -10655,6 +12069,44 @@ const MatterSection = ({
                               </article>
                             ))}
                           </div>
+                        ) : isMockModeEnabled && activeMatter ? (
+                          <section className="matterDraftRecommendationGroup">
+                            <div className="matterDraftRecommendationGroupHead">
+                              <span>Ready to draft</span>
+                              <small>Mock mode pipeline check.</small>
+                            </div>
+                            <div className="matterDraftRecommendationGrid">
+                              <article className="matterDraftRecommendationCard isReady">
+                                <div className="matterDraftRecommendationTop">
+                                  <h3>
+                                    Mock pipeline check: Suit for recovery
+                                  </h3>
+                                  <span>TEST</span>
+                                </div>
+                                <p>
+                                  Triggers the full start-draft pipeline with a
+                                  fixed reference-heavy query before other
+                                  rollout changes.
+                                </p>
+                                <small>
+                                  Uses the normal drafting workspace route and
+                                  is visible only while Mock mode is on.
+                                </small>
+                                <div className="matterDraftRecommendationFooter">
+                                  <span>debug · reference-pipeline</span>
+                                  <Button
+                                    type="button"
+                                    className="matterStartDraftingBtn"
+                                    onClick={() =>
+                                      void startMockPipelineDraftCheck("drafts")
+                                    }
+                                  >
+                                    Start mock draft
+                                  </Button>
+                                </div>
+                              </article>
+                            </div>
+                          </section>
                         ) : draftRecommendationItems.length ? (
                           <>
                             {readyDraftRecommendations.length ? (
@@ -11470,7 +12922,8 @@ const MatterSection = ({
                 <div className="matterClarificationQuestionHero">
                   <span className="matterIssueKey">Atlas classification</span>
                   <h3>
-                    {activeWorkflowDisplayName || "A subcategory match is ready"}
+                    {activeWorkflowDisplayName ||
+                      "A subcategory match is ready"}
                   </h3>
                   <p className="matterClarificationMeta">
                     Associate is confident in the detected atlas category and
@@ -11555,7 +13008,7 @@ const MatterSection = ({
       ) : null}
 
       {shouldShowClarificationState &&
-        (activeAtlasCheckpoint || activeClarificationCheckpoint) ? (
+      (activeAtlasCheckpoint || activeClarificationCheckpoint) ? (
         <div
           className="matterDialogBackdrop matterClarificationOverlay"
           role="presentation"
@@ -11894,7 +13347,9 @@ const MatterSection = ({
                         {splitReadableParagraphs(
                           activeAtlasMatterBrief.detailedBrief,
                         ).map((paragraph, index) => (
-                          <p key={`atlas-detailed-brief-${index}`}>{paragraph}</p>
+                          <p key={`atlas-detailed-brief-${index}`}>
+                            {paragraph}
+                          </p>
                         ))}
                       </div>
                     </section>
@@ -11941,19 +13396,24 @@ const MatterSection = ({
                         <>
                           <h4>Supported by the record</h4>
                           <ul className="matterBulletList">
-                            {activeAtlasMatterBrief.recordSupports.map((item) => (
-                              <li key={`atlas-support-${item}`}>{item}</li>
-                            ))}
+                            {activeAtlasMatterBrief.recordSupports.map(
+                              (item) => (
+                                <li key={`atlas-support-${item}`}>{item}</li>
+                              ),
+                            )}
                           </ul>
                         </>
                       ) : null}
-                      {activeAtlasMatterBrief.recordDoesNotSupportYet?.length ? (
+                      {activeAtlasMatterBrief.recordDoesNotSupportYet
+                        ?.length ? (
                         <>
                           <h4>Not yet supported</h4>
                           <ul className="matterBulletList">
                             {activeAtlasMatterBrief.recordDoesNotSupportYet.map(
                               (item) => (
-                                <li key={`atlas-unsupported-${item}`}>{item}</li>
+                                <li key={`atlas-unsupported-${item}`}>
+                                  {item}
+                                </li>
                               ),
                             )}
                           </ul>
@@ -11963,9 +13423,13 @@ const MatterSection = ({
                         <>
                           <h4>Contradicted by the current record</h4>
                           <ul className="matterBulletList">
-                            {activeAtlasMatterBrief.recordContradicts.map((item) => (
-                              <li key={`atlas-contradiction-${item}`}>{item}</li>
-                            ))}
+                            {activeAtlasMatterBrief.recordContradicts.map(
+                              (item) => (
+                                <li key={`atlas-contradiction-${item}`}>
+                                  {item}
+                                </li>
+                              ),
+                            )}
                           </ul>
                         </>
                       ) : null}
