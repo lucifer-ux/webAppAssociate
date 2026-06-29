@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&family=Work+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&family=Work+Sans:wght@400;500;600;700&display=swap");
 
 :root {
   --landing-paper: #f7f3ec;
@@ -8,23 +8,34 @@
   --landing-copy: #5f5750;
   --landing-accent: #8f2f29;
   --landing-topline: #233420;
+  --hero-bg: #111318;
+  --hero-panel: rgba(23, 26, 32, 0.62);
+  --hero-panel-line: rgba(243, 238, 229, 0.1);
+  --hero-ivory: #e2e2e9;
+  --hero-muted: #d1c5b5;
+  --hero-brass: #e7c181;
+  --hero-brass-deep: #b9975b;
+  --hero-tertiary: #e4c27a;
 }
 
 body {
-  background: var(--landing-paper);
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111318;
   color: var(--landing-ink);
 }
 
 .landingRoot {
   min-height: 100vh;
-  background: var(--landing-paper);
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111318;
   font-family: "Work Sans", sans-serif;
   color: var(--landing-ink);
 }
 
 .landingTopStrip {
-  height: 4px;
-  background: var(--landing-topline);
+  display: none;
 }
 
 .landingNav,
@@ -37,18 +48,25 @@ body {
 }
 
 .landingNav {
-  width: min(1660px, calc(100% - 72px));
-  margin: 0 auto;
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 20;
+  width: 100%;
   justify-content: space-between;
-  padding: 14px 0 0;
+  min-height: 80px;
+  padding: 0 max(48px, calc((100vw - 1440px) / 2 + 48px));
+  border-bottom: 1px solid rgba(78, 70, 58, 0.2);
+  background: rgba(17, 19, 24, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .landingWordmark {
   border: 0;
   background: transparent;
-  color: var(--landing-ink);
-  font-family: "Newsreader", serif;
-  font-size: 56px;
+  color: var(--hero-ivory);
+  font-family: "EB Garamond", serif;
+  font-size: 24px;
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
@@ -62,13 +80,20 @@ body {
 .landingNavLinks button {
   border: 0;
   background: transparent;
-  color: #49433e;
+  color: var(--hero-muted);
   text-decoration: none;
-  font-family: "Work Sans", sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-family: "Inter", sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0;
   cursor: pointer;
+  padding: 8px 12px;
+}
+
+.landingNavLinks a:hover,
+.landingNavLinks button:hover {
+  color: var(--hero-ivory);
+  background: rgba(51, 53, 58, 0.32);
 }
 
 .landingSignupButton,
@@ -85,24 +110,35 @@ body {
 }
 
 .landingSignupButton {
-  min-width: 122px;
-  min-height: 48px;
-  padding: 0 18px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--hero-brass);
+  font-family: "Inter", sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .landingMain {
-  width: min(1660px, calc(100% - 72px));
+  width: 100%;
   margin: 0 auto;
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111318;
 }
 
 .landingHero {
-  min-height: 920px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 40px 0 120px;
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--hero-bg);
+  color: var(--hero-ivory);
+  padding: 96px 0 64px;
 }
 
 .landingHero h1,
@@ -116,34 +152,423 @@ body {
 }
 
 .landingHero h1 {
-  max-width: 1020px;
-  font-size: clamp(72px, 6vw, 112px);
-  line-height: 0.98;
+  max-width: 620px;
+  color: var(--hero-ivory);
+  font-family: "EB Garamond", serif;
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 500;
+  line-height: 1.16;
 }
 
 .landingHero p {
-  margin-top: 28px;
-  max-width: 1100px;
-  color: #5f5046;
-  font-family: "Newsreader", serif;
-  font-size: clamp(34px, 2.9vw, 54px);
-  line-height: 1.08;
+  margin: 0;
 }
 
-.landingCtaButton {
-  min-width: 202px;
-  min-height: 52px;
-  margin-top: 34px;
-  padding: 0 22px;
+.landingHeroBackdrop,
+.landingHeroShader {
+  position: absolute;
+  inset: 0;
 }
 
-.landingHero span {
-  margin-top: 34px;
-  color: #33445a;
+.landingHeroBackdrop {
+  z-index: 0;
+  pointer-events: none;
+}
+
+.landingHeroVideo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.82;
+  filter: saturate(0.92) contrast(1.04) brightness(0.72);
+}
+
+.landingHeroBackdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(17, 19, 24, 0.78) 0%, rgba(17, 19, 24, 0.58) 42%, rgba(17, 19, 24, 0.18) 100%),
+    linear-gradient(180deg, rgba(17, 19, 24, 0.22), rgba(12, 14, 19, 0.7));
+  z-index: 1;
+}
+
+.landingHeroBackdrop::after {
+  content: none;
+}
+
+.landingHeroShader {
+  display: none;
+}
+
+.landingHeroShader::before,
+.landingHeroShader::after {
+  content: "";
+  position: absolute;
+  left: -10%;
+  width: 120%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(231, 193, 129, 0.16), transparent);
+  animation: hero-citation-line 8s ease-in-out infinite;
+}
+
+.landingHeroShader::before {
+  top: 42%;
+}
+
+.landingHeroShader::after {
+  top: 56%;
+  animation-delay: -3.6s;
+}
+
+.landingHeroInner {
+  position: relative;
+  z-index: 4;
+  width: min(1240px, calc(100% - 96px));
+  min-height: calc(100vh - 160px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 24px;
+  align-items: center;
+}
+
+.landingHeroCopy {
+  grid-column: span 6;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  position: relative;
+  z-index: 2;
+}
+
+.landingHeroEyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--hero-brass);
+}
+
+.landingHeroEyebrow span {
+  display: block;
+  width: 32px;
+  height: 1px;
+  background: var(--hero-brass);
+}
+
+.landingHeroEyebrow strong {
+  font-family: "Inter", sans-serif;
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  line-height: 16px;
   text-transform: uppercase;
+}
+
+.landingHeroLead {
+  max-width: 560px;
+  border-left: 2px solid rgba(231, 193, 129, 0.3);
+  padding: 4px 0 4px 16px;
+  color: var(--hero-muted);
+  font-family: "Inter", sans-serif;
+  font-size: 18px;
+  line-height: 28px;
+}
+
+.landingHeroBody {
+  max-width: 560px;
+  color: var(--hero-muted);
+  font-family: "Inter", sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.landingHeroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 4px;
+}
+
+.landingHeroPrimary,
+.landingHeroSecondary {
+  min-height: 48px;
+  border-radius: 4px;
+  padding: 0 24px;
+  font-family: "Inter", sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.landingHeroPrimary {
+  border: 1px solid var(--hero-brass-deep);
+  background: var(--hero-brass-deep);
+  color: #422d00;
+}
+
+.landingHeroPrimary:hover {
+  background: var(--hero-brass);
+}
+
+.landingHeroSecondary {
+  border: 1px solid rgba(154, 143, 129, 0.3);
+  background: transparent;
+  color: var(--hero-ivory);
+}
+
+.landingHeroSecondary:hover {
+  background: rgba(51, 53, 58, 0.5);
+  border-color: rgba(154, 143, 129, 0.55);
+}
+
+.landingHeroTrust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 4px;
+  padding-top: 32px;
+  border-top: 1px solid rgba(78, 70, 58, 0.22);
+  color: rgba(209, 197, 181, 0.72);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: 0.02em;
+}
+
+.landingHeroTrust i {
+  color: rgba(231, 193, 129, 0.5);
+  font-style: normal;
+}
+
+.landingHeroVisual {
+  grid-column: span 6;
+  position: relative;
+  height: 600px;
+  margin-top: 48px;
+}
+
+.landingHeroFloatLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.landingHeroFloat,
+.landingHeroBrief {
+  background: var(--hero-panel);
+  border-top: 1px solid rgba(243, 238, 229, 0.1);
+  border-left: 1px solid rgba(243, 238, 229, 0.05);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.landingHeroFloat {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(510px, 92%);
+  padding: 12px 32px 12px 12px;
+  border-radius: 8px;
+  color: var(--hero-ivory);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: 0.02em;
+  animation: hero-float 6s ease-in-out infinite;
+}
+
+.landingHeroFloatIcon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(78, 70, 58, 0.2);
+  border-radius: 4px;
+  background: var(--hero-bg);
+  color: var(--hero-brass);
+}
+
+.landingHeroFloat1 {
+  top: 5%;
+  left: 10%;
+}
+
+.landingHeroFloat2 {
+  top: 25%;
+  right: 5%;
+  border-left: 2px solid var(--hero-brass);
+  animation-delay: -3s;
+}
+
+.landingHeroFloat3 {
+  top: 50%;
+  left: 0;
+}
+
+.landingHeroFloat4 {
+  top: 70%;
+  right: 10%;
+  animation-delay: -3s;
+}
+
+.landingHeroFloat5 {
+  bottom: 0;
+  left: 20%;
+  border-left: 2px solid var(--hero-tertiary);
+}
+
+.landingHeroFloat.tertiary .landingHeroFloatIcon {
+  color: var(--hero-tertiary);
+}
+
+.landingHeroFloat.pulse {
+  animation: hero-float 6s ease-in-out -3s infinite, hero-ai-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.landingHeroBrief {
+  position: absolute;
+  right: 0;
+  bottom: 40px;
+  z-index: 3;
+  width: 288px;
+  padding: 24px;
+  border: 1px solid rgba(78, 70, 58, 0.24);
+  border-radius: 12px;
+}
+
+.landingHeroBriefHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(78, 70, 58, 0.18);
+  color: var(--hero-brass);
+}
+
+.landingHeroBriefHeader h2 {
+  color: var(--hero-ivory);
+  font-family: "EB Garamond", serif;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.landingHeroBrief dl {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.landingHeroBrief dl div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.landingHeroBrief dt {
+  color: var(--hero-muted);
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.landingHeroBrief dd {
+  margin: 0;
+  color: var(--hero-brass);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: 0.02em;
+}
+
+.landingHeroBrief dd.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hero-tertiary);
+}
+
+.landingHeroBrief dd.live span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--hero-tertiary);
+  animation: hero-live-pulse 1.8s ease-in-out infinite;
+}
+
+.landingMain > .landingSection {
+  width: min(1660px, calc(100% - 72px));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@keyframes hero-citation-line {
+  0% {
+    transform: translateY(0) scaleX(0.72);
+    opacity: 0.1;
+  }
+
+  50% {
+    transform: translateY(-18px) scaleX(1);
+    opacity: 0.34;
+  }
+
+  100% {
+    transform: translateY(0) scaleX(0.72);
+    opacity: 0.1;
+  }
+}
+
+@keyframes hero-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(-10px) rotate(-0.35deg);
+  }
+}
+
+@keyframes hero-ai-pulse {
+  0%,
+  100% {
+    border-left-color: rgba(185, 151, 91, 1);
+  }
+
+  50% {
+    border-left-color: rgba(185, 151, 91, 0.3);
+  }
+}
+
+@keyframes hero-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.42;
+    transform: scale(0.72);
+  }
 }
 
 .landingSection {
@@ -216,18 +641,592 @@ body {
   line-height: 1.85;
 }
 
+.landingMain > .landingProblemSection {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding: 96px 0 92px;
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111318;
+  color: #e2e2e9;
+}
+
+.institutionalTexture {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.4;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    radial-gradient(circle at 76% 12%, rgba(231, 193, 129, 0.08), transparent 32%),
+    radial-gradient(circle at 10% 80%, rgba(170, 202, 237, 0.04), transparent 26%);
+  background-size: 100% 64px, 100% 100%, 100% 100%;
+}
+
+.institutionalTexture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+.institutionalShell {
+  width: min(1440px, calc(100% - 128px));
+  margin: 0 auto;
+}
+
+.institutionalGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(560px, 1.1fr);
+  gap: 80px;
+  align-items: center;
+}
+
+.institutionalIntro {
+  max-width: 650px;
+}
+
+.institutionalKicker {
+  margin: 0 0 18px;
+  color: #e7c181;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.landingProblemSection .institutionalIntro h2,
+.landingProblemSection .institutionalPipelineHeader h2 {
+  margin: 0;
+  color: #e2e2e9;
+  font-family: "EB Garamond", serif;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.landingProblemSection .institutionalIntro h2 {
+  font-size: clamp(40px, 4.2vw, 64px);
+  line-height: 1.1;
+}
+
+.institutionalIntro p:not(.institutionalKicker) {
+  max-width: 590px;
+  margin: 24px 0 0;
+  color: #d1c5b5;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.institutionalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 32px;
+}
+
+.institutionalActions button {
+  min-height: 56px;
+  border-radius: 8px;
+  padding: 0 32px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.institutionalActions button:first-child {
+  border: 1px solid #e7c181;
+  background: #e7c181;
+  color: #111318;
+}
+
+.institutionalActions button:last-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1a1b21;
+  color: #e2e2e9;
+}
+
+.institutionalMockup {
+  position: relative;
+  min-height: 560px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(32, 36, 43, 0.6);
+  padding: 24px;
+  box-shadow: 0 36px 90px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.institutionalMockupGlow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(30, 32, 37, 0.5), transparent 58%);
+}
+
+.institutionalMatterBar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.institutionalMatterBar div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.institutionalMatterBar span,
+.institutionalStatus,
+.institutionalPanel h3,
+.institutionalPanel li,
+.institutionalDocumentRef,
+.institutionalDraftList,
+.institutionalStep h3,
+.institutionalStep p {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.institutionalMatterBar span {
+  color: #d1c5b5;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.institutionalMatterBar strong {
+  color: #e2e2e9;
+  font-family: "EB Garamond", serif;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.institutionalStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: #1e2025;
+  color: #d1c5b5;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.institutionalStatus i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #e7c181;
+  animation: hero-live-pulse 1.8s ease-in-out infinite;
+}
+
+.institutionalMatterGrid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  min-height: 432px;
+}
+
+.institutionalMatterColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.institutionalPanel {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #252a32;
+  padding: 16px;
+}
+
+.institutionalPanel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: #e2e2e9;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+}
+
+.institutionalPanel h3 svg {
+  color: #e7c181;
+}
+
+.institutionalClauseList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.institutionalClauseList span,
+.institutionalDraftList div {
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  background: #111318;
+}
+
+.institutionalClauseList span {
+  padding: 4px 8px;
+  color: #d1c5b5;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.institutionalPanel.danger {
+  border-left: 2px solid rgba(255, 180, 171, 0.5);
+}
+
+.institutionalPanel.danger h3 svg {
+  color: #ffb4ab;
+}
+
+.institutionalPanel ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.institutionalPanel li {
+  position: relative;
+  padding-left: 22px;
+  color: #d1c5b5;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.institutionalPanel li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(209, 197, 181, 0.5);
+  border-radius: 999px;
+}
+
+.institutionalPanel.evidence {
+  flex: 0 0 auto;
+  border-left: 2px solid #7897b8;
+}
+
+.institutionalEvidenceHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.institutionalEvidenceHeader span {
+  color: #e7c181;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.institutionalEvidenceHeader strong {
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  background: #111318;
+  color: #aacaed;
+  padding: 2px 8px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.institutionalPanel.evidence p {
+  margin: 0 0 8px;
+  color: #e2e2e9;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.institutionalDocumentRef {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: #d1c5b5;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.institutionalDraftList {
+  display: grid;
+  gap: 12px;
+}
+
+.institutionalDraftList div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  color: #e2e2e9;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.institutionalDraftList strong {
+  color: #aacaed;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.institutionalDraftList .pending {
+  border-left: 2px solid rgba(255, 180, 171, 0.3);
+  opacity: 0.7;
+}
+
+.institutionalDraftList .pending strong {
+  color: rgba(255, 180, 171, 0.7);
+}
+
+.institutionalPipeline {
+  padding-top: 96px;
+}
+
+.institutionalPipelineHeader {
+  max-width: 760px;
+  margin: 0 auto 64px;
+  text-align: center;
+}
+
+.landingProblemSection .institutionalPipelineHeader h2 {
+  font-size: clamp(32px, 3.4vw, 48px);
+  line-height: 1.2;
+}
+
+.institutionalPipelineHeader span {
+  display: block;
+  width: 64px;
+  height: 4px;
+  margin: 16px auto 0;
+  border-radius: 999px;
+  background: rgba(231, 193, 129, 0.3);
+}
+
+.institutionalStepGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.institutionalStep {
+  position: relative;
+  overflow: hidden;
+  min-height: 186px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: #20242b;
+  padding: 24px;
+}
+
+.institutionalStepIcon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  border-radius: 999px;
+  background: #1e2025;
+  color: #e7c181;
+}
+
+.institutionalStep h3 {
+  margin: 0 0 8px;
+  color: #e2e2e9;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+}
+
+.institutionalStep p {
+  margin: 0;
+  color: #d1c5b5;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.institutionalStep > i {
+  position: absolute;
+  right: -18px;
+  top: 50%;
+  width: 34px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .landingLogoBand {
-  padding-top: 22px;
+  position: relative;
+  width: 100%;
+  margin-top: 26px;
+  padding: 96px 0;
+  overflow: hidden;
+  border-top: 1px solid #2a2d36;
+  border-bottom: 1px solid #2a2d36;
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    repeating-linear-gradient(90deg, rgba(231, 193, 129, 0.06) 0 1px, transparent 1px 92px);
+  color: #e2e2e8;
+}
+
+.landingMain > .landingSection.landingLogoBand {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.landingLogoBand::before,
+.landingLogoBand::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(231, 193, 129, 0.7), transparent);
+  pointer-events: none;
+}
+
+.landingLogoBand::before {
+  top: 28px;
+}
+
+.landingLogoBand::after {
+  bottom: 28px;
 }
 
 .landingLogoPanel {
-  padding: 58px 30px 46px;
+  position: relative;
+  width: min(1180px, calc(100% - 80px));
+  margin: 0 auto;
+  padding: 44px 40px 38px;
+  overflow: hidden;
+  border: 1px solid rgba(185, 151, 91, 0.28);
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111317;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+
+.landingLogoPanel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-top: 3px solid #b9975b;
+  pointer-events: none;
+}
+
+.landingLogoPanel .landingEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  color: #e7c181;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
+
+.landingLogoPanel .landingEyebrow::before {
+  content: "";
+  width: 34px;
+  height: 1px;
+  background: #b9975b;
+}
+
+.landingLogoPanel h2 {
+  max-width: 840px;
+  color: #e2e2e8;
+  font-family: "EB Garamond", serif;
+  font-weight: 500;
+}
+
+.landingLogoPanel .landingSectionLead {
+  max-width: 700px;
+  color: #d1c5b5;
+  font-family: "IBM Plex Sans", sans-serif;
 }
 
 .landingLogoViewport {
   position: relative;
   overflow: hidden;
-  margin-top: 34px;
+  margin-top: 38px;
+  padding: 22px 0;
+  border-top: 1px solid #2a2d36;
+  border-bottom: 1px solid #2a2d36;
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111318;
+}
+
+.landingLogoViewport::before,
+.landingLogoViewport::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: 84px;
+  height: 100%;
+  pointer-events: none;
+}
+
+.landingLogoViewport::before {
+  left: 0;
+  background: linear-gradient(90deg, #07080c, rgba(7, 8, 12, 0));
+}
+
+.landingLogoViewport::after {
+  right: 0;
+  background: linear-gradient(270deg, #07080c, rgba(7, 8, 12, 0));
 }
 
 .landingLogoTrack {
@@ -244,23 +1243,48 @@ body {
 
 .landingLogoPill {
   flex: 0 0 auto;
-  width: 126px;
-  height: 126px;
-  border: 1px solid #e1d7ca;
-  border-radius: 999px;
-  background: #fffdf9;
+  width: 148px;
+  height: 92px;
+  border: 1px solid #2a2d36;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(30, 32, 36, 0.98), rgba(17, 19, 23, 0.98)),
+    #111317;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  padding: 14px 16px;
   text-align: center;
+  box-shadow: inset 0 1px 0 rgba(231, 193, 129, 0.08);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    opacity 180ms ease;
+}
+
+.landingLogoPill:hover {
+  border-color: rgba(231, 193, 129, 0.56);
+  background:
+    linear-gradient(180deg, rgba(42, 45, 54, 0.96), rgba(23, 26, 33, 0.98)),
+    #171a21;
 }
 
 .landingLogoPill img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  border-radius: 999px;
+  border-radius: 0;
+  filter: grayscale(1) brightness(1.16) contrast(0.92);
+  opacity: 0.82;
+  mix-blend-mode: screen;
+  transition:
+    filter 180ms ease,
+    opacity 180ms ease;
+}
+
+.landingLogoPill:hover img {
+  filter: grayscale(0.35) brightness(1.08) contrast(0.98);
+  opacity: 0.95;
 }
 
 @keyframes landing-logo-marquee {
@@ -386,95 +1410,280 @@ body {
   background: #e9e2d7;
 }
 
-.landingSecurityCard,
-.landingClosingCard {
-  max-width: 1240px;
-  margin: 34px auto 0;
-  padding: 44px 40px;
-  text-align: center;
+.landingSecuritySection,
+.landingValueSection {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111318;
+  color: #e2e2e8;
 }
 
-.landingSecurityCard svg {
-  color: var(--landing-accent);
+.landingMain > .landingSection.landingSecuritySection,
+.landingMain > .landingSection.landingValueSection {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.landingSecuritySection {
+  padding: 112px 0 28px;
+  border-top: 1px solid #2a2d36;
+}
+
+.landingValueSection {
+  padding: 28px 0 116px;
+  border-bottom: 1px solid #2a2d36;
+}
+
+.landingSecuritySection::before,
+.landingValueSection::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(231, 193, 129, 0.64), transparent);
+  pointer-events: none;
+}
+
+.landingSecuritySection::before {
+  top: 36px;
+}
+
+.landingValueSection::after {
+  bottom: 36px;
+}
+
+.landingSecurityCard,
+.landingClosingCard {
+  position: relative;
+  width: min(1180px, calc(100% - 80px));
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(185, 151, 91, 0.28);
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111317;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+
+.landingSecurityCard {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 0.72fr);
+  gap: 40px;
+  align-items: center;
+  padding: 48px;
+}
+
+.landingClosingCard {
+  padding: 56px 48px;
+  text-align: left;
+}
+
+.landingSecurityCard::before,
+.landingClosingCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-top: 3px solid #b9975b;
+  pointer-events: none;
+}
+
+.landingSecurityHeader {
+  position: relative;
+  z-index: 1;
+}
+
+.landingSecurityIcon {
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 22px;
+  border: 1px solid rgba(231, 193, 129, 0.34);
+  background: #1e2024;
+  color: #e7c181;
+}
+
+.landingSecurityCard .landingEyebrow,
+.landingClosingCard .landingEyebrow {
+  color: #e7c181;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
+
+.landingSecurityCard h2,
+.landingClosingCard h2 {
+  color: #e2e2e8;
+  font-family: "EB Garamond", serif;
+  font-weight: 500;
+  line-height: 1.02;
 }
 
 .landingSecurityCard h2 {
-  font-size: clamp(46px, 4vw, 72px);
+  max-width: 720px;
   margin-top: 12px;
-}
-
-.landingSecurityCard p {
-  max-width: 760px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.landingSecurityBadges {
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 28px;
-}
-
-.landingSecurityBadges span {
-  border: 1px solid #d8cdbf;
-  background: #fff9f1;
-  color: #7a6d5f;
-  padding: 8px 12px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: clamp(46px, 4vw, 72px);
 }
 
 .landingClosingCard h2 {
+  max-width: 900px;
   font-size: clamp(44px, 3.8vw, 70px);
 }
 
-.landingClosingCard p {
+.landingSecurityCard p:not(.landingEyebrow),
+.landingClosingCard p:not(.landingEyebrow) {
   max-width: 760px;
-  margin-left: auto;
-  margin-right: auto;
+  margin-top: 18px;
+  color: #d1c5b5;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.landingSecurityBadges {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.landingSecurityBadges span {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  border: 1px solid #2a2d36;
+  border-left: 2px solid rgba(231, 193, 129, 0.5);
+  background:
+    linear-gradient(180deg, rgba(30, 32, 36, 0.98), rgba(17, 19, 23, 0.98)),
+    #111317;
+  color: #e2e2e8;
+  padding: 16px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.45;
+  text-transform: uppercase;
 }
 
 .landingClosingCard .landingCtaButton {
-  margin-top: 22px;
+  min-width: 176px;
+  min-height: 52px;
+  margin-top: 28px;
+  border-color: #e7c181;
+  background: #e7c181;
+  color: #111317;
 }
 
 .landingFooter {
-  width: min(1660px, calc(100% - 72px));
-  margin: 4px auto 0;
-  padding: 24px 0 44px;
-  border-top: 1px solid var(--landing-line);
+  width: 100%;
+  margin: 0;
+  padding: 34px 40px 48px;
+  border-top: 1px solid #2a2d36;
+  background:
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%),
+    #111318;
   text-align: center;
-  color: #766e66;
+  color: #d1c5b5;
 }
 
 .landingFooter strong {
   display: block;
-  color: #2c2825;
-  font-size: 15px;
-  font-weight: 700;
+  color: #e2e2e8;
+  font-family: "EB Garamond", serif;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 .landingFooter p,
 .landingFooter span {
   margin-top: 8px;
+  color: #d1c5b5;
+  font-family: "IBM Plex Sans", sans-serif;
   font-size: 13px;
+  line-height: 1.5;
 }
 
 @media (max-width: 1120px) {
-  .landingNav,
-  .landingMain,
-  .landingFooter {
+  .landingNav {
     width: min(100%, calc(100% - 40px));
   }
 
+  .landingNav {
+    inset: 0 20px auto;
+    padding: 0;
+  }
+
+  .landingMain {
+    width: 100%;
+  }
+
   .landingHero {
-    min-height: 760px;
+    min-height: auto;
+  }
+
+  .landingHeroInner {
+    width: min(100%, calc(100% - 40px));
+    min-height: auto;
+    grid-template-columns: 1fr;
+    padding: 72px 0 28px;
+  }
+
+  .landingHeroCopy {
+    grid-column: 1;
+    max-width: 680px;
+  }
+
+  .landingHeroVisual {
+    grid-column: 1;
+    height: 520px;
+    margin-top: 16px;
+  }
+
+  .landingMain > .landingSection {
+    width: min(100%, calc(100% - 40px));
   }
 
   .landingProblemGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .institutionalShell {
+    width: min(100%, calc(100% - 40px));
+  }
+
+  .institutionalGrid {
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+
+  .institutionalIntro {
+    max-width: 760px;
+  }
+
+  .institutionalMockup {
+    min-height: 0;
+  }
+
+  .institutionalStepGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .institutionalStep > i {
+    display: none;
+  }
+
+  .landingSecurityCard {
     grid-template-columns: 1fr;
   }
 
@@ -496,14 +1705,16 @@ body {
 
 @media (max-width: 760px) {
   .landingNav {
-    width: calc(100% - 28px);
+    inset: 0 14px auto;
+    width: auto;
     flex-wrap: wrap;
     gap: 14px;
-    padding-top: 10px;
+    min-height: 96px;
+    padding: 10px 0;
   }
 
   .landingWordmark {
-    font-size: 42px;
+    font-size: 24px;
   }
 
   .landingNavLinks {
@@ -514,28 +1725,67 @@ body {
   }
 
   .landingSignupButton {
-    min-width: 112px;
-    min-height: 44px;
+    min-width: 0;
+    min-height: 40px;
     margin-left: auto;
   }
 
-  .landingMain,
-  .landingFooter {
-    width: calc(100% - 28px);
+  .landingMain {
+    width: 100%;
   }
 
   .landingHero {
-    min-height: 620px;
-    padding-bottom: 70px;
+    padding: 96px 0 44px;
   }
 
   .landingHero h1 {
-    font-size: 58px;
-    line-height: 1.02;
+    font-size: 38px;
+    line-height: 1.1;
   }
 
-  .landingHero p {
-    font-size: 30px;
+  .landingHeroInner {
+    width: calc(100% - 28px);
+    padding-top: 44px;
+  }
+
+  .landingHeroCopy {
+    gap: 22px;
+  }
+
+  .landingHeroEyebrow strong {
+    font-size: 11px;
+  }
+
+  .landingHeroLead {
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .landingHeroBody {
+    font-size: 15px;
+    line-height: 23px;
+  }
+
+  .landingHeroActions {
+    flex-direction: column;
+  }
+
+  .landingHeroPrimary,
+  .landingHeroSecondary {
+    width: 100%;
+  }
+
+  .landingHeroTrust {
+    padding-top: 22px;
+    font-size: 12px;
+  }
+
+  .landingHeroVisual {
+    display: none;
+  }
+
+  .landingMain > .landingSection {
+    width: calc(100% - 28px);
   }
 
   .landingProblemSection h2,
@@ -572,6 +1822,66 @@ body {
     padding-bottom: 28px;
   }
 
+  .landingMain > .landingProblemSection {
+    padding: 72px 0;
+  }
+
+  .institutionalShell {
+    width: calc(100% - 28px);
+  }
+
+  .landingProblemSection .institutionalIntro h2 {
+    font-size: 38px;
+  }
+
+  .institutionalIntro p:not(.institutionalKicker) {
+    font-size: 16px;
+  }
+
+  .institutionalActions {
+    flex-direction: column;
+  }
+
+  .institutionalActions button {
+    width: 100%;
+  }
+
+  .institutionalMatterBar,
+  .institutionalMatterGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .institutionalMatterBar {
+    display: grid;
+  }
+
+  .institutionalMockup {
+    padding: 16px;
+  }
+
+  .institutionalMatterGrid,
+  .institutionalMatterColumn {
+    gap: 16px;
+  }
+
+  .institutionalDocumentRef,
+  .institutionalDraftList div {
+    flex-wrap: wrap;
+  }
+
+  .institutionalPipeline {
+    padding-top: 64px;
+  }
+
+  .institutionalPipelineHeader {
+    margin-bottom: 36px;
+  }
+
+  .institutionalStepGrid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
   .landingLogoTrack {
     gap: 14px;
   }
@@ -579,6 +1889,23 @@ body {
   .landingLogoPill {
     width: 108px;
     height: 108px;
+  }
+
+  .landingSecuritySection {
+    padding-top: 82px;
+  }
+
+  .landingValueSection {
+    padding-bottom: 82px;
+  }
+
+  .landingSecurityCard,
+  .landingClosingCard {
+    width: calc(100% - 28px);
+  }
+
+  .landingSecurityBadges {
+    grid-template-columns: 1fr;
   }
 
   .landingAct {

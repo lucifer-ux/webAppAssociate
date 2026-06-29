@@ -195,19 +195,6 @@ type AskAiState = {
   error: string;
 };
 
-const SINGLE_DRAFT_STAGE_ORDER = [
-  "loading_context",
-  "matter_grounding",
-  "targeted_grounding",
-  "query_enhancement",
-  "reference_retrieval",
-  "skeleton_generation",
-  "draft_finalization",
-  "case_citation_review",
-  "formatting",
-  "saving",
-] as const;
-
 const appendLimitedEntries = (current: string[], next: string, maxEntries = 80) => {
   const normalized = String(next || "").trim();
   if (!normalized) return current;
@@ -239,6 +226,25 @@ const stageLabelForThought = (stage: string) => {
   switch (stage) {
     case "loading_context":
       return "Context";
+    case "draft_type_resolution":
+      return "Intent";
+    case "reference_selection":
+    case "reference_rule_extraction":
+      return "Reference";
+    case "blueprint_generation":
+      return "Blueprint";
+    case "fact_hydration":
+      return "Facts";
+    case "gap_gate":
+      return "Gaps";
+    case "draft_execution_packet":
+      return "Execution";
+    case "section_drafting":
+      return "Sections";
+    case "review":
+      return "Review";
+    case "targeted_patching":
+      return "Patcher";
     case "matter_grounding":
     case "targeted_grounding":
       return "Matter";
@@ -718,20 +724,66 @@ const DraftingPage = () => {
   }, [singleDraftStreamState?.thinkingText, singleDraftThinkingTranscript]);
   const singleDraftExecutionSteps = useMemo(() => {
     const currentStage = String(singleDraftStreamState?.stage || "");
-    const currentIndex = SINGLE_DRAFT_STAGE_ORDER.indexOf(
-      currentStage as (typeof SINGLE_DRAFT_STAGE_ORDER)[number],
-    );
+    const latestStageOrder = [
+      "loading_context",
+      "draft_type_resolution",
+      "reference_selection",
+      "reference_rule_extraction",
+      "blueprint_generation",
+      "fact_hydration",
+      "gap_gate",
+      "draft_execution_packet",
+      "section_drafting",
+      "review",
+      "targeted_patching",
+      "formatting",
+      "saving",
+    ];
+    const legacyStageOrder = [
+      "loading_context",
+      "matter_grounding",
+      "targeted_grounding",
+      "query_enhancement",
+      "reference_retrieval",
+      "skeleton_generation",
+      "draft_finalization",
+      "case_citation_review",
+      "formatting",
+      "saving",
+    ];
+    const isLatestStage = latestStageOrder.includes(currentStage);
+    const visibleStages = isLatestStage
+      ? [
+          { id: "loading_context", label: "Load matter context" },
+          { id: "draft_type_resolution", label: "Resolve draft intent" },
+          { id: "reference_selection", label: "Select reference form" },
+          { id: "reference_rule_extraction", label: "Extract reference rules" },
+          { id: "blueprint_generation", label: "Create blueprint" },
+          { id: "fact_hydration", label: "Hydrate matter facts" },
+          { id: "gap_gate", label: "Check gaps" },
+          { id: "draft_execution_packet", label: "Lock execution packet" },
+          { id: "section_drafting", label: "Draft sections" },
+          { id: "review", label: "Review draft" },
+          { id: "targeted_patching", label: "Patch flagged sections" },
+          { id: "formatting", label: "Format structure" },
+          { id: "saving", label: "Save workspace" },
+        ]
+      : [
+          { id: "loading_context", label: "Load matter context" },
+          { id: "matter_grounding", label: "Use matter grounding" },
+          { id: "targeted_grounding", label: "Fetch missing document facts" },
+          { id: "query_enhancement", label: "Refine draft request" },
+          { id: "reference_retrieval", label: "Pull reference guidance" },
+          { id: "skeleton_generation", label: "Generate draft skeleton" },
+          { id: "draft_finalization", label: "Finalize draft content" },
+          { id: "case_citation_review", label: "Check case citations" },
+          { id: "formatting", label: "Format the structure" },
+          { id: "saving", label: "Save to draft workspace" },
+        ];
+    const order = isLatestStage ? latestStageOrder : legacyStageOrder;
+    const currentIndex = order.indexOf(currentStage);
     return [
-      { id: "loading_context", label: "Load matter context" },
-      { id: "matter_grounding", label: "Use matter grounding" },
-      { id: "targeted_grounding", label: "Fetch missing document facts" },
-      { id: "query_enhancement", label: "Refine draft request" },
-      { id: "reference_retrieval", label: "Pull reference guidance" },
-      { id: "skeleton_generation", label: "Generate draft skeleton" },
-      { id: "draft_finalization", label: "Finalize draft content" },
-      { id: "case_citation_review", label: "Check case citations" },
-      { id: "formatting", label: "Format the structure" },
-      { id: "saving", label: "Save to draft workspace" },
+      ...visibleStages,
     ].map((item, index) => ({
       ...item,
       status:
@@ -1103,6 +1155,69 @@ const DraftingPage = () => {
               ? `Switching model provider. ${reason}`
               : "Switching model provider.",
             "Model",
+          );
+          break;
+        }
+        case "reference_candidate_selected": {
+          const choice = payload.choice as
+            | { match_type?: string; reason?: string }
+            | undefined;
+          const referenceBacked = Boolean(payload.referenceBacked);
+          const reason = String(choice?.reason || "").trim();
+          pushThinkingEntry(
+            referenceBacked
+              ? reason || "Reference form selected."
+              : reason || "No reference-backed form selected; using fallback structure.",
+            "Reference",
+          );
+          break;
+        }
+        case "blueprint_ready": {
+          const sectionCount = Number(payload.sectionCount || 0);
+          pushThinkingEntry(
+            sectionCount
+              ? `Blueprint created with ${sectionCount} sections.`
+              : "Blueprint created.",
+            "Blueprint",
+          );
+          break;
+        }
+        case "facts_hydrated": {
+          const factCount = Number(payload.factCount || 0);
+          const missingCount = Number(payload.missingCount || 0);
+          pushThinkingEntry(
+            `Hydrated ${factCount} facts and identified ${missingCount} missing inputs.`,
+            "Facts",
+          );
+          break;
+        }
+        case "gap_gate_ready": {
+          const totalMissing = Number(payload.totalMissing || 0);
+          pushThinkingEntry(
+            totalMissing
+              ? `${totalMissing} placeholders remain allowed for drafting.`
+              : "Required facts passed the gap check.",
+            "Gaps",
+          );
+          break;
+        }
+        case "review_ready": {
+          const patchCount = Number(payload.patchCount || 0);
+          pushThinkingEntry(
+            patchCount
+              ? `Review requested patches for ${patchCount} sections.`
+              : "Review completed without targeted patches.",
+            "Review",
+          );
+          break;
+        }
+        case "patch_ready": {
+          const patchedSectionCount = Number(payload.patchedSectionCount || 0);
+          pushThinkingEntry(
+            patchedSectionCount
+              ? `Patched ${patchedSectionCount} flagged sections.`
+              : "Patch pass completed.",
+            "Patcher",
           );
           break;
         }
