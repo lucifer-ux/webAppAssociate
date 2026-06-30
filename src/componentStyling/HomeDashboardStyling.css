@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&family=Work+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=EB+Garamond:wght@500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&family=Work+Sans:wght@400;500;600;700&display=swap");
 
 :root {
   --paper: #fbf9f4;
@@ -162,7 +162,6 @@
 .welcomeNameInput {
   width: min(380px, 42vw);
   border: 0;
-  border-bottom: 1px solid transparent;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -633,28 +632,37 @@
     margin-right: 16px;
     padding: 20px;
   }
-
 }
 
 .activeMattersSection {
   max-width: none;
   margin: 0 0 32px;
   padding: 22px 32px;
-  border: 0;
-  background: #fbf9f4;
+  border: 1px solid rgba(185, 151, 91, 0.22);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(185, 151, 91, 0.1), transparent 28%),
+    linear-gradient(
+      180deg,
+      rgba(17, 19, 24, 0.94) 0%,
+      rgba(12, 14, 19, 0.98) 100%
+    ),
+    #111318;
+  box-shadow:
+    0 20px 70px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(231, 193, 129, 0.08);
 }
 
 .activeMattersSection h2 {
   margin: 0;
   font-size: 30px;
   font-weight: 500;
-  color: #2f201d;
+  color: #f4efe6;
 }
 
 .activeMattersHead {
   display: flex;
   align-items: center;
-  border-bottom: 2px solid rgba(112, 13, 13, 0.35);
+  border-bottom: 1px solid rgba(185, 151, 91, 0.34);
   padding-bottom: 8px;
 }
 
@@ -669,30 +677,54 @@
   padding: 14px;
   text-align: left;
   cursor: pointer;
-  border: 1px solid #eadfce;
-  border-radius: 10px;
-  background: #fdfaf6;
+  border: 1px solid rgba(185, 151, 91, 0.26);
+  border-radius: 0;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(30, 32, 36, 0.94) 0%,
+      rgba(17, 19, 24, 0.98) 100%
+    ),
+    #111318;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(231, 193, 129, 0.08);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 .activeMatterCard:hover {
-  background: #f7f2ec;
-  box-shadow: inset 0 0 0 1px #ddcfbf;
+  border-color: rgba(231, 193, 129, 0.48);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(40, 42, 46, 0.98) 0%,
+      rgba(17, 19, 24, 1) 100%
+    ),
+    #111318;
+  box-shadow:
+    0 20px 54px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(231, 193, 129, 0.14);
+  transform: translateY(-2px);
 }
 
 .activeMatterCard h3 {
   margin: 0;
-  font-family: "Newsreader", serif;
+  font-family: "EB Garamond", "Newsreader", serif;
   font-size: 22px;
   font-weight: 500;
   line-height: 1.2;
-  color: #2b1a18;
+  color: #f4efe6;
 }
 
 .activeMatterCard p {
   margin: 8px 0 0;
-  font-family: "Work Sans", sans-serif;
+  font-family: "IBM Plex Sans", "Work Sans", sans-serif;
   font-size: 12px;
-  color: #786d64;
+  color: #d1c5b5;
 }
 
 .activeResearchesSection {
@@ -745,7 +777,9 @@
   border-radius: 10px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .researchDemoCard:hover {
@@ -876,6 +910,40 @@
 .emailCard {
   border: 0;
   background: #fbf9f4;
+}
+
+.emailCard.activeMatterCard {
+  border: 1px solid rgba(185, 151, 91, 0.26);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(30, 32, 36, 0.94) 0%,
+      rgba(17, 19, 24, 0.98) 100%
+    ),
+    #111318;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(231, 193, 129, 0.08);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.emailCard.activeMatterCard:hover {
+  border-color: rgba(231, 193, 129, 0.48);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(40, 42, 46, 0.98) 0%,
+      rgba(17, 19, 24, 1) 100%
+    ),
+    #111318;
+  box-shadow:
+    0 20px 54px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(231, 193, 129, 0.14);
+  transform: translateY(-2px);
 }
 
 .emailCard.expanded {
@@ -1126,5 +1194,737 @@
   .draftBlankLoading h1,
   .emailCardTrigger h3 {
     font-size: clamp(1.45rem, 7vw, 1.9rem);
+  }
+}
+
+@keyframes legalOpsFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Stitch-inspired operational dashboard shell. */
+.homeDashPage {
+  --ops-bg: #0c0e13;
+  --ops-surface: #111318;
+  --ops-panel: #171a21;
+  --ops-panel-2: #1e2024;
+  --ops-line: rgba(154, 143, 129, 0.24);
+  --ops-line-strong: rgba(185, 151, 91, 0.42);
+  --ops-brass: #b9975b;
+  --ops-brass-bright: #e7c181;
+  --ops-text: #f4efe6;
+  --ops-muted: #d1c5b5;
+  --ops-blue: #a9caec;
+  --ops-green: #9dc79f;
+  background:
+    radial-gradient(
+      circle at 72% 10%,
+      rgba(111, 143, 175, 0.08),
+      transparent 30%
+    ),
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%), #111318;
+  color: var(--ops-text);
+  font-family: "IBM Plex Sans", "Work Sans", sans-serif;
+}
+
+.homeDashPage::before {
+  content: "";
+  position: fixed;
+  inset: 64px 0 0 256px;
+  pointer-events: none;
+  background-image: radial-gradient(
+    rgba(231, 193, 129, 0.12) 1px,
+    transparent 1px
+  );
+  background-size: 12px 12px;
+  opacity: 0.18;
+  z-index: 0;
+}
+
+.homeDashPage .homeDashTopBar {
+  height: 52px;
+  background: rgba(12, 14, 19, 0.96);
+  border-bottom: 1px solid rgba(185, 151, 91, 0.22);
+  box-shadow: 0 16px 46px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+.homeDashPage .topBarLeft {
+  gap: 14px;
+}
+
+.homeDashPage .topBarLeft::after {
+  content: "ASSOCIATE";
+  font-family: "EB Garamond", "Newsreader", serif;
+  font-size: 24px;
+  letter-spacing: 0.02em;
+  color: var(--ops-text);
+  margin-left: 2px;
+}
+
+.homeDashPage .iconBtn,
+.homeDashPage .avatarBtn,
+.homeDashPage .sidebarToggleBtn {
+  border: 1px solid rgba(154, 143, 129, 0.2);
+  border-radius: 8px;
+  background: rgba(23, 26, 33, 0.72);
+  color: #c0c6da;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.homeDashPage .iconBtn:hover,
+.homeDashPage .avatarBtn:hover,
+.homeDashPage .sidebarToggleBtn:hover {
+  border-color: rgba(231, 193, 129, 0.44);
+  background: rgba(30, 32, 36, 0.92);
+  color: var(--ops-brass-bright);
+  transform: translateY(-1px);
+}
+
+.homeDashPage .sectionRouteNav {
+  gap: 10px;
+}
+
+.homeDashPage .sectionRouteBtn {
+  min-height: 34px;
+  border-radius: 0;
+  border-color: transparent;
+  color: #9a8f81;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.homeDashPage .sectionRouteBtn:hover,
+.homeDashPage .sectionRouteBtn.active {
+  border-color: rgba(231, 193, 129, 0.42);
+  background: rgba(185, 151, 91, 0.1);
+  color: var(--ops-text);
+}
+
+.homeDashPage .leftRail {
+  top: 52px;
+  width: 256px;
+  padding: 22px 16px;
+  background: rgba(17, 19, 24, 0.98);
+  border-right: 1px solid rgba(185, 151, 91, 0.2);
+  box-shadow: 20px 0 60px rgba(0, 0, 0, 0.22);
+}
+
+.homeDashPage .rightToolsRail {
+  top: 52px;
+  width: 80px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(17, 19, 24, 0.98) 0%,
+      rgba(12, 14, 19, 0.98) 100%
+    ),
+    #111318;
+  border-left: 1px solid rgba(185, 151, 91, 0.2);
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.22);
+}
+
+.homeDashPage .toolRailItem {
+  color: #d1c5b5;
+  font-family: "IBM Plex Sans", "Work Sans", sans-serif;
+  font-style: normal;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.homeDashPage .toolRailItem:hover,
+.homeDashPage .toolRailItem.active {
+  background: rgba(30, 32, 36, 0.92);
+  color: var(--ops-brass-bright);
+  transform: translateX(-1px);
+}
+
+.homeDashPage .toolRailItem svg {
+  color: currentColor;
+}
+
+.homeDashPage .leftRail.collapsed {
+  width: 84px;
+}
+
+.homeDashPage .leftRailLinks {
+  display: none;
+}
+
+.homeDashPage .recentSectionHead {
+  border-bottom: 1px solid rgba(154, 143, 129, 0.22);
+  padding: 0 0 10px;
+  margin-bottom: 12px;
+}
+
+.homeDashPage .recentSectionHead h3 {
+  font-family: "EB Garamond", "Newsreader", serif;
+  color: var(--ops-text);
+}
+
+.homeDashPage .recentMatterItem,
+.homeDashPage .matterAddTile,
+.homeDashPage .researchStartTile {
+  border-radius: 8px;
+  border-color: rgba(154, 143, 129, 0.2);
+  background: rgba(23, 26, 33, 0.62);
+  color: var(--ops-muted);
+}
+
+.homeDashPage .recentMatterItem:hover,
+.homeDashPage .recentMatterItem.active,
+.homeDashPage .matterAddTile:hover,
+.homeDashPage .researchStartTile:hover {
+  border-color: rgba(231, 193, 129, 0.42);
+  background: rgba(30, 32, 36, 0.92);
+  color: var(--ops-brass-bright);
+}
+
+.homeDashPage .recentItemTitle,
+.homeDashPage .recentItemCompact,
+.homeDashPage .matterAddPlus,
+.homeDashPage .researchStartLabel,
+.homeDashPage .researchStartPlus {
+  color: inherit;
+}
+
+.homeDashPage .recentMatterItem.active .recentItemTitle,
+.homeDashPage .recentMatterItem:hover .recentItemTitle,
+.homeDashPage .recentMatterItem.active .recentItemCompact,
+.homeDashPage .recentMatterItem:hover .recentItemCompact {
+  color: var(--ops-brass-bright);
+}
+
+.homeDashMain {
+  position: relative;
+  z-index: 1;
+  padding-top: 52px;
+  padding-left: 256px;
+  padding-right: 0;
+  background:
+    radial-gradient(
+      circle at 76% 4%,
+      rgba(185, 151, 91, 0.06),
+      transparent 28%
+    ),
+    linear-gradient(180deg, #111318 0%, #0c0e13 100%), #111318;
+}
+
+.homeDashMain.sidebarCollapsed {
+  padding-left: 84px;
+}
+
+.legalOpsDashboard {
+  position: relative;
+  min-height: calc(100vh - 52px);
+  padding: 28px 32px 118px;
+  overflow: hidden;
+}
+
+.legalOpsDashboard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    radial-gradient(rgba(231, 193, 129, 0.08) 1px, transparent 1px);
+  background-size:
+    100% 56px,
+    14px 14px;
+  opacity: 0.52;
+}
+
+.legalOpsDashboard > * {
+  position: relative;
+  z-index: 1;
+  animation: legalOpsFadeUp 360ms ease both;
+}
+
+.welcomeBlock {
+  padding: 0 0 26px;
+}
+
+.welcomeHeadingRow {
+  border-bottom: 0;
+  align-items: flex-start;
+}
+
+.welcomeHeadingTitle {
+  padding: 0;
+  font-family: "EB Garamond", "Newsreader", serif;
+  font-size: clamp(2.25rem, 3.4vw, 3.2rem);
+  line-height: 1.04;
+  color: var(--ops-text);
+}
+
+.welcomeHeadingTitle::before {
+  display: none;
+}
+
+.welcomeNameInput {
+  color: inherit;
+  border-bottom-color: transparent;
+}
+
+.welcomeNameInput:hover,
+.welcomeNameInput:focus {
+  border-bottom-color: rgba(231, 193, 129, 0.44);
+}
+
+.welcomeOpsSummary,
+.welcomeBlock p.welcomeOpsSummary {
+  margin: 6px 0 0;
+  max-width: none;
+  color: #614725;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.welcomeCurrentTime {
+  color: var(--ops-muted);
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+}
+
+.workQueueSection,
+.activeMattersSection,
+.activeResearchesSection {
+  max-width: 1160px;
+  margin: 0 0 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workQueueSection h2,
+.activeMattersSection h2,
+.activeResearchesHead h2 {
+  margin: 0;
+  color: var(--ops-text);
+  font-family: "EB Garamond", "Newsreader", serif;
+  font-size: 28px;
+  font-weight: 500;
+}
+
+.workQueueTable {
+  margin-top: 12px;
+  border-top: 1px solid rgba(154, 143, 129, 0.24);
+  border-bottom: 1px solid rgba(154, 143, 129, 0.18);
+}
+
+.workQueueHeader,
+.workQueueRow {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1.1fr) minmax(150px, 0.9fr) 140px minmax(160px, 1fr)
+    92px;
+  gap: 18px;
+  align-items: center;
+}
+
+.workQueueHeader {
+  padding: 10px 10px 9px;
+  color: #9a8f81;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workQueueRow {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-top: 1px solid rgba(154, 143, 129, 0.16);
+  background: transparent;
+  color: var(--ops-muted);
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+  font-family: "IBM Plex Sans", "Work Sans", sans-serif;
+  font-size: 15px;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.workQueueRow:hover {
+  background: rgba(30, 32, 36, 0.64);
+  color: var(--ops-text);
+  transform: translateX(2px);
+}
+
+.workQueueStatus {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(169, 202, 236, 0.28);
+  background: rgba(169, 202, 236, 0.14);
+  color: var(--ops-blue);
+  padding: 0 10px;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workQueueStatus.is-ready {
+  border-color: rgba(157, 199, 159, 0.35);
+  background: rgba(157, 199, 159, 0.15);
+  color: #b9d7b9;
+}
+
+.workQueueAction {
+  justify-self: end;
+  border: 1px solid rgba(154, 143, 129, 0.3);
+  border-radius: 8px;
+  padding: 6px 12px;
+  color: var(--ops-brass-bright);
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workQueueEmpty {
+  padding: 16px 10px;
+  border-top: 1px solid rgba(154, 143, 129, 0.16);
+  color: var(--ops-muted);
+}
+
+.activeMattersHead,
+.activeResearchesHead {
+  border: 0;
+  padding-bottom: 0;
+}
+
+.activeMatterCards,
+.activeResearchesGrid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.emailCard.activeMatterCard,
+.activeMatterCard,
+.researchDemoCard {
+  min-height: 154px;
+  border: 1px solid rgba(154, 143, 129, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(23, 26, 33, 0.86) 0%,
+      rgba(17, 19, 24, 0.96) 100%
+    ),
+    var(--ops-panel);
+  color: var(--ops-text);
+  padding: 14px;
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(231, 193, 129, 0.07);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.emailCard.activeMatterCard:hover,
+.activeMatterCard:hover,
+.researchDemoCard:hover {
+  border-color: rgba(231, 193, 129, 0.5);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(30, 32, 36, 0.98) 0%,
+      rgba(17, 19, 24, 1) 100%
+    ),
+    var(--ops-panel);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(231, 193, 129, 0.14);
+  transform: translateY(-3px);
+}
+
+.activeMatterCard h3,
+.emailCardTrigger h3,
+.researchDemoCard h3 {
+  margin: 8px 0 0;
+  color: var(--ops-text);
+  font-family: "EB Garamond", "Newsreader", serif;
+  font-size: 22px;
+  line-height: 1.08;
+}
+
+.activeMatterCard p,
+.researchDemoCard p,
+.emailSnippet,
+.emailFrom {
+  color: var(--ops-muted);
+  font-family: "IBM Plex Sans", "Work Sans", sans-serif;
+}
+
+.matterIndex {
+  color: var(--ops-brass-bright);
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+}
+
+.activeMatterStatusPill {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 12px;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(169, 202, 236, 0.28);
+  background: rgba(169, 202, 236, 0.14);
+  color: var(--ops-blue);
+  padding: 0 10px;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.activeMatterStatusPill.is-ready {
+  border-color: rgba(157, 199, 159, 0.36);
+  background: rgba(157, 199, 159, 0.14);
+  color: #b9d7b9;
+}
+
+.activeMatterOpen,
+.activeMatterUpload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 34px;
+  margin-top: 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(185, 151, 91, 0.62);
+  color: var(--ops-brass-bright);
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.activeMatterUpload {
+  border-color: rgba(231, 193, 129, 0.78);
+  background: #b9975b;
+  color: #111318;
+}
+
+.startMatterCard {
+  border-color: rgba(185, 151, 91, 0.32);
+}
+
+.activeResearchesSection {
+  padding-bottom: 20px;
+}
+
+.activeResearchesGrid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.researchDemoCard.startNew {
+  border-style: dashed;
+}
+
+.startNewPlus,
+.startNewHint {
+  color: var(--ops-brass-bright);
+}
+
+.homeDashPage .activeResearchesSection,
+.homeDashPage .activeResearchesHead {
+  background: transparent;
+}
+
+.homeDashPage .activeResearchesHead {
+  border-bottom: 0;
+}
+
+.homeDashPage .activeResearchesHead h2 {
+  padding-left: 0;
+  color: var(--ops-text);
+}
+
+.homeDashPage .activeResearchesHead h2::before {
+  display: none;
+}
+
+.homeDashPage .activeResearchesGrid .researchDemoCard,
+.homeDashPage .activeResearchesGrid .savedResearchCard,
+.homeDashPage .activeResearchesGrid .researchDemoCard.startNew {
+  border: 1px solid rgba(154, 143, 129, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(23, 26, 33, 0.86) 0%,
+      rgba(17, 19, 24, 0.96) 100%
+    ),
+    var(--ops-panel);
+  color: var(--ops-text);
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(231, 193, 129, 0.07);
+}
+
+.homeDashPage .activeResearchesGrid .researchDemoCard:hover,
+.homeDashPage .activeResearchesGrid .savedResearchCard:hover,
+.homeDashPage .activeResearchesGrid .researchDemoCard.startNew:hover {
+  border-color: rgba(231, 193, 129, 0.5);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(30, 32, 36, 0.98) 0%,
+      rgba(17, 19, 24, 1) 100%
+    ),
+    var(--ops-panel);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(231, 193, 129, 0.14);
+}
+
+.homeDashPage .activeResearchesGrid .researchDemoCard h3,
+.homeDashPage .activeResearchesGrid .researchDemoCard.startNew .startNewHint {
+  color: var(--ops-text);
+}
+
+.homeDashPage .activeResearchesGrid .researchDemoCard p {
+  color: var(--ops-muted);
+}
+
+.homeDashPage .activeResearchesGrid .researchDemoCard.startNew .startNewPlus {
+  color: var(--ops-brass-bright);
+}
+
+.chatDockWrap {
+  bottom: 18px;
+  padding-left: 128px;
+  z-index: 45;
+}
+
+.chatDock {
+  border: 1px solid rgba(185, 151, 91, 0.24);
+  background: rgba(17, 19, 24, 0.9);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px);
+}
+
+.chatSparkle {
+  background: transparent;
+  color: var(--ops-brass-bright);
+}
+
+.chatModeToggle {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chatModeBtn {
+  color: var(--ops-muted);
+}
+
+.chatModeBtn.active {
+  background: #b9975b;
+  color: #111318;
+}
+
+.chatInput {
+  color: var(--ops-text);
+}
+
+.chatSubmitBtn {
+  background: #b9975b;
+  color: #111318;
+}
+
+@media (max-width: 1100px) {
+  .activeMatterCards,
+  .activeResearchesGrid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+
+  .workQueueHeader,
+  .workQueueRow {
+    grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.8fr) 112px;
+  }
+
+  .workQueueHeader span:nth-child(4),
+  .workQueueHeader span:nth-child(5),
+  .workQueueRow span:nth-child(4),
+  .workQueueRow span:nth-child(5) {
+    display: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .homeDashPage::before {
+    inset: 84px 0 0 0;
+  }
+
+  .homeDashPage .leftRail {
+    top: 72px;
+  }
+
+  .homeDashMain,
+  .homeDashMain.sidebarCollapsed {
+    padding-top: 84px;
+    padding-left: 0;
+  }
+
+  .legalOpsDashboard {
+    padding: 24px 18px 118px;
+  }
+
+  .chatDockWrap {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .activeMatterCards,
+  .activeResearchesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .workQueueHeader {
+    display: none;
+  }
+
+  .workQueueRow {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    align-items: start;
+  }
+
+  .workQueueRow span:nth-child(4),
+  .workQueueRow span:nth-child(5) {
+    display: inline-flex;
   }
 }

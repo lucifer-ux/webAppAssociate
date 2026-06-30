@@ -1604,11 +1604,11 @@ const MatterSection = ({
     ? atlasTransitionStateByMatterId[activeMatter.id] || null
     : null;
   const isAddFilesDisabled =
-    !activeMatter ||
-    isAppendingMatterFiles ||
     isUploadingMatter ||
-    appendRemainingSlots <= 0 ||
-    isActiveMockMatter;
+    isValidatingUploadFiles ||
+    (activeMatter
+      ? isAppendingMatterFiles || appendRemainingSlots <= 0 || isActiveMockMatter
+      : false);
   const matterHeading = useMemo(() => {
     const extractedPartyNames = Array.isArray(
       activeMatter?.extractedFields?.parties,
@@ -9639,7 +9639,43 @@ const MatterSection = ({
               ))}
             </div>
           </>
-        ) : null}
+        ) : (
+          <section className="matterEmptyUploadPanel" aria-label="Start a matter upload">
+            <div>
+              <p className="matterEyebrow">New Matter</p>
+              <h2>Upload the record to begin.</h2>
+              <p>
+                Add contracts, notices, pleadings, emails, PDFs, or case files.
+                Associate will create the matter workspace from the uploaded
+                material.
+              </p>
+            </div>
+            <div className="matterEmptyUploadActions">
+              <Button
+                type="button"
+                className="matterEmptyUploadButton"
+                onClick={() => openUploadPopup("create")}
+                disabled={isUploadingMatter || isValidatingUploadFiles}
+                showImage
+                image={<Plus size={20} />}
+              >
+                Upload matter
+              </Button>
+              <p>
+                Starting with a legal question instead? Use Active Research to
+                explore the law, authorities, and strategy before creating a
+                matter.
+              </p>
+              <Button
+                type="button"
+                className="matterEmptyResearchButton"
+                onClick={() => navigate("/dashboard/active-research")}
+              >
+                Open Active Research
+              </Button>
+            </div>
+          </section>
+        )}
         {activeMatterTab === "people" ? (
           <section className="matterPeopleSection">
             <div className="matterPeopleHead">

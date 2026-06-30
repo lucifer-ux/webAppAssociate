@@ -96,6 +96,7 @@ body {
   background: rgba(51, 53, 58, 0.32);
 }
 
+.landingSigninButton,
 .landingSignupButton,
 .landingCtaButton {
   border: 1px solid #8d302b;
@@ -109,18 +110,45 @@ body {
   cursor: pointer;
 }
 
+.landingAuthActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.landingSigninButton,
 .landingSignupButton {
   min-width: 0;
   min-height: 40px;
-  padding: 0 16px;
-  border: 0;
-  background: transparent;
-  color: var(--hero-brass);
+  padding: 0 15px;
   font-family: "Inter", sans-serif;
   font-size: 16px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
+}
+
+.landingSigninButton {
+  border: 1px solid rgba(231, 193, 129, 0.24);
+  background: rgba(17, 19, 24, 0.2);
+  color: var(--hero-muted);
+}
+
+.landingSigninButton:hover {
+  border-color: rgba(231, 193, 129, 0.42);
+  background: rgba(51, 53, 58, 0.32);
+  color: var(--hero-ivory);
+}
+
+.landingSignupButton {
+  border: 1px solid var(--hero-brass);
+  background: var(--hero-brass);
+  color: #111318;
+}
+
+.landingSignupButton:hover {
+  background: #f3d49b;
+  color: #0c0e13;
 }
 
 .landingMain {
@@ -1724,10 +1752,15 @@ body {
     flex-wrap: wrap;
   }
 
+  .landingAuthActions {
+    margin-left: auto;
+  }
+
+  .landingSigninButton,
   .landingSignupButton {
     min-width: 0;
     min-height: 40px;
-    margin-left: auto;
+    padding: 0 12px;
   }
 
   .landingMain {

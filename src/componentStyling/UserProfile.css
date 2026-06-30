@@ -1,7 +1,8 @@
 .userProfileOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(21, 15, 12, 0.45);
+  background: rgba(5, 6, 9, 0.72);
+  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -13,9 +14,14 @@
   width: min(460px, calc(100vw - 32px));
   max-height: min(85vh, 720px);
   overflow-y: auto;
-  border: 1px solid #dfbfbc;
-  background: #fbf9f4;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(185, 151, 91, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(185, 151, 91, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(26, 28, 32, 0.98) 0%, rgba(17, 19, 24, 0.98) 100%),
+    #111318;
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(231, 193, 129, 0.1);
   padding: 16px;
 }
 
@@ -23,40 +29,40 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #eadfd8;
+  border-bottom: 1px solid rgba(185, 151, 91, 0.24);
   padding-bottom: 10px;
 }
 
 .userProfileHead strong {
-  font-family: "Newsreader", serif;
+  font-family: "EB Garamond", "Newsreader", serif;
   font-size: 24px;
-  color: #2f2422;
+  color: #f4efe6;
 }
 
 .userProfileCloseBtn {
   width: 30px;
   height: 30px;
-  border: 1px solid #e0c8c5;
-  background: #fff;
-  color: #6f625a;
+  border: 1px solid rgba(185, 151, 91, 0.32);
+  background: rgba(12, 14, 19, 0.72);
+  color: #d1c5b5;
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
 }
 
 .userProfileCloseBtn:hover {
-  border-color: #cda9a4;
-  color: #700d0d;
+  border-color: rgba(231, 193, 129, 0.5);
+  color: #e7c181;
 }
 
 .userProfilePlanChip {
   margin-top: 12px;
   display: inline-flex;
-  border: 1px solid #cfb2ae;
-  background: #f7f2ec;
-  color: #700d0d;
+  border: 1px solid rgba(231, 193, 129, 0.42);
+  background: rgba(231, 193, 129, 0.1);
+  color: #e7c181;
   padding: 4px 8px;
-  font-family: "Work Sans", sans-serif;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -68,28 +74,28 @@
 
 .userProfileSection h4 {
   margin: 0 0 6px;
-  font-family: "Work Sans", sans-serif;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #6f625a;
+  color: #e7c181;
 }
 
 .userProfileSection p {
   margin: 0 0 5px;
-  font-family: "Work Sans", sans-serif;
+  font-family: "IBM Plex Sans", "Work Sans", sans-serif;
   font-size: 13px;
-  color: #3d3431;
+  color: #d1c5b5;
 }
 
 .userProfileUpgradeBtn {
   width: 100%;
   margin-top: 14px;
-  border: 1px solid #4c0003;
-  background: #700d0d;
-  color: #fff;
+  border: 1px solid rgba(231, 193, 129, 0.72);
+  background: #b9975b;
+  color: #111318;
   min-height: 38px;
-  font-family: "Work Sans", sans-serif;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
   font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -97,5 +103,5 @@
 }
 
 .userProfileUpgradeBtn:hover {
-  background: #4c0003;
+  background: #e7c181;
 }

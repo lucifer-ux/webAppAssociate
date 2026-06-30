@@ -1128,9 +1128,12 @@
 
 .draftPaperEditor .draftPlaceholder,
 .draftPaperEditor .draftBlankField {
-  background: #fff0b8;
+  background: #ffe66d;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  border-radius: 3px;
   color: #4c0003;
-  padding: 0 3px;
+  padding: 0 4px;
   font-weight: 600;
 }
 

@@ -28,6 +28,7 @@ const LoginSignUpPage = () => {
     ? query.get("reason") || "Google sign in failed."
     : "";
   const inviteStatus = query.get("invite") || "";
+  const requestedMode = query.get("mode");
   const inviteMessage =
     inviteStatus === "required" || inviteStatus === "missing"
       ? "This email is not invited to Associate."
@@ -43,6 +44,15 @@ const LoginSignUpPage = () => {
       void refreshPendingInvite();
     }
   }, [inviteStatus, refreshPendingInvite]);
+
+  useEffect(() => {
+    if (requestedMode === "signup" || requestedMode === "login") {
+      setMode(requestedMode);
+      setFormError("");
+      setInviteCode("");
+      setIsInviteStep(false);
+    }
+  }, [requestedMode]);
 
   const submitPasswordForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -81,9 +91,11 @@ const LoginSignUpPage = () => {
   };
 
   const toggleMode = () => {
-    setMode((current) => (current === "login" ? "signup" : "login"));
+    const nextMode = mode === "login" ? "signup" : "login";
+    setMode(nextMode);
     setFormError("");
     setInviteCode("");
+    navigate(`/login?mode=${nextMode}`, { replace: true });
   };
 
   return (

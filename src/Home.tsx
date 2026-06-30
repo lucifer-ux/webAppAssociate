@@ -152,8 +152,12 @@ const Home = () => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const showHowAssociateWorks = false;
 
-  const handleLogin = () => {
-    navigate("/login");
+  const handleSignIn = () => {
+    navigate("/login?mode=login");
+  };
+
+  const handleSignUp = () => {
+    navigate("/login?mode=signup");
   };
 
   const handleWalkthroughClick = () => {
@@ -178,9 +182,14 @@ const Home = () => {
             </button>
           </nav>
 
-          <button type="button" className="landingSignupButton" onClick={handleLogin}>
-            Sign Up
-          </button>
+          <div className="landingAuthActions">
+            <button type="button" className="landingSigninButton" onClick={handleSignIn}>
+              Sign In
+            </button>
+            <button type="button" className="landingSignupButton" onClick={handleSignUp}>
+              Sign Up
+            </button>
+          </div>
         </header>
 
         <main className="landingMain">
@@ -215,7 +224,7 @@ const Home = () => {
                 </p>
 
                 <div className="landingHeroActions">
-                  <button type="button" className="landingHeroPrimary" onClick={handleLogin}>
+                  <button type="button" className="landingHeroPrimary" onClick={handleSignUp}>
                     Request Demo
                     <ArrowRight size={18} strokeWidth={1.8} />
                   </button>
@@ -295,7 +304,7 @@ const Home = () => {
                     Upload contracts, notices, emails, PDFs, pleadings, and case files. Associate turns them into matter intelligence, legal research, verified evidence, and source-grounded drafts.
                   </p>
                   <div className="institutionalActions">
-                    <button type="button" onClick={handleLogin}>
+                    <button type="button" onClick={handleSignUp}>
                       Request Demo
                     </button>
                     {showHowAssociateWorks && (
@@ -498,7 +507,7 @@ const Home = () => {
               <p>
                 We're building this for the advocate in Bengaluru with forty active matters and no support staff, not just the firms that already have both.
               </p>
-              <button type="button" className="landingCtaButton" onClick={handleLogin}>
+              <button type="button" className="landingCtaButton" onClick={handleSignUp}>
                 Try Associate
               </button>
             </div>
