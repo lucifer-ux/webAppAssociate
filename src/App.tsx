@@ -51,6 +51,10 @@ function App() {
               element={<ProtectedRoute><ActiveResearchPage /></ProtectedRoute>}
             />
             <Route
+              path="/research"
+              element={<ProtectedRoute><ActiveResearchPage /></ProtectedRoute>}
+            />
+            <Route
               path="/dashboard/drafting"
               element={<ProtectedRoute><DraftingPage /></ProtectedRoute>}
             />

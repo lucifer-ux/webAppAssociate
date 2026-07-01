@@ -71,7 +71,8 @@ const SideBar = ({
     location.pathname === "/drafting" ||
     location.pathname === "/draft";
   const isActiveResearchRoute =
-    location.pathname === "/dashboard/active-research";
+    location.pathname === "/dashboard/active-research" ||
+    location.pathname === "/research";
   const isMatterRoute = location.pathname === "/matter" || location.pathname === "/dashboard";
   const showResearchSection = isActiveResearchRoute;
   const showMatterSection = isMatterRoute;
@@ -136,7 +137,7 @@ const SideBar = ({
 
   const startNewResearch = () => {
     onStartResearch?.();
-    navigate("/dashboard/active-research");
+    navigate("/research");
   };
 
   return (
@@ -199,8 +200,8 @@ const SideBar = ({
                   className={`recentMatterItem ${research.id === activeResearchId ? "active" : ""}`}
                   onClick={() => {
                     onSelectResearch?.(research.id);
-                    if (location.pathname !== "/dashboard/active-research") {
-                      navigate("/dashboard/active-research");
+                    if (!isActiveResearchRoute) {
+                      navigate("/research");
                     }
                   }}
                 >
@@ -220,7 +221,7 @@ const SideBar = ({
                   title={research.query}
                   onClick={() => {
                     onSelectResearch?.(research.id);
-                    navigate("/dashboard/active-research");
+                    navigate("/research");
                   }}
                 >
                   {getCollapsedResearchLabel(research.query)}

@@ -1,4 +1,5 @@
 import "../componentStyling/MatterSection.css";
+import "../componentStyling/TerraMatterWorkspace.css";
 import Button from "./Button";
 import { UiButton, UiInput } from "./ui/Primitives";
 import {
@@ -1350,7 +1351,9 @@ const MatterSection = ({
       }
       return true;
     } catch (error) {
-      setUploadPopupError(error instanceof Error ? error.message : exhaustedMessage);
+      setUploadPopupError(
+        error instanceof Error ? error.message : exhaustedMessage,
+      );
       setIsUploadPopupOpen(true);
       return false;
     }
@@ -1630,7 +1633,9 @@ const MatterSection = ({
     isUploadingMatter ||
     isValidatingUploadFiles ||
     (activeMatter
-      ? isAppendingMatterFiles || appendRemainingSlots <= 0 || isActiveMockMatter
+      ? isAppendingMatterFiles ||
+        appendRemainingSlots <= 0 ||
+        isActiveMockMatter
       : false);
   const matterHeading = useMemo(() => {
     const extractedPartyNames = Array.isArray(
@@ -3056,7 +3061,7 @@ const MatterSection = ({
           </div>
         </div>
         {issues.length || missing.length ? (
-          <article className="matterNextStepsPanel">
+          <article className="matterNextStepsPanel terraAnalysisIssuesPanel">
             <div className="matterNextStepCardHead">
               <strong>Issues and ambiguities</strong>
             </div>
@@ -3088,7 +3093,7 @@ const MatterSection = ({
           </article>
         ) : null}
         {nextSteps.length ? (
-          <article className="matterNextStepsPanel">
+          <article className="matterNextStepsPanel terraAnalysisNextPanel">
             <div className="matterNextStepCardHead">
               <strong>What likely comes next</strong>
             </div>
@@ -3135,25 +3140,6 @@ const MatterSection = ({
       return (
         <div className="matterNextStepsStack">
           <article className="matterNextStepsPanel matterUnderstandingPanel">
-            <div className="matterNextStepCardHead">
-              <strong>Matter understanding</strong>
-              <Button
-                type="button"
-                className="matterStartDraftingBtn"
-                disabled={
-                  !activeMatter?.id ||
-                  activeMatterUnderstandingRunning ||
-                  Boolean(activeMatterUnderstandingPendingQuestion)
-                }
-                onClick={() =>
-                  activeMatter?.id
-                    ? void runMatterUnderstanding(activeMatter.id)
-                    : undefined
-                }
-              >
-                {activeMatterUnderstandingRunning ? "Running..." : "Refresh"}
-              </Button>
-            </div>
             <p className="matterNextStepsPreview">
               {understanding.matter_brief?.summary ||
                 "The new matter-understanding engine returned a structured result."}
@@ -3168,11 +3154,6 @@ const MatterSection = ({
                 {understanding.classification?.procedural_stage || "unknown"}
               </span>
             </div>
-            {understanding.model_trace?.fallback_used ? (
-              <small className="matterNextStepDraftType">
-                Deterministic fallback was used for at least part of this run.
-              </small>
-            ) : null}
           </article>
           {renderPendingMatterUnderstandingQuestion()}
         </div>
@@ -4726,14 +4707,15 @@ const MatterSection = ({
       (activeMatterUnderstanding.next_steps?.length || 0) +
       (activeMatterUnderstanding.legal_analysis?.issue_analyses?.length || 0)
     : 0;
-  const matterUnderstandingRunTimelineCount = activeMatterUnderstandingEvents.filter(
-    (item) =>
-      item.event === "stage_started" ||
-      item.event === "stage_complete" ||
-      item.event === "agent_done" ||
-      item.event === "section_complete" ||
-      item.event === "tool_call",
-  ).length;
+  const matterUnderstandingRunTimelineCount =
+    activeMatterUnderstandingEvents.filter(
+      (item) =>
+        item.event === "stage_started" ||
+        item.event === "stage_complete" ||
+        item.event === "agent_done" ||
+        item.event === "section_complete" ||
+        item.event === "tool_call",
+    ).length;
   const factCoverageCount =
     matterUnderstandingAnalysisCount || analysisReferenceCount || 0;
   const workspaceTabs: Array<{
@@ -9670,7 +9652,10 @@ const MatterSection = ({
             </div>
           </>
         ) : (
-          <section className="matterEmptyUploadPanel" aria-label="Start a matter upload">
+          <section
+            className="matterEmptyUploadPanel"
+            aria-label="Start a matter upload"
+          >
             <div>
               <p className="matterEyebrow">New Matter</p>
               <h2>Upload the record to begin.</h2>
@@ -9699,7 +9684,7 @@ const MatterSection = ({
               <Button
                 type="button"
                 className="matterEmptyResearchButton"
-                onClick={() => navigate("/dashboard/active-research")}
+                onClick={() => navigate("/research")}
               >
                 Open Active Research
               </Button>
@@ -9707,7 +9692,7 @@ const MatterSection = ({
           </section>
         )}
         {activeMatterTab === "people" ? (
-          <section className="matterPeopleSection">
+          <section className="matterPeopleSection terraMatterPeopleTab">
             <div className="matterPeopleHead">
               <div>
                 <h2>Parties involved</h2>
@@ -9775,13 +9760,27 @@ const MatterSection = ({
                       showImage
                       image={<X size={14} />}
                     />
-                    <span className="matterPersonAvatar">
-                      {person.initials}
-                    </span>
-                    <div>
-                      <h3>{person.name}</h3>
-                      <strong>{person.role}</strong>
-                      <p>{person.description}</p>
+                    <div className="matterPersonTop">
+                      <span className="matterPersonAvatar">
+                        {person.initials}
+                      </span>
+                      <div className="matterPersonIdentity">
+                        <h3>{person.name}</h3>
+                        <strong>{person.role}</strong>
+                      </div>
+                    </div>
+                    {person.description ? (
+                      <p className="matterPersonDescription">
+                        {person.description}
+                      </p>
+                    ) : null}
+                    <div className="matterPersonFooter">
+                      <span className="matterPersonConfidence">
+                        High confidence
+                      </span>
+                      <span className="matterPersonDetailsLink">
+                        View details
+                      </span>
                     </div>
                   </article>
                 ))}
@@ -10674,7 +10673,7 @@ const MatterSection = ({
             ) : null}
 
             {activeMatterTab === "evidence" ? (
-              <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+              <article className="matterWorkspacePanel matterWorkspaceFactsPanel terraMatterEvidenceTab">
                 <div className="matterWorkspacePanelHead">
                   <div>
                     <p className="matterEyebrow">Evidence</p>
@@ -10819,7 +10818,7 @@ const MatterSection = ({
 
             {activeMatterTab === "facts" ? (
               activeBriefArtifact ? (
-                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel terraMatterAnalysisTab">
                   <div className="matterWorkspacePanelHead">
                     <div>
                       <p className="matterEyebrow">Analysis</p>
@@ -10936,7 +10935,7 @@ const MatterSection = ({
                   ) : null}
                 </article>
               ) : activeAtlasMatterBrief ? (
-                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel terraMatterAnalysisTab">
                   <div className="matterWorkspacePanelHead">
                     <div>
                       <p className="matterEyebrow">Analysis</p>
@@ -11095,7 +11094,7 @@ const MatterSection = ({
                   ) : null}
                 </article>
               ) : (
-                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel terraMatterAnalysisTab">
                   <div className="matterWorkspacePanelHead">
                     <div>
                       <p className="matterEyebrow">Facts</p>
@@ -11288,7 +11287,7 @@ const MatterSection = ({
               )
             ) : null}
             {activeMatterTab === "drafts" ? (
-              <article className="matterWorkspacePanel matterWorkspaceDraftsPanel">
+              <article className="matterWorkspacePanel matterWorkspaceDraftsPanel terraMatterDraftsTab">
                 <div className="matterWorkspacePanelHead">
                   <div>
                     <p className="matterEyebrow">Drafts</p>
@@ -12807,8 +12806,16 @@ const MatterSection = ({
           className="matterChatDockButton"
           onClick={() => setIsMatterChatOpen(true)}
         >
-          <span className="matterChatDockButtonEyebrow">Matter chat</span>
-          <strong>Ask about this record</strong>
+          <span className="matterChatDockButtonModeRow" aria-hidden="true">
+            <span className="isActive">Normal Chat</span>
+            <span>Deep Research</span>
+          </span>
+          <span className="matterChatDockButtonInput">
+            Ask a question about this matter...
+          </span>
+          <span className="matterChatDockButtonSend" aria-hidden="true">
+            <ArrowUp size={16} />
+          </span>
         </button>
       ) : null}
 

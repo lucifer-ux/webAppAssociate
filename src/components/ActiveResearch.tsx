@@ -746,8 +746,10 @@ const ActiveResearch = ({
     <>
       <section className="researchWorkspace enhancedResearchWorkspace searchOnlyWorkspace">
         <div className="researchHead">
-          <h1 title={activeResearch?.query || workspaceTitle}>{workspaceTitle}</h1>
-          <p>Discovery, Pathway Selection, and Targeted Research</p>
+          <div className="researchTitleBlock">
+            <p>Discovery, Pathway Selection, and Targeted Research</p>
+            <h1 title={activeResearch?.query || workspaceTitle}>{workspaceTitle}</h1>
+          </div>
           <div className="researchSaveRow">
             <Button
               type="button"

@@ -10,7 +10,9 @@ import {
   AlignLeft,
   AlignRight,
   ChevronDown,
+  Download,
   Highlighter,
+  History,
   Home,
   Image as ImageIcon,
   IndentDecrease,
@@ -26,7 +28,6 @@ import {
   Plus,
   Printer,
   Redo2,
-  Save,
   Search,
   Share2,
   Scale,
@@ -118,13 +119,16 @@ const ProductNavbar = ({
   const sectionLinks = [
     { label: "Dashboard", path: "/dashboard" },
     { label: "Matters", path: "/matter" },
-    { label: "Research", path: "/dashboard/active-research" },
+    { label: "Research", path: "/research" },
     { label: "Drafting", path: "/dashboard/drafting" },
   ];
 
   const isDraftingRoute =
     (pathname === "/dashboard/drafting" || pathname === "/drafting" || pathname === "/draft") &&
     draftingChrome;
+  const isSectionLinkActive = (path: string) =>
+    pathname === path ||
+    (path === "/research" && pathname === "/dashboard/active-research");
   useEffect(() => {
     let cancelled = false;
     const loadCredits = async () => {
@@ -170,11 +174,11 @@ const ProductNavbar = ({
     const roleLabel =
       draftingChrome.currentRole === "editor" ? "Editor access" : "View access";
 
-    return (
+      return (
       <>
-        <header className="homeDashTopBar draftingChromeBar">
+        <header className="homeDashTopBar draftingChromeBar terraDraftingChromeBar">
         <div className="draftChromePrimaryRow">
-          <div className="topBarLeft">
+          <div className="topBarLeft draftChromePrimaryLeft">
             <Button
               className="iconBtn sidebarToggleBtn"
               type="button"
@@ -214,16 +218,20 @@ const ProductNavbar = ({
             </div>
           </div>
 
-          <div
-            className="topBarRight draftingTopRight"
-            onMouseDownCapture={preserveSelectionOnToolbarMouseDown}
-          >
-            <div className="sectionRouteNav">
+          <div className="draftChromePrimaryCenter">
+            <button
+              type="button"
+              className="draftChromeBrand"
+              onClick={() => navigate("/dashboard")}
+            >
+              Associate
+            </button>
+            <div className="sectionRouteNav draftChromeSectionRouteNav">
               {sectionLinks.map((item) => (
                 <Button
                   key={item.path}
                   type="button"
-                  className={`sectionRouteBtn ${pathname === item.path ? "active" : ""}`}
+                  className={`sectionRouteBtn ${isSectionLinkActive(item.path) ? "active" : ""}`}
                   onClick={() => navigate(item.path)}
                 >
                   {item.label}
@@ -237,8 +245,16 @@ const ProductNavbar = ({
                 Pricing
               </Button>
             </div>
-            <span className="draftRoleChip">{roleLabel}</span>
-            <span className="creditBalanceChip">{creditLabel}</span>
+          </div>
+
+          <div
+            className="topBarRight draftingTopRight"
+            onMouseDownCapture={preserveSelectionOnToolbarMouseDown}
+          >
+            <div className="draftChromeStatusCluster">
+              <span className="draftRoleChip">{roleLabel}</span>
+              <span className="creditBalanceChip">{creditLabel}</span>
+            </div>
             {draftingChrome.onGenerateFormat ? (
               <Button
                 type="button"
@@ -264,7 +280,7 @@ const ProductNavbar = ({
               </Button>
             )}
             <Button
-              className="iconBtn"
+              className="iconBtn draftChromeActionIcon"
               type="button"
               aria-label="Find"
               onClick={draftingChrome.onOpenFindReplace}
@@ -272,33 +288,41 @@ const ProductNavbar = ({
               image={<Search size={18} />}
             />
             <Button
-              className="iconBtn"
+              className="iconBtn draftChromeActionIcon"
               type="button"
-              aria-label="Save draft"
+              aria-label="Save draft version"
               onClick={draftingChrome.onManualSave}
               showImage
-              image={<Save size={18} />}
+              image={<History size={18} />}
             />
             <Button
-              className="iconBtn"
+              className="iconBtn draftChromeActionIcon"
+              type="button"
+              aria-label="Export draft"
+              onClick={draftingChrome.onPrint}
+              showImage
+              image={<Download size={18} />}
+            />
+            <Button
+              className="iconBtn draftChromeActionIcon draftChromeDividerBefore"
               type="button"
               aria-label="Run draft review"
               onClick={draftingChrome.onRunReview}
               showImage
               image={<Scale size={18} />}
             />
-            <Button
-              className="iconBtn"
-              type="button"
-              aria-label="Open comment composer"
-              onClick={draftingChrome.onOpenCommentComposer}
-              showImage
-              image={<MessageSquare size={18} />}
-            />
             <Button className="draftingShareBtn navShare" type="button">
               <Share2 size={16} />
               Share
             </Button>
+            <Button
+              className="avatarBtn draftChromeAvatarBtn"
+              type="button"
+              aria-label="Profile"
+              onClick={() => setIsProfileMenuOpen(true)}
+              showImage
+              image={<User size={18} />}
+            />
           </div>
         </div>
 
@@ -675,6 +699,10 @@ const ProductNavbar = ({
           onClose={() => setIsPricingOpen(false)}
           isAuthenticated
         />
+        <UserProfile
+          isOpen={isProfileMenuOpen}
+          onClose={() => setIsProfileMenuOpen(false)}
+        />
       </>
     );
   }
@@ -715,7 +743,7 @@ const ProductNavbar = ({
               <Button
                 key={item.path}
                 type="button"
-                className={`sectionRouteBtn ${pathname === item.path ? "active" : ""}`}
+                className={`sectionRouteBtn ${isSectionLinkActive(item.path) ? "active" : ""}`}
                 onClick={() => navigate(item.path)}
               >
                 {item.label}

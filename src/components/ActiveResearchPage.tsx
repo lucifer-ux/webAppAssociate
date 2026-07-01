@@ -8,6 +8,8 @@ import ActiveResearch from "./ActiveResearch";
 import type { SavedResearchApiItem } from "./ActiveResearch";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 import { useLocation } from "react-router-dom";
+import "../componentStyling/TerraMatterWorkspace.css";
+import "../componentStyling/TerraResearch.css";
 
 export type RecentResearchItem = {
   id: string;
@@ -68,7 +70,7 @@ const ActiveResearchPage = () => {
   };
 
   return (
-    <div className="homeDashPage">
+    <div className="homeDashPage terraMatterPage terraResearchPage">
       <ProductNavbar
         isSideBarCollapsed={isSideBarCollapsed}
         onToggleSidebar={() => setIsSideBarCollapsed((prev) => !prev)}
@@ -105,7 +107,7 @@ const ActiveResearchPage = () => {
       </nav>
 
       <main
-        className={`homeDashMain ${isSideBarCollapsed ? "sidebarCollapsed" : ""}`}
+        className={`homeDashMain terraMatterMain terraResearchMain ${isSideBarCollapsed ? "sidebarCollapsed" : ""}`}
       >
         <ActiveResearch
           activeSection="activeResearch"

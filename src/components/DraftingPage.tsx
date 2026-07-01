@@ -1,4 +1,5 @@
 import "../componentStyling/HomeDashboardStyling.css";
+import "../componentStyling/TerraDraftEditor.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { generateJSON } from "@tiptap/html";
@@ -2254,7 +2255,7 @@ const DraftingPage = () => {
   };
 
   return (
-    <div className="homeDashPage">
+    <div className="homeDashPage terraDraftingPage">
       <ProductNavbar
         isSideBarCollapsed={isSideBarCollapsed}
         onToggleSidebar={() => setIsSideBarCollapsed((prev) => !prev)}
@@ -2330,7 +2331,7 @@ const DraftingPage = () => {
       />
 
       <main
-        className={`homeDashMain ${
+        className={`homeDashMain terraDraftingMain ${
           canRenderEditor ? "draftingMain" : "draftingTemplateMain"
         } draftingNoAppSidebar`}
       >

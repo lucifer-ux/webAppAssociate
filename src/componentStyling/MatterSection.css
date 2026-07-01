@@ -4108,6 +4108,7 @@
   border: 1px solid #eadfce;
   border-radius: 16px;
   background: #fffaf4;
+  margin-bottom: 12px;
 }
 
 .matterNextStepsPanel.isDraft {
@@ -5362,7 +5363,6 @@
 .matterWorkspacePanelHead,
 .matterDocumentPageHead {
   border-color: rgba(154, 143, 129, 0.2);
-  background: rgba(12, 14, 19, 0.72);
 }
 
 .matterTextPaper,
@@ -7539,7 +7539,6 @@
     .matterNextStepDisclosure .matterNextStepsAccordionBody
   ) {
   border-color: rgba(154, 143, 129, 0.2);
-  background: rgba(12, 14, 19, 0.54);
 }
 
 .matterOverviewWrap
@@ -7829,7 +7828,9 @@
 
 .matterOverviewWrap .matterWorkspaceFactsPanel .matterCaseTitleLink:hover,
 .matterOverviewWrap .matterWorkspaceFactsPanel .matterCaseSummaryToggle:hover,
-.matterOverviewWrap .matterWorkspaceFactsPanel .matterDebriefLawSourceLink:hover {
+.matterOverviewWrap
+  .matterWorkspaceFactsPanel
+  .matterDebriefLawSourceLink:hover {
   color: #ffffff;
   text-decoration-color: #ffffff;
 }
