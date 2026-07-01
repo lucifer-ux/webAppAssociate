@@ -1,8 +1,9 @@
 import "../componentStyling/productNavbar.css";
 import Button from "./Button";
 import PricingModal from "./PricingModal";
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import UserProfile from "./UserProfile";
+import { buildApiUrl } from "../lib/apiBase";
 import {
   AlignCenter,
   AlignJustify,
@@ -111,6 +112,7 @@ const ProductNavbar = ({
 }: ProductNavbarProps) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const sectionLinks = [
@@ -123,6 +125,38 @@ const ProductNavbar = ({
   const isDraftingRoute =
     (pathname === "/dashboard/drafting" || pathname === "/drafting" || pathname === "/draft") &&
     draftingChrome;
+  useEffect(() => {
+    let cancelled = false;
+    const loadCredits = async () => {
+      try {
+        const response = await fetch(buildApiUrl("/api/credits/me"), {
+          credentials: "include",
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          credits?: { available?: number; balance?: number };
+        };
+        const value = Number(
+          payload.credits?.available ?? payload.credits?.balance ?? Number.NaN,
+        );
+        if (!cancelled && Number.isFinite(value)) {
+          setCreditBalance(value);
+        }
+      } catch {
+        if (!cancelled) setCreditBalance(null);
+      }
+    };
+    void loadCredits();
+    const interval = window.setInterval(loadCredits, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+  const creditLabel =
+    creditBalance === null
+      ? "0 credits"
+      : `${Math.max(0, Math.floor(creditBalance)).toLocaleString("en-IN")} credits`;
   const preserveSelectionOnToolbarMouseDown = (
     event: MouseEvent<HTMLElement>,
   ) => {
@@ -204,6 +238,7 @@ const ProductNavbar = ({
               </Button>
             </div>
             <span className="draftRoleChip">{roleLabel}</span>
+            <span className="creditBalanceChip">{creditLabel}</span>
             {draftingChrome.onGenerateFormat ? (
               <Button
                 type="button"
@@ -694,6 +729,7 @@ const ProductNavbar = ({
               Pricing
             </Button>
           </div>
+          <span className="creditBalanceChip">{creditLabel}</span>
           <Button
             className="avatarBtn"
             type="button"

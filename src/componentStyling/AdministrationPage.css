@@ -142,6 +142,25 @@
   gap: 16px;
 }
 
+.adminPanelNote {
+  max-width: 680px;
+  margin: 8px 0 0;
+  color: #6a5f58;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.adminInlineFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.adminInlineFields > div {
+  display: grid;
+  gap: 8px;
+}
+
 .adminPanel label,
 .adminLoginForm label {
   color: #312a26;
@@ -235,6 +254,10 @@
   }
 
   .adminGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .adminInlineFields {
     grid-template-columns: 1fr;
   }
 }

@@ -100,6 +100,23 @@
   color: #700d0d;
 }
 
+.creditBalanceChip {
+  border: 0;
+  background: transparent;
+  color: #7a6a5f;
+  min-height: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .topBarLogo {
   width: 92px;
   height: 30px;

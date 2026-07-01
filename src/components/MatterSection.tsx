@@ -1332,6 +1332,29 @@ const MatterSection = ({
       progress: 5,
       history: ["Queued additional matter files"],
     });
+  const ensureCreditsAvailable = async (requiredCredits: number) => {
+    const exhaustedMessage =
+      "Your Associate Credits are exhausted. Upgrade or ask an administrator to top up credits before continuing.";
+    try {
+      const response = await fetch(buildApiUrl("/api/credits/me"), {
+        credentials: "include",
+      });
+      const payload = (await response.json()) as {
+        credits?: { available?: number; balance?: number };
+      };
+      const available = Number(
+        payload.credits?.available ?? payload.credits?.balance ?? 0,
+      );
+      if (!response.ok || available < requiredCredits) {
+        throw new Error(exhaustedMessage);
+      }
+      return true;
+    } catch (error) {
+      setUploadPopupError(error instanceof Error ? error.message : exhaustedMessage);
+      setIsUploadPopupOpen(true);
+      return false;
+    }
+  };
   const [briefAnswerText, setBriefAnswerText] = useState("");
   const [isSubmittingBriefAnswers, setIsSubmittingBriefAnswers] =
     useState(false);
@@ -8514,7 +8537,7 @@ const MatterSection = ({
       }
       const response = await fetch(
         buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}`),
-        { method: "DELETE" },
+        { method: "DELETE", credentials: "include" },
       );
       const payload = (await response.json()) as {
         success?: boolean;
@@ -8524,6 +8547,7 @@ const MatterSection = ({
         throw new Error(payload?.error || "Failed to delete matter.");
       }
       deleteMatter(activeMatter.id);
+      await refreshStoredMatters().catch(() => {});
       setIsDeleteDialogOpen(false);
       setDeleteConfirmText("");
       navigate("/dashboard");
@@ -8597,6 +8621,9 @@ const MatterSection = ({
     }
     const filesToUpload = [...pendingUploadFiles];
     const queryToUpload = uploadQuery.trim();
+    if (!isMockModeEnabled && !(await ensureCreditsAvailable(50))) {
+      return;
+    }
     setIsUploadPopupOpen(false);
 
     setIsUploadingMatter(true);
@@ -8715,6 +8742,9 @@ const MatterSection = ({
     }
     const filesToUpload = [...pendingUploadFiles];
     const queryToUpload = uploadQuery.trim();
+    if (!(await ensureCreditsAvailable(50))) {
+      return;
+    }
     setIsUploadPopupOpen(false);
 
     setIsAppendingMatterFiles(true);

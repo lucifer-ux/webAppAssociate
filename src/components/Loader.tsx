@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { createPortal } from "react-dom";
 import "../componentStyling/Loader.css";
 
 type LoaderProps = {
@@ -39,7 +40,7 @@ const Loader = ({
   );
 
   if (variant === "spinner") {
-    return (
+    const spinnerMarkup = (
       <div
         className={`matterUploadLoader ${
           mode === "inline" ? "matterUploadLoaderInline" : ""
@@ -59,9 +60,10 @@ const Loader = ({
         </div>
       </div>
     );
+    return mode === "overlay" ? createPortal(spinnerMarkup, document.body) : spinnerMarkup;
   }
 
-  return (
+  const loaderMarkup = (
     <div
       className={`matterUploadLoader ${
         mode === "inline" ? "matterUploadLoaderInline" : ""
@@ -151,6 +153,7 @@ const Loader = ({
       </div>
     </div>
   );
+  return mode === "overlay" ? createPortal(loaderMarkup, document.body) : loaderMarkup;
 };
 
 export default Loader;
