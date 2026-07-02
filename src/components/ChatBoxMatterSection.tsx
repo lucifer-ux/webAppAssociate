@@ -1,6 +1,6 @@
 import "../componentStyling/ChatBoxMatterSection.css";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, Bot, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, Bot, Sparkles, User, X } from "lucide-react";
 import Button from "./Button";
 import SearchBar, { type SearchBarMode } from "./SearchBar";
 
@@ -229,7 +229,11 @@ const ChatBoxMatterSection = ({
                 <span className="matterChatAvatar">
                   <Bot size={15} />
                 </span>
-              ) : null}
+              ) : (
+                <span className="matterChatAvatar matterChatUserAvatar">
+                  <User size={15} />
+                </span>
+              )}
               <div className="matterChatMessageBody">
                 <p>{message.text}</p>
                 {message.sources?.length ? (
@@ -292,7 +296,7 @@ const ChatBoxMatterSection = ({
         </div>
 
         {!hasClarificationQuestions ? (
-          <div className="matterChatSuggestions">
+          <div className="matterChatSuggestions" aria-label="Suggested prompts">
             {SUGGESTED_PROMPTS.map((prompt) => (
               <Button
                 type="button"
