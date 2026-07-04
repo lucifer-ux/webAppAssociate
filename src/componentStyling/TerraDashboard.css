@@ -169,12 +169,12 @@
 .terraDashboardShell {
   display: flex;
   min-height: 100vh;
-  padding-top: 80px;
+  padding-top: 64px;
 }
 
 .terraSidebar {
   position: fixed;
-  top: 80px;
+  top: 64px;
   left: 0;
   bottom: 0;
   width: 288px;
@@ -665,7 +665,7 @@
   }
 
   .terraDashboardShell {
-    padding-top: 132px;
+    padding-top: 64px;
   }
 
   .terraSidebar {

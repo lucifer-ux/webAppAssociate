@@ -1,10 +1,11 @@
 import "../componentStyling/SideBar.css";
 import Button from "./Button";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { RecentResearchItem } from "./ActiveResearchPage";
 import { useMatterStore } from "../context/MatterStoreContext";
+import { usePipelines } from "../context/PipelineContext";
 import { listDrafts, type DraftSummary } from "./draftingApi";
 
 export type RecentMatterItem = {
@@ -83,9 +84,38 @@ const SideBar = ({
     isSavedMattersLoading,
     setActiveMatterId,
   } = useMatterStore();
+  const { jobs, navigateToJob } = usePipelines();
 
   const [isRecentResearchesOpen, setIsRecentResearchesOpen] = useState(true);
   const [draftTabs, setDraftTabs] = useState<DraftSummary[]>([]);
+  const runningDraftJobs = useMemo(
+    () =>
+      jobs.filter(
+        (job) =>
+          job.source === "draft-job" &&
+          (job.status === "queued" || job.status === "running"),
+      ),
+    [jobs],
+  );
+  const runningDraftByDraftId = useMemo(() => {
+    const map = new Map<string, (typeof runningDraftJobs)[number]>();
+    runningDraftJobs.forEach((job) => {
+      const draftId = String(job.draftId || job.resultId || "").trim();
+      if (draftId) map.set(draftId, job);
+    });
+    return map;
+  }, [runningDraftJobs]);
+  const visibleDraftTabs = useMemo(
+    () =>
+      draftTabs.filter((draft) => {
+        if (runningDraftByDraftId.has(draft.id)) return false;
+        const generationStatus = String(draft.generationStatus || "").toLowerCase();
+        if (generationStatus === "running" || generationStatus === "failed") return false;
+        if (generationStatus && generationStatus !== "completed") return false;
+        return Boolean(draft.lastSavedAt || draft.saveVersion > 0 || generationStatus === "completed");
+      }),
+    [draftTabs, runningDraftByDraftId],
+  );
 
   const hasRecentResearches = recentResearches.length > 0;
   const activeResearchItem =
@@ -304,17 +334,37 @@ const SideBar = ({
             <h3>Active drafts</h3>
           </div>
 
-          {draftTabs.length > 0 ? (
+          {visibleDraftTabs.length > 0 || runningDraftJobs.length > 0 ? (
             <div className="recentItemsList">
-              {draftTabs.map((tab) => (
+              {runningDraftJobs.map((job) => (
+                <Button
+                  key={job.id}
+                  type="button"
+                  className="recentMatterItem"
+                  onClick={() => navigateToJob(job)}
+                  title={job.title}
+                >
+                  <span className="recentItemTitle">{job.title} · generating</span>
+                </Button>
+              ))}
+              {visibleDraftTabs.map((tab) => (
                 <Button
                   key={tab.id}
                   type="button"
                   className="recentMatterItem"
-                  onClick={() => navigate(`/dashboard/drafting?draft=${encodeURIComponent(tab.id)}`)}
+                  onClick={() => {
+                    const runningJob = runningDraftByDraftId.get(tab.id);
+                    if (runningJob) {
+                      navigateToJob(runningJob);
+                      return;
+                    }
+                    navigate(`/dashboard/drafting?draft=${encodeURIComponent(tab.id)}`);
+                  }}
                   title={tab.title}
                 >
-                  <span className="recentItemTitle">{tab.title}</span>
+                  <span className="recentItemTitle">
+                    {tab.title}
+                  </span>
                 </Button>
               ))}
             </div>

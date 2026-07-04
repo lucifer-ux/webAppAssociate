@@ -51,6 +51,7 @@ import {
   type PageAwareBlock,
   type SectionRiskMapResult,
 } from "../context/MatterStoreContext";
+import { usePipelines } from "../context/PipelineContext";
 import Loader from "./Loader";
 import UploadPopUp, { type UploadPopupValidationItem } from "./UploadPopUp";
 import { type SearchBarMode } from "./SearchBar";
@@ -63,6 +64,11 @@ import {
   refreshDraftRecommendations,
 } from "./draftingApi";
 import { buildApiUrl } from "../lib/apiBase";
+import {
+  fetchCreditBalance,
+  getCachedCreditBalance,
+  setCachedCreditBalance,
+} from "../lib/creditCache";
 import {
   createMockMatterScenario,
   deleteMockMatterResult,
@@ -1253,6 +1259,7 @@ const MatterSection = ({
   conversationOpenRequest = 0,
 }: MatterSectionProps) => {
   const navigate = useNavigate();
+  const { trackMatterJob } = usePipelines();
   const {
     matters,
     activeMatter,
@@ -1336,19 +1343,17 @@ const MatterSection = ({
   const ensureCreditsAvailable = async (requiredCredits: number) => {
     const exhaustedMessage =
       "Your Associate Credits are exhausted. Upgrade or ask an administrator to top up credits before continuing.";
+    const cachedCredits = getCachedCreditBalance();
+    if (cachedCredits !== null && cachedCredits >= requiredCredits) {
+      setCachedCreditBalance(cachedCredits - requiredCredits);
+      return true;
+    }
     try {
-      const response = await fetch(buildApiUrl("/api/credits/me"), {
-        credentials: "include",
-      });
-      const payload = (await response.json()) as {
-        credits?: { available?: number; balance?: number };
-      };
-      const available = Number(
-        payload.credits?.available ?? payload.credits?.balance ?? 0,
-      );
-      if (!response.ok || available < requiredCredits) {
+      const available = await fetchCreditBalance();
+      if (available === null || available < requiredCredits) {
         throw new Error(exhaustedMessage);
       }
+      setCachedCreditBalance(available - requiredCredits);
       return true;
     } catch (error) {
       setUploadPopupError(
@@ -8676,6 +8681,14 @@ const MatterSection = ({
         );
         result = payload.result;
       } else if ("job_id" in payload && payload.job_id) {
+        trackMatterJob({
+          jobId: payload.job_id,
+          title: filesToUpload.length
+            ? `Matter upload · ${filesToUpload.length} file${filesToUpload.length === 1 ? "" : "s"}`
+            : "Matter upload",
+          targetPath: "/matter",
+          type: "matter",
+        });
         updateMatterUploadLoaderStage(payload.stage, payload.progress);
         result = await pollMatterJob(
           payload.job_id,
@@ -8772,6 +8785,12 @@ const MatterSection = ({
         );
       }
 
+      trackMatterJob({
+        jobId: payload.job_id,
+        title: `Add files · ${filesToUpload.length} file${filesToUpload.length === 1 ? "" : "s"}`,
+        targetPath: `/matter?matter=${encodeURIComponent(activeMatter.id)}`,
+        type: "matter",
+      });
       updateAppendLoaderStage(payload.stage, payload.progress);
       await refreshStoredMatters();
       const result = await pollMatterJob(

@@ -11,6 +11,7 @@ import AdministrationPage from "./components/AdministrationPage.tsx";
 import Home from "./Home.tsx";
 import { MatterStoreProvider } from "./context/MatterStoreContext.tsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.tsx";
+import { PipelineProvider } from "./context/PipelineContext.tsx";
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const { status, isAuthenticated } = useAuth();
@@ -40,6 +41,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <MatterStoreProvider>
+          <PipelineProvider>
           <Routes>
             <Route path="/login" element={<PublicLoginRoute />} />
             <Route path="/Login" element={<PublicLoginRoute />} />
@@ -63,6 +65,7 @@ function App() {
             <Route path="/matter" element={<ProtectedRoute><MatterPage /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </PipelineProvider>
           </MatterStoreProvider>
         </AuthProvider>
       </BrowserRouter>

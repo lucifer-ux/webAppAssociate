@@ -187,6 +187,7 @@ export type DraftSummary = {
   lastSavedAt: string | null;
   saveVersion: number;
   status: string;
+  generationStatus?: string | null;
 };
 
 export type DraftDetail = DraftSummary & {
@@ -349,6 +350,25 @@ export const getDraft = async (draftId: string) => {
   return payload.draft;
 };
 
+export const deleteDraft = async (draftId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}`),
+    {
+      method: "DELETE",
+      headers: buildDraftHeaders(false),
+    },
+  );
+  return readJson<{
+    success: true;
+    deleted: {
+      drafts: number;
+      snapshots: number;
+      reviewJobs: number;
+      storageFiles: Array<Record<string, unknown>>;
+    };
+  }>(response);
+};
+
 export const listDraftVersions = async (draftId: string) => {
   const response = await fetch(
     buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/versions`),
@@ -496,9 +516,16 @@ export const getDraftReview = async (draftId: string) => {
   return payload.review_job;
 };
 
-export const getDraftRecommendations = async (matterId: string) => {
+export const getDraftRecommendations = async (
+  matterId: string,
+  options: { includeResult?: boolean } = {},
+) => {
+  const includeResult = options.includeResult !== false;
+  const query = includeResult ? "" : "?include_result=false";
   const response = await fetch(
-    buildApiUrl(`/api/matters/${encodeURIComponent(matterId)}/draft-recommendations`),
+    buildApiUrl(
+      `/api/matters/${encodeURIComponent(matterId)}/draft-recommendations${query}`,
+    ),
     {
       headers: buildDraftHeaders(false),
     },

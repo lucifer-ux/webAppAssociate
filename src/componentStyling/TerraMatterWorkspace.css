@@ -46,7 +46,8 @@
 }
 
 .terraMatterPage .iconBtn,
-.terraMatterPage .avatarBtn {
+.terraMatterPage .avatarBtn,
+.terraMatterPage .productHeaderAvatar {
   width: 32px;
   height: 32px;
   border: 0;
@@ -57,7 +58,8 @@
 }
 
 .terraMatterPage .iconBtn:hover,
-.terraMatterPage .avatarBtn:hover {
+.terraMatterPage .avatarBtn:hover,
+.terraMatterPage .productHeaderUserCluster:hover .productHeaderAvatar {
   background: var(--terra-primary);
   color: var(--terra-on-primary);
 }
@@ -396,6 +398,11 @@
   font-weight: 650;
   line-height: 1.08;
   letter-spacing: 0;
+}
+
+.terraMatterPage .matterTitleEditTrigger:hover h1,
+.terraMatterPage .matterTitleEditTrigger:focus-visible h1 {
+  color: var(--terra-text);
 }
 
 .terraMatterPage .matterTitleEditorInput {

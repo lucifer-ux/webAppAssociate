@@ -337,7 +337,7 @@
 
 .uiTheme-carbonLight .matterTitleEditTrigger:hover h1,
 .uiTheme-carbonLight .matterTitleEditTrigger:focus-visible h1 {
-  color: var(--jf-primary);
+  color: inherit;
 }
 
 .uiTheme-carbonLight .matterEyebrow,

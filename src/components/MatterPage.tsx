@@ -29,18 +29,25 @@ const MatterPage = () => {
   if (isSavedMattersLoading && !activeMatter) {
     return (
       <div className="homeDashPage terraMatterPage">
-        <Loader
-          eyebrow="Matter Library"
-          title="Loading Saved Matters"
-          message="Preparing your saved matter workspace."
-          stage="Hydrating saved matters from storage"
-          progress={42}
-          steps={[
-            "Connecting to saved matter store",
-            "Loading saved matters",
-            "Preparing matter workspace",
-          ]}
+        <ProductNavbar
+          isSideBarCollapsed={isSideBarCollapsed}
+          onToggleSidebar={() => setIsSideBarCollapsed((prev) => !prev)}
         />
+        <div className="productPageLoaderSurface">
+          <Loader
+            eyebrow="Matter Library"
+            title="Loading Saved Matters"
+            message="Preparing your saved matter workspace."
+            stage="Hydrating saved matters from storage"
+            progress={42}
+            mode="inline"
+            steps={[
+              "Connecting to saved matter store",
+              "Loading saved matters",
+              "Preparing matter workspace",
+            ]}
+          />
+        </div>
       </div>
     );
   }

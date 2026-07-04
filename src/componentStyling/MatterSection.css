@@ -5023,7 +5023,7 @@
 
 .matterTitleEditTrigger:hover h1,
 .matterTitleEditTrigger:focus-visible h1 {
-  color: #e7c181;
+  color: inherit;
 }
 
 .matterEyebrow,

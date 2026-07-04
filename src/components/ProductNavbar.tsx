@@ -3,7 +3,11 @@ import Button from "./Button";
 import PricingModal from "./PricingModal";
 import { useEffect, useState, type MouseEvent } from "react";
 import UserProfile from "./UserProfile";
-import { buildApiUrl } from "../lib/apiBase";
+import {
+  fetchCreditBalance,
+  getCachedCreditBalance,
+  subscribeToCreditBalance,
+} from "../lib/creditCache";
 import {
   AlignCenter,
   AlignJustify,
@@ -35,10 +39,11 @@ import {
   Table2,
   Underline,
   Undo2,
-  User,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { AccessRole, ParagraphStyle, ZoomLevel } from "./draftingApi";
+import { useAuth } from "../context/AuthContext";
+import { usePipelines } from "../context/PipelineContext";
 
 type DraftingChromeProps = {
   documentTitle: string;
@@ -113,7 +118,19 @@ const ProductNavbar = ({
 }: ProductNavbarProps) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
-  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [isJobCenterOpen, setIsJobCenterOpen] = useState(false);
+  const [creditBalance, setCreditBalance] = useState<number | null>(() =>
+    getCachedCreditBalance(),
+  );
+  const { user } = useAuth();
+  const {
+    jobs,
+    activeJobs,
+    unreadCount,
+    markAllRead,
+    dismissJob,
+    navigateToJob,
+  } = usePipelines();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const sectionLinks = [
@@ -124,43 +141,114 @@ const ProductNavbar = ({
   ];
 
   const isDraftingRoute =
-    (pathname === "/dashboard/drafting" || pathname === "/drafting" || pathname === "/draft") &&
+    (pathname === "/dashboard/drafting" ||
+      pathname === "/drafting" ||
+      pathname === "/draft") &&
     draftingChrome;
   const isSectionLinkActive = (path: string) =>
     pathname === path ||
-    (path === "/research" && pathname === "/dashboard/active-research");
+    (path === "/research" && pathname === "/dashboard/active-research") ||
+    (path === "/dashboard/drafting" &&
+      (pathname === "/drafting" || pathname === "/draft"));
   useEffect(() => {
     let cancelled = false;
-    const loadCredits = async () => {
-      try {
-        const response = await fetch(buildApiUrl("/api/credits/me"), {
-          credentials: "include",
-        });
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          credits?: { available?: number; balance?: number };
-        };
-        const value = Number(
-          payload.credits?.available ?? payload.credits?.balance ?? Number.NaN,
-        );
-        if (!cancelled && Number.isFinite(value)) {
-          setCreditBalance(value);
-        }
-      } catch {
-        if (!cancelled) setCreditBalance(null);
-      }
-    };
-    void loadCredits();
-    const interval = window.setInterval(loadCredits, 60_000);
+    const unsubscribe = subscribeToCreditBalance((value) => {
+      if (!cancelled) setCreditBalance(value);
+    });
+    if (creditBalance === null) {
+      void fetchCreditBalance().then((value) => {
+        if (!cancelled && value !== null) setCreditBalance(value);
+      });
+    }
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      unsubscribe();
     };
-  }, []);
+  }, [creditBalance]);
   const creditLabel =
     creditBalance === null
       ? "0 credits"
       : `${Math.max(0, Math.floor(creditBalance)).toLocaleString("en-IN")} credits`;
+  const displayName = (
+    user?.displayName ||
+    user?.fullName ||
+    user?.email?.split("@")[0] ||
+    "Associate"
+  ).trim();
+  const userFirstName =
+    displayName.split(/\s+/).filter(Boolean)[0] || "Associate";
+  const userInitial = userFirstName.slice(0, 1).toUpperCase() || "A";
+  const profileButton = (className = "") => (
+    <button
+      type="button"
+      className={`terraUserCluster productHeaderUserCluster ${className}`.trim()}
+      aria-label="Open profile details"
+      onClick={() => setIsProfileMenuOpen(true)}
+    >
+      <span className="terraAvatar productHeaderAvatar">{userInitial}</span>
+      <span className="terraUserName productHeaderUserName">
+        {userFirstName}
+      </span>
+    </button>
+  );
+  const jobCenterButton = (className = "") => (
+    <div className={`pipelineJobCenterWrap ${className}`.trim()}>
+      <Button
+        type="button"
+        className="pipelineJobCenterButton"
+        aria-label="Open background jobs"
+        onClick={() => {
+          setIsJobCenterOpen((current) => !current);
+          if (!isJobCenterOpen) markAllRead();
+        }}
+      >
+        <span className="pipelineJobCenterDot" aria-hidden="true" />
+        <span>
+          {activeJobs.length ? `${activeJobs.length} running` : "Jobs"}
+        </span>
+        {unreadCount ? <strong>{unreadCount}</strong> : null}
+      </Button>
+      {isJobCenterOpen ? (
+        <div className="pipelineJobCenterPanel">
+          <div className="pipelineJobCenterHead">
+            <strong>Background work</strong>
+            <button type="button" onClick={() => setIsJobCenterOpen(false)}>
+              Close
+            </button>
+          </div>
+          {jobs.length ? (
+            <div className="pipelineJobList">
+              {jobs.slice(0, 8).map((job) => (
+                <article
+                  className={`pipelineJobItem is-${job.status}`}
+                  key={job.id}
+                >
+                  <button type="button" onClick={() => navigateToJob(job)}>
+                    <span>{job.type}</span>
+                    <strong>{job.title}</strong>
+                    <small>{job.stage}</small>
+                    <div className="pipelineJobProgress" aria-hidden="true">
+                      <i style={{ width: `${Math.max(4, job.progress)}%` }} />
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="pipelineJobDismiss"
+                    aria-label="Dismiss job"
+                    onClick={() => dismissJob(job.id)}
+                  >
+                    ×
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="pipelineJobEmpty">No background work yet.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
   const preserveSelectionOnToolbarMouseDown = (
     event: MouseEvent<HTMLElement>,
   ) => {
@@ -174,525 +262,503 @@ const ProductNavbar = ({
     const roleLabel =
       draftingChrome.currentRole === "editor" ? "Editor access" : "View access";
 
-      return (
+    return (
       <>
-        <header className="homeDashTopBar draftingChromeBar terraDraftingChromeBar">
-        <div className="draftChromePrimaryRow">
-          <div className="topBarLeft draftChromePrimaryLeft">
-            <Button
-              className="iconBtn sidebarToggleBtn"
-              type="button"
-              aria-label={
-                isSideBarCollapsed ? "Expand sidebar" : "Collapse sidebar"
-              }
-              onClick={onToggleSidebar}
-              showImage
-              image={
-                isSideBarCollapsed ? (
-                  <PanelLeftOpen size={18} />
-                ) : (
-                  <PanelLeftClose size={18} />
-                )
-              }
-            />
-            <Button
-              type="button"
-              className="iconBtn topBarHomeBtn"
-              aria-label="Go to dashboard home"
-              onClick={() => navigate("/dashboard")}
-              showImage
-              image={<Home size={18} />}
-            />
-            <div className="draftChromeTitleBlock">
-              <input
-                className="draftChromeTitleInput"
-                value={draftingChrome.documentTitle}
-                onChange={(event) =>
-                  draftingChrome.onDocumentTitleChange(event.target.value)
+        <header className="homeDashTopBar productTopBar draftingChromeBar terraDraftingChromeBar">
+          <div className="draftChromePrimaryRow">
+            <div className="topBarLeft draftChromePrimaryLeft">
+              <Button
+                className="iconBtn sidebarToggleBtn"
+                type="button"
+                aria-label={
+                  isSideBarCollapsed ? "Expand sidebar" : "Collapse sidebar"
                 }
-                aria-label="Document title"
+                onClick={onToggleSidebar}
+                showImage
+                image={
+                  isSideBarCollapsed ? (
+                    <PanelLeftOpen size={18} />
+                  ) : (
+                    <PanelLeftClose size={18} />
+                  )
+                }
               />
-              <span className="draftChromeSaved">
-                {draftingChrome.saveStatusLabel}
-              </span>
-            </div>
-          </div>
-
-          <div className="draftChromePrimaryCenter">
-            <button
-              type="button"
-              className="draftChromeBrand"
-              onClick={() => navigate("/dashboard")}
-            >
-              Associate
-            </button>
-            <div className="sectionRouteNav draftChromeSectionRouteNav">
-              {sectionLinks.map((item) => (
-                <Button
-                  key={item.path}
-                  type="button"
-                  className={`sectionRouteBtn ${isSectionLinkActive(item.path) ? "active" : ""}`}
-                  onClick={() => navigate(item.path)}
-                >
-                  {item.label}
-                </Button>
-              ))}
               <Button
                 type="button"
-                className="sectionRouteBtn"
-                onClick={() => setIsPricingOpen(true)}
+                className="iconBtn topBarHomeBtn"
+                aria-label="Go to dashboard home"
+                onClick={() => navigate("/dashboard")}
+                showImage
+                image={<Home size={18} />}
+              />
+              <div className="draftChromeTitleBlock">
+                <input
+                  className="draftChromeTitleInput"
+                  value={draftingChrome.documentTitle}
+                  onChange={(event) =>
+                    draftingChrome.onDocumentTitleChange(event.target.value)
+                  }
+                  aria-label="Document title"
+                />
+                <span className="draftChromeSaved">
+                  {draftingChrome.saveStatusLabel}
+                </span>
+              </div>
+            </div>
+
+            <div className="draftChromePrimaryCenter">
+              <button
+                type="button"
+                className="draftChromeBrand"
+                onClick={() => navigate("/dashboard")}
               >
-                Pricing
-              </Button>
+                Associate
+              </button>
+              <div className="sectionRouteNav draftChromeSectionRouteNav">
+                {sectionLinks.map((item) => (
+                  <Button
+                    key={item.path}
+                    type="button"
+                    className={`sectionRouteBtn ${isSectionLinkActive(item.path) ? "active" : ""}`}
+                    onClick={() => navigate(item.path)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+                <Button
+                  type="button"
+                  className="sectionRouteBtn"
+                  onClick={() => setIsPricingOpen(true)}
+                >
+                  Pricing
+                </Button>
+              </div>
+            </div>
+
+            <div
+              className="topBarRight draftingTopRight"
+              onMouseDownCapture={preserveSelectionOnToolbarMouseDown}
+            >
+              <div className="draftChromeStatusCluster">
+                <span className="draftRoleChip">{roleLabel}</span>
+                <span className="creditBalanceChip">{creditLabel}</span>
+              </div>
+              {draftingChrome.currentRole === "viewer" && (
+                <Button
+                  type="button"
+                  className="draftRequestEditBtn"
+                  onClick={draftingChrome.onRequestEdit}
+                  disabled={draftingChrome.requestEditPending}
+                >
+                  {draftingChrome.requestEditPending
+                    ? "Request sent"
+                    : "Request edit access"}
+                </Button>
+              )}
+              <Button
+                className="iconBtn draftChromeActionIcon"
+                type="button"
+                aria-label="Find"
+                onClick={draftingChrome.onOpenFindReplace}
+                showImage
+                image={<Search size={18} />}
+              />
+              <Button
+                className="iconBtn draftChromeActionIcon"
+                type="button"
+                aria-label="Save draft version"
+                onClick={draftingChrome.onManualSave}
+                showImage
+                image={<History size={18} />}
+              />
+              <Button
+                className="iconBtn draftChromeActionIcon"
+                type="button"
+                aria-label="Export draft"
+                onClick={draftingChrome.onPrint}
+                showImage
+                image={<Download size={18} />}
+              />
+              <Button
+                className="iconBtn draftChromeActionIcon draftChromeDividerBefore"
+                type="button"
+                aria-label="Run draft review"
+                onClick={draftingChrome.onRunReview}
+                showImage
+                image={<Scale size={18} />}
+              />
+              {jobCenterButton("draftChromeJobCenter")}
+              {profileButton("draftChromeAvatarBtn")}
             </div>
           </div>
 
           <div
-            className="topBarRight draftingTopRight"
+            className="draftChromeMenuRow"
             onMouseDownCapture={preserveSelectionOnToolbarMouseDown}
           >
-            <div className="draftChromeStatusCluster">
-              <span className="draftRoleChip">{roleLabel}</span>
-              <span className="creditBalanceChip">{creditLabel}</span>
-            </div>
-            {draftingChrome.onGenerateFormat ? (
+            {[
+              "File",
+              "Edit",
+              "View",
+              "Insert",
+              "Format",
+              "Tools",
+              "Extensions",
+              "Help",
+            ].map((item) => (
               <Button
+                key={item}
                 type="button"
-                className="draftGenerateFormatBtn"
-                onClick={draftingChrome.onGenerateFormat}
-                disabled={draftingChrome.isGeneratingFormat}
+                className="draftingMenuBtn"
+                onClick={
+                  item === "Tools"
+                    ? draftingChrome.onOpenFindReplace
+                    : item === "Insert"
+                      ? draftingChrome.onInsertTable
+                      : undefined
+                }
               >
-                {draftingChrome.isGeneratingFormat
-                  ? "Generating format..."
-                  : "Generate format through AI"}
+                {item}
               </Button>
-            ) : null}
-            {draftingChrome.currentRole === "viewer" && (
-              <Button
-                type="button"
-                className="draftRequestEditBtn"
-                onClick={draftingChrome.onRequestEdit}
-                disabled={draftingChrome.requestEditPending}
-              >
-                {draftingChrome.requestEditPending
-                  ? "Request sent"
-                  : "Request edit access"}
-              </Button>
-            )}
-            <Button
-              className="iconBtn draftChromeActionIcon"
-              type="button"
-              aria-label="Find"
-              onClick={draftingChrome.onOpenFindReplace}
-              showImage
-              image={<Search size={18} />}
-            />
-            <Button
-              className="iconBtn draftChromeActionIcon"
-              type="button"
-              aria-label="Save draft version"
-              onClick={draftingChrome.onManualSave}
-              showImage
-              image={<History size={18} />}
-            />
-            <Button
-              className="iconBtn draftChromeActionIcon"
-              type="button"
-              aria-label="Export draft"
-              onClick={draftingChrome.onPrint}
-              showImage
-              image={<Download size={18} />}
-            />
-            <Button
-              className="iconBtn draftChromeActionIcon draftChromeDividerBefore"
-              type="button"
-              aria-label="Run draft review"
-              onClick={draftingChrome.onRunReview}
-              showImage
-              image={<Scale size={18} />}
-            />
-            <Button className="draftingShareBtn navShare" type="button">
-              <Share2 size={16} />
-              Share
-            </Button>
-            <Button
-              className="avatarBtn draftChromeAvatarBtn"
-              type="button"
-              aria-label="Profile"
-              onClick={() => setIsProfileMenuOpen(true)}
-              showImage
-              image={<User size={18} />}
-            />
-          </div>
-        </div>
-
-        <div
-          className="draftChromeMenuRow"
-          onMouseDownCapture={preserveSelectionOnToolbarMouseDown}
-        >
-          {[
-            "File",
-            "Edit",
-            "View",
-            "Insert",
-            "Format",
-            "Tools",
-            "Extensions",
-            "Help",
-          ].map((item) => (
-            <Button
-              key={item}
-              type="button"
-              className="draftingMenuBtn"
-              onClick={
-                item === "Tools"
-                  ? draftingChrome.onOpenFindReplace
-                  : item === "Insert"
-                    ? draftingChrome.onInsertTable
-                    : undefined
-              }
-            >
-              {item}
-            </Button>
-          ))}
-        </div>
-
-        <div
-          className="draftChromeToolbar"
-          onMouseDownCapture={preserveSelectionOnToolbarMouseDown}
-        >
-          <div className="draftingToolbarGroup">
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Undo the last change"
-              aria-label="Undo the last change"
-              onClick={draftingChrome.onUndo}
-              disabled={!draftingChrome.canUndo}
-              showImage
-              image={<Undo2 size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Redo the last undone change"
-              aria-label="Redo the last undone change"
-              onClick={draftingChrome.onRedo}
-              disabled={!draftingChrome.canRedo}
-              showImage
-              image={<Redo2 size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Print this draft"
-              aria-label="Print this draft"
-              onClick={draftingChrome.onPrint}
-              showImage
-              image={<Printer size={16} />}
-            />
+            ))}
           </div>
 
-          <div className="draftingToolbarGroup">
-            <div className="toolbarSelectWrap small">
-              <select
-                title="Change document zoom"
-                aria-label="Change document zoom"
-                value={draftingChrome.zoomLevel}
-                onChange={(event) =>
-                  draftingChrome.onZoomChange(event.target.value as ZoomLevel)
-                }
-              >
-                <option value="80%">80%</option>
-                <option value="100%">100%</option>
-                <option value="125%">125%</option>
-              </select>
-              <ChevronDown size={14} />
-            </div>
-
-            <div className="toolbarSelectWrap">
-              <select
-                title="Change paragraph style"
-                aria-label="Change paragraph style"
-                value={draftingChrome.paragraphStyle}
-                onChange={(event) =>
-                  draftingChrome.onParagraphStyleChange(
-                    event.target.value as ParagraphStyle,
-                  )
-                }
-                disabled={draftingChrome.currentRole !== "editor"}
-              >
-                <option value="normal">Normal text</option>
-                <option value="title">Title</option>
-                <option value="heading-1">Heading 1</option>
-                <option value="heading-2">Heading 2</option>
-                <option value="heading-3">Heading 3</option>
-                <option value="heading-4">Heading 4</option>
-                <option value="heading-5">Heading 5</option>
-                <option value="heading-6">Heading 6</option>
-                <option value="quote">Quote</option>
-              </select>
-              <ChevronDown size={14} />
-            </div>
-
-            <div className="toolbarSelectWrap">
-              <select
-                title="Change font family"
-                aria-label="Change font family"
-                value={draftingChrome.fontFamily}
-                onChange={(event) =>
-                  draftingChrome.onFontFamilyChange(event.target.value)
-                }
-                disabled={draftingChrome.currentRole !== "editor"}
-              >
-                {draftingChrome.fontFamilies.map((family) => (
-                  <option key={family} value={family}>
-                    {family}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} />
-            </div>
-
-            <div className="toolbarSizeControl">
+          <div
+            className="draftChromeToolbar"
+            onMouseDownCapture={preserveSelectionOnToolbarMouseDown}
+          >
+            <div className="draftingToolbarGroup">
               <Button
                 type="button"
                 className="toolbarIconBtn"
-                title="Decrease font size"
-                aria-label="Decrease font size"
-                onClick={draftingChrome.onDecreaseFontSize}
+                title="Undo the last change"
+                aria-label="Undo the last change"
+                onClick={draftingChrome.onUndo}
+                disabled={!draftingChrome.canUndo}
                 showImage
-                image={<Minus size={14} />}
-              />
-              <input
-                type="number"
-                min={8}
-                max={120}
-                value={draftingChrome.fontSize}
-                title="Set font size"
-                onChange={(event) =>
-                  draftingChrome.onFontSizeChange(
-                    Number(event.target.value || 0),
-                  )
-                }
-                aria-label="Font size"
+                image={<Undo2 size={16} />}
               />
               <Button
                 type="button"
                 className="toolbarIconBtn"
-                title="Increase font size"
-                aria-label="Increase font size"
-                onClick={draftingChrome.onIncreaseFontSize}
+                title="Redo the last undone change"
+                aria-label="Redo the last undone change"
+                onClick={draftingChrome.onRedo}
+                disabled={!draftingChrome.canRedo}
                 showImage
-                image={<Plus size={14} />}
+                image={<Redo2 size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Print this draft"
+                aria-label="Print this draft"
+                onClick={draftingChrome.onPrint}
+                showImage
+                image={<Printer size={16} />}
               />
             </div>
-          </div>
 
-          <div className="draftingToolbarGroup">
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Make selected text bold"
-              aria-label="Make selected text bold"
-              onClick={draftingChrome.onBold}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isBoldActive}
-            >
-              <strong>B</strong>
-            </Button>
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Italicize selected text"
-              aria-label="Italicize selected text"
-              onClick={draftingChrome.onItalic}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isItalicActive}
-              showImage
-              image={<Italic size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Underline selected text"
-              aria-label="Underline selected text"
-              onClick={draftingChrome.onUnderline}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isUnderlineActive}
-              showImage
-              image={<Underline size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Strikethrough selected text"
-              aria-label="Strikethrough selected text"
-              onClick={draftingChrome.onStrike}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isStrikeActive}
-              showImage
-              image={<Strikethrough size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Highlight selected text"
-              aria-label="Highlight selected text"
-              onClick={draftingChrome.onHighlight}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isHighlightActive}
-              showImage
-              image={<Highlighter size={16} />}
-            />
-            <div className="toolbarColorSwatches">
-              {draftingChrome.colorChoices.map((color) => (
-                <Button
-                  key={color}
-                  type="button"
-                  className="toolbarColorBtn"
-                  style={{ backgroundColor: color }}
-                  onClick={() => draftingChrome.onSetTextColor(color)}
-                  title={`Set text color to ${color}`}
-                  aria-label={`Set text color ${color}`}
+            <div className="draftingToolbarGroup">
+              <div className="toolbarSelectWrap small">
+                <select
+                  title="Change document zoom"
+                  aria-label="Change document zoom"
+                  value={draftingChrome.zoomLevel}
+                  onChange={(event) =>
+                    draftingChrome.onZoomChange(event.target.value as ZoomLevel)
+                  }
+                >
+                  <option value="80%">80%</option>
+                  <option value="100%">100%</option>
+                  <option value="125%">125%</option>
+                </select>
+                <ChevronDown size={14} />
+              </div>
+
+              <div className="toolbarSelectWrap">
+                <select
+                  title="Change paragraph style"
+                  aria-label="Change paragraph style"
+                  value={draftingChrome.paragraphStyle}
+                  onChange={(event) =>
+                    draftingChrome.onParagraphStyleChange(
+                      event.target.value as ParagraphStyle,
+                    )
+                  }
                   disabled={draftingChrome.currentRole !== "editor"}
+                >
+                  <option value="normal">Normal text</option>
+                  <option value="title">Title</option>
+                  <option value="heading-1">Heading 1</option>
+                  <option value="heading-2">Heading 2</option>
+                  <option value="heading-3">Heading 3</option>
+                  <option value="heading-4">Heading 4</option>
+                  <option value="heading-5">Heading 5</option>
+                  <option value="heading-6">Heading 6</option>
+                  <option value="quote">Quote</option>
+                </select>
+                <ChevronDown size={14} />
+              </div>
+
+              <div className="toolbarSelectWrap">
+                <select
+                  title="Change font family"
+                  aria-label="Change font family"
+                  value={draftingChrome.fontFamily}
+                  onChange={(event) =>
+                    draftingChrome.onFontFamilyChange(event.target.value)
+                  }
+                  disabled={draftingChrome.currentRole !== "editor"}
+                >
+                  {draftingChrome.fontFamilies.map((family) => (
+                    <option key={family} value={family}>
+                      {family}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} />
+              </div>
+
+              <div className="toolbarSizeControl">
+                <Button
+                  type="button"
+                  className="toolbarIconBtn"
+                  title="Decrease font size"
+                  aria-label="Decrease font size"
+                  onClick={draftingChrome.onDecreaseFontSize}
+                  showImage
+                  image={<Minus size={14} />}
                 />
-              ))}
+                <input
+                  type="number"
+                  min={8}
+                  max={120}
+                  value={draftingChrome.fontSize}
+                  title="Set font size"
+                  onChange={(event) =>
+                    draftingChrome.onFontSizeChange(
+                      Number(event.target.value || 0),
+                    )
+                  }
+                  aria-label="Font size"
+                />
+                <Button
+                  type="button"
+                  className="toolbarIconBtn"
+                  title="Increase font size"
+                  aria-label="Increase font size"
+                  onClick={draftingChrome.onIncreaseFontSize}
+                  showImage
+                  image={<Plus size={14} />}
+                />
+              </div>
+            </div>
+
+            <div className="draftingToolbarGroup">
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Make selected text bold"
+                aria-label="Make selected text bold"
+                onClick={draftingChrome.onBold}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isBoldActive}
+              >
+                <strong>B</strong>
+              </Button>
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Italicize selected text"
+                aria-label="Italicize selected text"
+                onClick={draftingChrome.onItalic}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isItalicActive}
+                showImage
+                image={<Italic size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Underline selected text"
+                aria-label="Underline selected text"
+                onClick={draftingChrome.onUnderline}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isUnderlineActive}
+                showImage
+                image={<Underline size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Strikethrough selected text"
+                aria-label="Strikethrough selected text"
+                onClick={draftingChrome.onStrike}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isStrikeActive}
+                showImage
+                image={<Strikethrough size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Highlight selected text"
+                aria-label="Highlight selected text"
+                onClick={draftingChrome.onHighlight}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isHighlightActive}
+                showImage
+                image={<Highlighter size={16} />}
+              />
+              <div className="toolbarColorSwatches">
+                {draftingChrome.colorChoices.map((color) => (
+                  <Button
+                    key={color}
+                    type="button"
+                    className="toolbarColorBtn"
+                    style={{ backgroundColor: color }}
+                    onClick={() => draftingChrome.onSetTextColor(color)}
+                    title={`Set text color to ${color}`}
+                    aria-label={`Set text color ${color}`}
+                    disabled={draftingChrome.currentRole !== "editor"}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="draftingToolbarGroup">
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Insert or edit a link"
+                aria-label="Insert or edit a link"
+                onClick={draftingChrome.onInsertLink}
+                disabled={draftingChrome.currentRole !== "editor"}
+                showImage
+                image={<LinkIcon size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Insert an image placeholder"
+                aria-label="Insert an image placeholder"
+                onClick={draftingChrome.onInsertImage}
+                disabled={draftingChrome.currentRole !== "editor"}
+                showImage
+                image={<ImageIcon size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Insert a table"
+                aria-label="Insert a table"
+                onClick={draftingChrome.onInsertTable}
+                disabled={draftingChrome.currentRole !== "editor"}
+                showImage
+                image={<Table2 size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Open the comment composer"
+                aria-label="Open the comment composer"
+                onClick={draftingChrome.onOpenCommentComposer}
+                disabled={draftingChrome.currentRole !== "editor"}
+                showImage
+                image={<MessageSquare size={16} />}
+              />
+            </div>
+
+            <div className="draftingToolbarGroup">
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Align text left"
+                aria-label="Align text left"
+                onClick={draftingChrome.onAlignLeft}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isAlignLeftActive}
+                showImage
+                image={<AlignLeft size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Align text center"
+                aria-label="Align text center"
+                onClick={draftingChrome.onAlignCenter}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isAlignCenterActive}
+                showImage
+                image={<AlignCenter size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Align text right"
+                aria-label="Align text right"
+                onClick={draftingChrome.onAlignRight}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isAlignRightActive}
+                showImage
+                image={<AlignRight size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Justify text"
+                aria-label="Justify text"
+                onClick={draftingChrome.onAlignJustify}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isAlignJustifyActive}
+                showImage
+                image={<AlignJustify size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Create a bulleted list"
+                aria-label="Create a bulleted list"
+                onClick={draftingChrome.onBulletList}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isBulletListActive}
+                showImage
+                image={<List size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Create a numbered list"
+                aria-label="Create a numbered list"
+                onClick={draftingChrome.onNumberList}
+                disabled={draftingChrome.currentRole !== "editor"}
+                data-active={draftingChrome.isOrderedListActive}
+                showImage
+                image={<ListOrdered size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Decrease indentation"
+                aria-label="Decrease indentation"
+                onClick={draftingChrome.onOutdent}
+                disabled={draftingChrome.currentRole !== "editor"}
+                showImage
+                image={<IndentDecrease size={16} />}
+              />
+              <Button
+                type="button"
+                className="toolbarIconBtn"
+                title="Increase indentation"
+                aria-label="Increase indentation"
+                onClick={draftingChrome.onIndent}
+                disabled={draftingChrome.currentRole !== "editor"}
+                showImage
+                image={<IndentIncrease size={16} />}
+              />
             </div>
           </div>
-
-          <div className="draftingToolbarGroup">
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Insert or edit a link"
-              aria-label="Insert or edit a link"
-              onClick={draftingChrome.onInsertLink}
-              disabled={draftingChrome.currentRole !== "editor"}
-              showImage
-              image={<LinkIcon size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Insert an image placeholder"
-              aria-label="Insert an image placeholder"
-              onClick={draftingChrome.onInsertImage}
-              disabled={draftingChrome.currentRole !== "editor"}
-              showImage
-              image={<ImageIcon size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Insert a table"
-              aria-label="Insert a table"
-              onClick={draftingChrome.onInsertTable}
-              disabled={draftingChrome.currentRole !== "editor"}
-              showImage
-              image={<Table2 size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Open the comment composer"
-              aria-label="Open the comment composer"
-              onClick={draftingChrome.onOpenCommentComposer}
-              disabled={draftingChrome.currentRole !== "editor"}
-              showImage
-              image={<MessageSquare size={16} />}
-            />
-          </div>
-
-          <div className="draftingToolbarGroup">
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Align text left"
-              aria-label="Align text left"
-              onClick={draftingChrome.onAlignLeft}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isAlignLeftActive}
-              showImage
-              image={<AlignLeft size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Align text center"
-              aria-label="Align text center"
-              onClick={draftingChrome.onAlignCenter}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isAlignCenterActive}
-              showImage
-              image={<AlignCenter size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Align text right"
-              aria-label="Align text right"
-              onClick={draftingChrome.onAlignRight}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isAlignRightActive}
-              showImage
-              image={<AlignRight size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Justify text"
-              aria-label="Justify text"
-              onClick={draftingChrome.onAlignJustify}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isAlignJustifyActive}
-              showImage
-              image={<AlignJustify size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Create a bulleted list"
-              aria-label="Create a bulleted list"
-              onClick={draftingChrome.onBulletList}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isBulletListActive}
-              showImage
-              image={<List size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Create a numbered list"
-              aria-label="Create a numbered list"
-              onClick={draftingChrome.onNumberList}
-              disabled={draftingChrome.currentRole !== "editor"}
-              data-active={draftingChrome.isOrderedListActive}
-              showImage
-              image={<ListOrdered size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Decrease indentation"
-              aria-label="Decrease indentation"
-              onClick={draftingChrome.onOutdent}
-              disabled={draftingChrome.currentRole !== "editor"}
-              showImage
-              image={<IndentDecrease size={16} />}
-            />
-            <Button
-              type="button"
-              className="toolbarIconBtn"
-              title="Increase indentation"
-              aria-label="Increase indentation"
-              onClick={draftingChrome.onIndent}
-              disabled={draftingChrome.currentRole !== "editor"}
-              showImage
-              image={<IndentIncrease size={16} />}
-            />
-          </div>
-        </div>
         </header>
         <PricingModal
           isOpen={isPricingOpen}
@@ -709,7 +775,7 @@ const ProductNavbar = ({
 
   return (
     <>
-      <header className="homeDashTopBar">
+      <header className="homeDashTopBar productTopBar">
         <div className="topBarLeft">
           <Button
             className="iconBtn sidebarToggleBtn"
@@ -758,14 +824,8 @@ const ProductNavbar = ({
             </Button>
           </div>
           <span className="creditBalanceChip">{creditLabel}</span>
-          <Button
-            className="avatarBtn"
-            type="button"
-            aria-label="Profile"
-            onClick={() => setIsProfileMenuOpen(true)}
-            showImage
-            image={<User size={16} />}
-          />
+          {jobCenterButton()}
+          {profileButton()}
         </div>
         <UserProfile
           isOpen={isProfileMenuOpen}

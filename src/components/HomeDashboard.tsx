@@ -5,15 +5,14 @@ import { useNavigate } from "react-router-dom";
 import type { SavedResearchApiItem } from "./ActiveResearch";
 import { buildApiUrl } from "../lib/apiBase";
 import Loader from "./Loader";
-import SearchBar, { type SearchBarMode } from "./SearchBar";
+import SearchBar from "./SearchBar";
 import { useAuth } from "../context/AuthContext";
-import UserProfile from "./UserProfile";
 import {
   useMatterStore,
   type MatterRecord,
 } from "../context/MatterStoreContext";
-import PricingModal from "./PricingModal";
 import { Plus } from "lucide-react";
+import ProductNavbar from "./ProductNavbar";
 
 const getUserTimeZone = () =>
   Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
@@ -130,10 +129,6 @@ const HomeDashboard = () => {
   const [savedResearches, setSavedResearches] = useState<
     SavedResearchApiItem[]
   >([]);
-  const [searchMode, setSearchMode] = useState<SearchBarMode>("normal");
-  const [isPricingOpen, setIsPricingOpen] = useState(false);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const { user, updateDisplayName } = useAuth();
   const { matters, setActiveMatterId, isSavedMattersLoading } =
     useMatterStore();
@@ -248,33 +243,6 @@ const HomeDashboard = () => {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadCredits = async () => {
-      try {
-        const response = await fetch(buildApiUrl("/api/credits/me"));
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          credits?: { available?: number; balance?: number };
-        };
-        const value = Number(
-          payload.credits?.available ?? payload.credits?.balance ?? Number.NaN,
-        );
-        if (!cancelled && Number.isFinite(value)) {
-          setCreditBalance(value);
-        }
-      } catch {
-        if (!cancelled) setCreditBalance(null);
-      }
-    };
-    void loadCredits();
-    const interval = window.setInterval(loadCredits, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, []);
-
   const activeMatterCards = useMemo(() => matters.slice(0, 4), [matters]);
   const workQueueRows = useMemo(
     () =>
@@ -294,16 +262,6 @@ const HomeDashboard = () => {
     [activeMatterCards],
   );
   const displayNameValue = nameDraft ?? currentDisplayName;
-  const userFirstName =
-    displayNameValue.trim().split(/\s+/).filter(Boolean)[0] ||
-    user?.email?.split("@")[0] ||
-    "there";
-  const userInitial = userFirstName.slice(0, 1).toUpperCase() || "A";
-  const creditLabel =
-    creditBalance === null
-      ? "0 credits"
-      : `${Math.max(0, Math.floor(creditBalance)).toLocaleString("en-IN")} credits`;
-
   const recentActivityMatters = activeMatterCards.slice(0, 3);
 
   const handleQuickResearchSubmit = (query: string) => {
@@ -335,67 +293,36 @@ const HomeDashboard = () => {
 
   if (isWarmingBackend) {
     return (
-      <Loader
-        eyebrow="Backend Warm-up"
-        title="Preparing Dashboard"
-        message="Render free-tier instance is waking up. This can take up to 60 seconds."
-        stage={warmupStage}
-        progress={warmupProgress}
-        steps={[
-          "Calling /health on backend",
-          "Waiting for Render instance to scale up",
-          "Initializing dashboard services",
-        ]}
-      />
+      <div className="terraDashboardPage">
+        <ProductNavbar
+          isSideBarCollapsed={false}
+          onToggleSidebar={() => undefined}
+        />
+        <div className="productPageLoaderSurface">
+          <Loader
+            eyebrow="Backend Warm-up"
+            title="Preparing Dashboard"
+            message="Render free-tier instance is waking up. This can take up to 60 seconds."
+            stage={warmupStage}
+            progress={warmupProgress}
+            mode="inline"
+            steps={[
+              "Calling /health on backend",
+              "Waiting for Render instance to scale up",
+              "Initializing dashboard services",
+            ]}
+          />
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="terraDashboardPage">
-      <header className="terraTopNav">
-        <div className="terraTopLeft">
-          <button
-            type="button"
-            className="terraBrand"
-            onClick={() => navigate("/dashboard")}
-          >
-            Associate
-          </button>
-        </div>
-        <div className="terraTopRight">
-          <nav className="terraRouteNav" aria-label="Primary">
-            <button type="button" className="isActive" onClick={() => navigate("/dashboard")}>
-              Dashboard
-            </button>
-            <button type="button" onClick={() => navigate("/matter")}>
-              Matters
-            </button>
-            <button type="button" onClick={() => navigate("/research")}>
-              Research
-            </button>
-            <button type="button" onClick={() => navigate("/dashboard/drafting")}>
-              Drafting
-            </button>
-          </nav>
-          <button
-            className="terraNavButton"
-            type="button"
-            onClick={() => setIsPricingOpen(true)}
-          >
-            Pricing
-          </button>
-          <span className="terraCreditsChip">{creditLabel} remaining</span>
-          <button
-            type="button"
-            className="terraUserCluster"
-            aria-label="Open profile details"
-            onClick={() => setIsProfileMenuOpen(true)}
-          >
-            <span className="terraAvatar">{userInitial}</span>
-            <span className="terraUserName">{userFirstName}</span>
-          </button>
-        </div>
-      </header>
+      <ProductNavbar
+        isSideBarCollapsed={false}
+        onToggleSidebar={() => undefined}
+      />
 
       <div className="terraDashboardShell">
         <aside className="terraSidebar">
@@ -593,17 +520,8 @@ const HomeDashboard = () => {
         activeSection="activeResearch"
         onSubmitQuery={handleQuickResearchSubmit}
         placeholderOverride="Search matters, clauses, statutes..."
-        mode={searchMode}
-        onModeChange={setSearchMode}
-      />
-      <PricingModal
-        isOpen={isPricingOpen}
-        onClose={() => setIsPricingOpen(false)}
-        isAuthenticated
-      />
-      <UserProfile
-        isOpen={isProfileMenuOpen}
-        onClose={() => setIsProfileMenuOpen(false)}
+        mode="normal"
+        showModeSelector={false}
       />
     </div>
   );

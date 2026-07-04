@@ -47,7 +47,6 @@
 .terraDraftingPage .draftChromePrimaryRow,
 .terraDraftingPage .draftChromeMenuRow,
 .terraDraftingPage .draftChromeToolbar {
-  max-width: 1340px;
   width: 100%;
   margin: 0 auto;
   padding-left: 24px;
@@ -56,9 +55,12 @@
 
 .terraDraftingPage .draftChromePrimaryRow {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto minmax(280px, 1fr);
+  grid-template-columns: minmax(220px, 0.95fr) minmax(360px, 1fr) minmax(
+      260px,
+      1.05fr
+    );
   align-items: center;
-  gap: 24px;
+  gap: 16px;
   padding-top: 14px;
   padding-bottom: 14px;
   border-bottom: 1px solid #c4c8bc;
@@ -66,12 +68,12 @@
 
 .terraDraftingPage .draftChromePrimaryLeft {
   gap: 14px;
+  overflow: hidden;
 }
 
 .terraDraftingPage .sidebarToggleBtn,
 .terraDraftingPage .topBarHomeBtn,
-.terraDraftingPage .draftChromeActionIcon,
-.terraDraftingPage .draftChromeAvatarBtn {
+.terraDraftingPage .draftChromeActionIcon {
   width: 36px;
   height: 36px;
   border-radius: 999px;
@@ -81,10 +83,31 @@
 
 .terraDraftingPage .sidebarToggleBtn:hover,
 .terraDraftingPage .topBarHomeBtn:hover,
-.terraDraftingPage .draftChromeActionIcon:hover,
-.terraDraftingPage .draftChromeAvatarBtn:hover {
+.terraDraftingPage .draftChromeActionIcon:hover {
   background: #eae6de;
   color: #4a7c59;
+}
+
+.terraDraftingPage .draftChromeAvatarBtn {
+  gap: 8px;
+  border-left: 0;
+  padding-left: 0;
+}
+
+.terraDraftingPage .draftChromeAvatarBtn .productHeaderAvatar {
+  width: 36px;
+  height: 36px;
+  background: #f0ece4;
+  color: #6b6358;
+}
+
+.terraDraftingPage .draftChromeAvatarBtn:hover .productHeaderAvatar {
+  background: #eae6de;
+  color: #4a7c59;
+}
+
+.terraDraftingPage .draftChromeAvatarBtn .productHeaderUserName {
+  display: none;
 }
 
 .terraDraftingPage .draftChromeTitleBlock {
@@ -123,6 +146,7 @@
   display: grid;
   justify-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .terraDraftingPage .draftChromeBrand {
@@ -139,6 +163,8 @@
 .terraDraftingPage .draftChromeSectionRouteNav {
   gap: 16px;
   margin-right: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .terraDraftingPage .draftChromeSectionRouteNav .sectionRouteBtn {
@@ -168,13 +194,16 @@
 .terraDraftingPage .draftingTopRight {
   justify-content: flex-end;
   gap: 10px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .terraDraftingPage .draftChromeStatusCluster {
   display: grid;
   justify-items: end;
   gap: 1px;
-  margin-right: 8px;
+  margin-right: 2px;
+  min-width: 88px;
 }
 
 .terraDraftingPage .draftRoleChip,
@@ -225,6 +254,28 @@
   font-weight: 700;
   letter-spacing: 0.01em;
   text-transform: none;
+}
+
+@media (max-width: 1500px) {
+  .terraDraftingPage .draftChromePrimaryRow {
+    grid-template-columns: minmax(210px, 0.9fr) minmax(300px, 0.8fr) minmax(
+        320px,
+        1.2fr
+      );
+  }
+
+  .terraDraftingPage .draftChromeBrand {
+    font-size: 1.75rem;
+  }
+
+  .terraDraftingPage .draftChromeSectionRouteNav {
+    display: none;
+  }
+
+  .terraDraftingPage .draftGenerateFormatBtn,
+  .terraDraftingPage .draftRequestEditBtn {
+    display: none;
+  }
 }
 
 .terraDraftingPage .draftingShareBtn,

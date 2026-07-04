@@ -12,12 +12,19 @@ import DraftingDocument, {
   type DraftingToolbarState,
 } from "./DraftingDocument";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
-import { useMatterStore } from "../context/MatterStoreContext";
+import {
+  useMatterStore,
+  type MatterDraftRecommendations,
+} from "../context/MatterStoreContext";
+import { usePipelines } from "../context/PipelineContext";
 import {
   createDraft,
+  deleteDraft,
   deriveDraftContextFromMatter,
   getDraftReview,
   getDraft,
+  listDrafts,
+  getDraftRecommendations,
   generateDraftFormat,
   hashDraftContent,
   patchDraft,
@@ -30,6 +37,7 @@ import {
   type AccessRole,
   type DraftComment,
   type DraftDetail,
+  type DraftSummary,
   type DraftFormatProposal,
   type PendingAnnotation,
   type ParagraphStyle,
@@ -575,8 +583,11 @@ const DraftingPage = () => {
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
   const { matters, activeMatter, setActiveMatterId } = useMatterStore();
+  const { jobs, startSingleDraftJob } = usePipelines();
   const matterIdFromQuery = String(searchParams.get("matter") || "").trim();
   const draftIdFromQuery = String(searchParams.get("draft") || "").trim();
+  const draftJobIdFromQuery = String(searchParams.get("draftJob") || "").trim();
+  const blankDraftFromQuery = searchParams.get("blank") === "1";
   const startDraftFromQuery = String(searchParams.get("startDraft") || "").trim();
   const draftLabelFromQuery = String(searchParams.get("draftLabel") || "").trim();
   const draftKeyFromQuery = String(searchParams.get("draftKey") || "").trim();
@@ -597,8 +608,66 @@ const DraftingPage = () => {
     selectedMatter && isMockMatterId(selectedMatter.id)
       ? null
       : selectedMatter?.id || null;
+  const draftRequestKey = useMemo(
+    () =>
+      selectedMatterDraftId && startDraftFromQuery
+        ? [
+            selectedMatterDraftId,
+            startDraftFromQuery,
+            draftKeyFromQuery,
+            draftLabelFromQuery,
+            requestedFromQuery === "drafts" ? "drafts" : "overview",
+          ].join(":")
+        : "",
+    [
+      draftKeyFromQuery,
+      draftLabelFromQuery,
+      requestedFromQuery,
+      selectedMatterDraftId,
+      startDraftFromQuery,
+    ],
+  );
+  const activeDraftPipelineJob = useMemo(
+    () =>
+      jobs.find((job) => draftJobIdFromQuery && job.id === draftJobIdFromQuery) ||
+      jobs.find(
+        (job) =>
+          job.source === "draft-job" &&
+          job.requestKey === draftRequestKey &&
+          (job.status === "queued" || job.status === "running"),
+      ) ||
+      null,
+    [
+      draftJobIdFromQuery,
+      draftRequestKey,
+      jobs,
+    ],
+  );
+  const runningDraftJobs = useMemo(
+    () =>
+      jobs.filter(
+        (job) =>
+          job.source === "draft-job" &&
+          (job.status === "queued" || job.status === "running"),
+      ),
+    [jobs],
+  );
+  const runningDraftByDraftId = useMemo(() => {
+    const map = new Map<string, (typeof runningDraftJobs)[number]>();
+    runningDraftJobs.forEach((job) => {
+      const draftId = String(job.draftId || job.resultId || "").trim();
+      if (draftId) map.set(draftId, job);
+    });
+    return map;
+  }, [runningDraftJobs]);
 
   const [activeDraft, setActiveDraft] = useState<DraftDetail | null>(null);
+  const [draftLibrary, setDraftLibrary] = useState<DraftSummary[]>([]);
+  const [isDraftLibraryLoading, setIsDraftLibraryLoading] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState("");
+  const [draftSuggestionByMatterId, setDraftSuggestionByMatterId] = useState<
+    Record<string, MatterDraftRecommendations>
+  >({});
   const [documentTitle, setDocumentTitle] = useState("Untitled legal draft");
   const [currentRole] = useState<AccessRole>("editor");
   const [requestEditPending, setRequestEditPending] = useState(false);
@@ -624,6 +693,123 @@ const DraftingPage = () => {
     status: "idle",
     message: "",
   });
+  const visibleDraftLibrary = useMemo(
+    () =>
+      draftLibrary.filter((draft) => {
+        if (runningDraftByDraftId.has(draft.id)) return false;
+        const generationStatus = String(draft.generationStatus || "").toLowerCase();
+        if (generationStatus === "running" || generationStatus === "failed") return false;
+        if (generationStatus && generationStatus !== "completed") return false;
+        return Boolean(draft.lastSavedAt || draft.saveVersion > 0 || generationStatus === "completed");
+      }),
+    [draftLibrary, runningDraftByDraftId],
+  );
+  const aiSuggestedDraftGroups = useMemo(
+    () =>
+      matters
+        .map((matter) => {
+          const seen = new Set<string>();
+          const draftRecommendations =
+            matter.draftRecommendations || draftSuggestionByMatterId[matter.id] || null;
+          const catalogueSuggestions = (draftRecommendations?.recommendations || [])
+            .filter((recommendation) => recommendation.can_generate_now)
+            .map((recommendation) => ({
+              draft_key: recommendation.draft_key,
+              template_key: recommendation.template_key,
+              title: recommendation.title,
+              reason: recommendation.reason || recommendation.purpose || "Ready to draft",
+            }));
+          const atlasDraftQueue =
+            matter.atlasNextSteps && typeof matter.atlasNextSteps === "object"
+              ? (matter.atlasNextSteps as { draftQueue?: Array<{
+                  id?: string;
+                  title?: string;
+                  description?: string;
+                  draftType?: string;
+                  status?: string;
+                  isStartable?: boolean;
+                }> }).draftQueue || []
+              : [];
+          const latestAtlasDraftQueue =
+            matter.latestAtlasNextSteps && typeof matter.latestAtlasNextSteps === "object"
+              ? (matter.latestAtlasNextSteps as { draftQueue?: Array<{
+                  id?: string;
+                  title?: string;
+                  description?: string;
+                  draftType?: string;
+                  status?: string;
+                  isStartable?: boolean;
+                }> }).draftQueue || []
+              : [];
+          const understandingDraftSequence =
+            matter.matterUnderstandingV2 && typeof matter.matterUnderstandingV2 === "object"
+              ? (matter.matterUnderstandingV2 as { draft_sequence?: Array<{
+                  draft_type?: string;
+                  title?: string;
+                  rationale?: string;
+                }> }).draft_sequence || []
+              : [];
+          const latestUnderstandingDraftSequence =
+            matter.latestMatterUnderstandingV2 && typeof matter.latestMatterUnderstandingV2 === "object"
+              ? (matter.latestMatterUnderstandingV2 as { draft_sequence?: Array<{
+                  draft_type?: string;
+                  title?: string;
+                  rationale?: string;
+                }> }).draft_sequence || []
+              : [];
+          const atlasSuggestions = [...atlasDraftQueue, ...latestAtlasDraftQueue]
+            .filter((item) => item.status !== "blocked")
+            .filter((item) => item.isStartable !== false)
+            .map((item) => ({
+              draft_key: item.id || item.draftType || item.title || "",
+              template_key: item.draftType || item.id || "",
+              title: item.title || item.draftType || "Suggested draft",
+              reason: item.description || "Suggested from matter next steps",
+            }));
+          const understandingSuggestions = [
+            ...understandingDraftSequence,
+            ...latestUnderstandingDraftSequence,
+          ].map((item) => ({
+            draft_key: item.draft_type || item.title || "",
+            template_key: item.draft_type || "",
+            title: item.title || item.draft_type || "Suggested draft",
+            reason: item.rationale || "Suggested from matter understanding",
+          }));
+          const nextStepSuggestions = (matter.nextStepPlan?.items || [])
+            .map((item) => item.primary_drafting_action)
+            .filter(Boolean)
+            .map((action) => ({
+              draft_key: action?.template_key || action?.draft_type || action?.label || "",
+              template_key: action?.template_key || action?.draft_type || "",
+              title: action?.label || action?.draft_type || "Suggested draft",
+              reason: action?.cta || "Suggested next draft",
+            }));
+          const recommendations = [
+            ...catalogueSuggestions,
+            ...atlasSuggestions,
+            ...understandingSuggestions,
+            ...nextStepSuggestions,
+          ]
+            .filter((recommendation) => String(recommendation.title || "").trim())
+            .filter((recommendation) => {
+              const key = String(
+                recommendation.draft_key || recommendation.template_key || recommendation.title || "",
+              )
+                .trim()
+                .toLowerCase();
+              if (!key || seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+            .slice(0, 6);
+          return {
+            matter,
+            recommendations,
+          };
+        })
+        .filter((group) => group.recommendations.length > 0),
+    [draftSuggestionByMatterId, matters],
+  );
   const [askAiState, setAskAiState] = useState<AskAiState>({
     isOpen: false,
     message: "",
@@ -812,6 +998,172 @@ const DraftingPage = () => {
   const hasDraftSidePanelContent = Boolean(
     !isSingleDraftStreaming && (formatProposal || formatGenerationError),
   );
+  const shouldShowDraftLibrary =
+    !draftIdFromQuery &&
+    !blankDraftFromQuery &&
+    !sourceDocumentFromQuery &&
+    !startDraftFromQuery &&
+    !isSingleDraftStreaming &&
+    !activeDraft;
+  const completedDraftJobSignature = useMemo(
+    () =>
+      jobs
+        .filter((job) => job.source === "draft-job" && job.status === "succeeded")
+        .map(
+          (job) =>
+            `${job.id}:${job.resultId || job.draftId || ""}:${job.completedAt || ""}`,
+        )
+        .join("|"),
+    [jobs],
+  );
+
+  useEffect(() => {
+    if (!shouldShowDraftLibrary) return;
+    let cancelled = false;
+    setIsDraftLibraryLoading(true);
+    void listDrafts()
+      .then((drafts) => {
+        if (cancelled) return;
+        setDraftLibrary(drafts);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDraftLibrary([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsDraftLibraryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completedDraftJobSignature, shouldShowDraftLibrary]);
+
+  useEffect(() => {
+    if (!shouldShowDraftLibrary || !matters.length) return;
+    let cancelled = false;
+    const candidates = matters.filter(
+      (matter) => {
+        const hasFetchedSuggestions = Object.prototype.hasOwnProperty.call(
+          draftSuggestionByMatterId,
+          matter.id,
+        );
+        return !matter.draftRecommendations?.recommendations?.length && !hasFetchedSuggestions;
+      },
+    );
+    if (!candidates.length) return;
+
+    void Promise.all(
+      candidates.map((matter) =>
+        getDraftRecommendations(matter.id, { includeResult: false })
+          .then((payload) => ({
+            matterId: matter.id,
+            recommendations: payload.draftRecommendations,
+          }))
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const nextEntries = results.filter(
+        (
+          result,
+        ): result is {
+          matterId: string;
+          recommendations: MatterDraftRecommendations;
+        } => Boolean(result?.recommendations),
+      );
+      if (!nextEntries.length) return;
+      setDraftSuggestionByMatterId((current) => {
+        const next = { ...current };
+        nextEntries.forEach((entry) => {
+          next[entry.matterId] = entry.recommendations;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draftSuggestionByMatterId, matters, shouldShowDraftLibrary]);
+
+  useEffect(() => {
+    if (!activeDraftPipelineJob || activeDraftPipelineJob.source !== "draft-job") {
+      return;
+    }
+
+    if (activeDraftPipelineJob.status === "failed") {
+      setSingleDraftTypedThinking("");
+      setSingleDraftStreamState(null);
+      setSaveStatus("error");
+      setLoadError(activeDraftPipelineJob.error || "Draft generation failed.");
+      const failedDraftId = String(
+        activeDraftPipelineJob.draftId || activeDraftPipelineJob.resultId || "",
+      ).trim();
+      if (failedDraftId && draftIdFromQuery !== failedDraftId) {
+        navigate(
+          `/drafting?draft=${encodeURIComponent(failedDraftId)}${
+            activeDraftPipelineJob.matterId
+              ? `&matter=${encodeURIComponent(activeDraftPipelineJob.matterId)}`
+              : ""
+          }&mode=edit`,
+          { replace: true },
+        );
+      }
+      return;
+    }
+
+    if (activeDraftPipelineJob.status === "succeeded") {
+      setSingleDraftTypedThinking("");
+      setSingleDraftStreamState(null);
+      setLoadError("");
+      const completedDraftId = String(
+        activeDraftPipelineJob.draftId || activeDraftPipelineJob.resultId || "",
+      ).trim();
+      if (completedDraftId && draftIdFromQuery !== completedDraftId) {
+        navigate(
+          `/drafting?draft=${encodeURIComponent(completedDraftId)}${
+            activeDraftPipelineJob.matterId
+              ? `&matter=${encodeURIComponent(activeDraftPipelineJob.matterId)}`
+              : ""
+          }&mode=edit`,
+          { replace: true },
+        );
+      }
+      return;
+    }
+
+    setSaveStatus("loading");
+    setLoadError("");
+    setActiveDraft(null);
+    setCurrentContentJson({});
+    savedHashRef.current = "";
+    currentHashRef.current = "";
+    contextDirtyRef.current = false;
+    setSingleDraftStreamState({
+      draftId: String(activeDraftPipelineJob.draftId || ""),
+      title:
+        activeDraftPipelineJob.title ||
+        draftLabelFromQuery ||
+        startDraftFromQuery ||
+        "Generating draft",
+      stage: String(activeDraftPipelineJob.stageKey || "loading_context"),
+      statusMessage:
+        activeDraftPipelineJob.statusMessage ||
+        activeDraftPipelineJob.stage ||
+        "Associate is drafting from the matter record.",
+      thinkingText: String(activeDraftPipelineJob.thinkingText || ""),
+      thinkingHistory: Array.isArray(activeDraftPipelineJob.thinkingHistory)
+        ? activeDraftPipelineJob.thinkingHistory
+        : [],
+    });
+
+  }, [
+    activeDraftPipelineJob,
+    draftIdFromQuery,
+    draftLabelFromQuery,
+    navigate,
+    startDraftFromQuery,
+  ]);
 
   useEffect(() => {
     if (!matterIdFromQuery) return;
@@ -820,6 +1172,22 @@ const DraftingPage = () => {
   }, [matterIdFromQuery, matters, setActiveMatterId]);
 
   useEffect(() => {
+    if (
+      activeDraftPipelineJob?.source === "draft-job" &&
+      (activeDraftPipelineJob.status === "queued" ||
+        activeDraftPipelineJob.status === "running")
+    ) {
+      setActiveDraft(null);
+      setDocumentTitle("Untitled legal draft");
+      setCurrentContentJson({});
+      savedHashRef.current = "";
+      currentHashRef.current = "";
+      contextDirtyRef.current = false;
+      setSaveStatus("loading");
+      setLoadError("");
+      return;
+    }
+
     if (!draftIdFromQuery) {
       setActiveDraft(null);
       setDocumentTitle("Untitled legal draft");
@@ -858,7 +1226,7 @@ const DraftingPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [draftIdFromQuery]);
+  }, [activeDraftPipelineJob, draftIdFromQuery]);
 
   const createEditableDraft = useCallback(
     async ({
@@ -948,6 +1316,44 @@ const DraftingPage = () => {
   }, [createEditableDraft, draftIdFromQuery, selectedMatter, selectedMatterDraftId, sourceDocumentFromQuery]);
 
   useEffect(() => {
+    if (!blankDraftFromQuery || draftIdFromQuery || sourceDocumentFromQuery || startDraftFromQuery) {
+      return;
+    }
+
+    const requestKey = selectedMatter?.id || "blank";
+    if (blankDraftRequestRef.current === requestKey) return;
+    blankDraftRequestRef.current = requestKey;
+
+    const createBlankDraft = async () => {
+      try {
+        await createEditableDraft({
+          title: selectedMatter ? `Draft - ${selectedMatter.title}` : "Untitled legal draft",
+          matterId: selectedMatterDraftId,
+          templateId: "blank-document",
+          html: blankDraftHtml(),
+          buildReplaceUrl: (draft) =>
+            `/drafting?draft=${encodeURIComponent(draft.id)}${
+              selectedMatter?.id ? `&matter=${encodeURIComponent(selectedMatter.id)}` : ""
+            }`,
+        });
+      } catch (error) {
+        setSaveStatus("error");
+        setLoadError(error instanceof Error ? error.message : "Failed to open blank draft.");
+      }
+    };
+
+    void createBlankDraft();
+  }, [
+    blankDraftFromQuery,
+    createEditableDraft,
+    draftIdFromQuery,
+    selectedMatter,
+    selectedMatterDraftId,
+    sourceDocumentFromQuery,
+    startDraftFromQuery,
+  ]);
+
+  useEffect(() => {
     if (sourceDocumentFromQuery || !matterIdFromQuery || !startDraftFromQuery) {
       return;
     }
@@ -966,6 +1372,31 @@ const DraftingPage = () => {
     ].join(":");
     if (draftGenerationStartRequestRef.current === requestKey) return;
     draftGenerationStartRequestRef.current = requestKey;
+
+    const pipelineJobId = startSingleDraftJob({
+      matterId: selectedMatterDraftId,
+      draftType: startDraftFromQuery,
+      draftKey: draftKeyFromQuery || undefined,
+      draftTitle: draftLabelFromQuery || undefined,
+      source: "atlas_next_steps",
+      requestedFrom: requestedFromQuery === "drafts" ? "drafts" : "overview",
+      targetBasePath: "/drafting",
+    });
+    if (pipelineJobId && draftJobIdFromQuery !== pipelineJobId) {
+      navigate(
+        `/drafting?matter=${encodeURIComponent(selectedMatterDraftId)}&startDraft=${encodeURIComponent(
+          startDraftFromQuery,
+        )}&draftLabel=${encodeURIComponent(
+          draftLabelFromQuery || startDraftFromQuery,
+        )}&requestedFrom=${encodeURIComponent(
+          requestedFromQuery,
+        )}&draftKey=${encodeURIComponent(draftKeyFromQuery || "")}&draftJob=${encodeURIComponent(
+          pipelineJobId,
+        )}`,
+        { replace: true },
+      );
+    }
+    return;
 
     setSaveStatus("loading");
     setLoadError("");
@@ -1289,7 +1720,7 @@ const DraftingPage = () => {
       try {
         const response = await openSingleDraftStream(
           {
-            matterId: selectedMatterDraftId,
+            matterId: selectedMatterDraftId || "",
             draftType: startDraftFromQuery,
             draftKey: draftKeyFromQuery || undefined,
             draftTitle: draftLabelFromQuery || undefined,
@@ -1374,6 +1805,7 @@ const DraftingPage = () => {
     };
   }, [
     draftGenerationStartRequestRef,
+    draftJobIdFromQuery,
     draftKeyFromQuery,
     draftLabelFromQuery,
     matterIdFromQuery,
@@ -1381,36 +1813,15 @@ const DraftingPage = () => {
     requestedFromQuery,
     selectedMatterDraftId,
     sourceDocumentFromQuery,
+    startSingleDraftJob,
     startDraftFromQuery,
   ]);
 
   useEffect(() => {
     if (draftIdFromQuery || sourceDocumentFromQuery || startDraftFromQuery) return;
-
-    const requestKey = selectedMatter?.id || "blank";
-    if (blankDraftRequestRef.current === requestKey) return;
-    blankDraftRequestRef.current = requestKey;
-
-    const createBlankDraft = async () => {
-      try {
-        await createEditableDraft({
-          title: selectedMatter ? `Draft - ${selectedMatter.title}` : "Untitled legal draft",
-          matterId: selectedMatterDraftId,
-          templateId: "blank-document",
-          html: blankDraftHtml(),
-          buildReplaceUrl: (draft) =>
-            `/drafting?draft=${encodeURIComponent(draft.id)}${
-              selectedMatter?.id ? `&matter=${encodeURIComponent(selectedMatter.id)}` : ""
-            }`,
-        });
-      } catch (error) {
-        setSaveStatus("error");
-        setLoadError(error instanceof Error ? error.message : "Failed to open blank draft.");
-      }
-    };
-
-    void createBlankDraft();
-  }, [createEditableDraft, draftIdFromQuery, selectedMatter, selectedMatterDraftId, sourceDocumentFromQuery, startDraftFromQuery]);
+    setSaveStatus("idle");
+    setLoadError("");
+  }, [draftIdFromQuery, sourceDocumentFromQuery, startDraftFromQuery]);
 
   useEffect(() => {
     if (!activeDraft) return;
@@ -2233,6 +2644,27 @@ const DraftingPage = () => {
     }
   };
 
+  const handleDeleteDraft = async (draftId: string) => {
+    const normalizedDraftId = String(draftId || "").trim();
+    if (!normalizedDraftId || deletingDraftId) return;
+    setDeletingDraftId(normalizedDraftId);
+    setLoadError("");
+    try {
+      await deleteDraft(normalizedDraftId);
+      setDraftLibrary((current) =>
+        current.filter((draft) => draft.id !== normalizedDraftId),
+      );
+      if (activeDraft?.id === normalizedDraftId) {
+        setActiveDraft(null);
+        navigate("/drafting", { replace: true });
+      }
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Failed to delete draft.");
+    } finally {
+      setDeletingDraftId("");
+    }
+  };
+
   const acceptFormatProposal = () => {
     if (!activeDraft || !formatProposal) return;
     const nextContext = {
@@ -2612,6 +3044,158 @@ const DraftingPage = () => {
                 </div>
               ) : null}
             </aside>
+          </section>
+        ) : shouldShowDraftLibrary ? (
+          <section className="draftLibraryCanvas">
+            <div className="draftLibraryHeader">
+              <div>
+                <p className="draftTemplateEyebrow">Drafting</p>
+                <h1>Drafts</h1>
+              </div>
+              <button
+                type="button"
+                className="draftLibraryPrimaryAction"
+                onClick={() => navigate("/drafting?blank=1")}
+              >
+                Start new draft
+              </button>
+            </div>
+
+            {runningDraftJobs.length ? (
+              <section className="draftLibraryGroup">
+                <div className="draftLibraryGroupHead">
+                  <h2>Generating now</h2>
+                  <span>{runningDraftJobs.length}</span>
+                </div>
+                <div className="draftLibraryGrid">
+                  {runningDraftJobs.map((job) => (
+                    <button
+                      type="button"
+                      className="draftLibraryCard isRunning"
+                      key={job.id}
+                      onClick={() => navigate(job.targetPath || "/drafting")}
+                    >
+                      <span>Generating</span>
+                      <strong>{job.title}</strong>
+                      <small>{job.statusMessage || job.stage}</small>
+                      <div className="draftLibraryProgress" aria-hidden="true">
+                        <i style={{ width: `${Math.max(4, job.progress)}%` }} />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="draftLibraryGroup">
+              <div className="draftLibraryGroupHead">
+                <h2>Saved drafts</h2>
+                <span>{visibleDraftLibrary.length}</span>
+              </div>
+              {isDraftLibraryLoading ? (
+                <div className="draftLibraryEmpty">Loading drafts.</div>
+              ) : visibleDraftLibrary.length ? (
+                <div className="draftLibraryGrid">
+                  {visibleDraftLibrary.map((draft) => {
+                    const runningJob = runningDraftByDraftId.get(draft.id);
+                    return (
+                      <article
+                        className={`draftLibraryCard ${runningJob ? "isRunning" : ""}`}
+                        key={draft.id}
+                      >
+                        <button
+                          type="button"
+                          className="draftLibraryCardMain"
+                          onClick={() => {
+                            if (runningJob) {
+                              navigate(runningJob.targetPath || "/drafting");
+                              return;
+                            }
+                            navigate(
+                              `/drafting?draft=${encodeURIComponent(draft.id)}${
+                                draft.matterId
+                                  ? `&matter=${encodeURIComponent(draft.matterId)}`
+                                  : ""
+                              }`,
+                            );
+                          }}
+                        >
+                          <span>{runningJob ? "Generating" : "Draft"}</span>
+                          <strong>{draft.title || "Untitled legal draft"}</strong>
+                          <small>
+                            {runningJob
+                              ? runningJob.statusMessage || runningJob.stage
+                              : draft.lastSavedAt
+                                ? `Saved ${new Date(draft.lastSavedAt).toLocaleString()}`
+                                : "Saved draft"}
+                          </small>
+                          {runningJob ? (
+                            <div className="draftLibraryProgress" aria-hidden="true">
+                              <i style={{ width: `${Math.max(4, runningJob.progress)}%` }} />
+                            </div>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          className="draftLibraryDeleteBtn"
+                          onClick={() => void handleDeleteDraft(draft.id)}
+                          disabled={deletingDraftId === draft.id}
+                        >
+                          {deletingDraftId === draft.id ? "Deleting" : "Delete"}
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="draftLibraryEmpty">
+                  Drafts created from matter drafting actions will appear here.
+                </div>
+              )}
+            </section>
+
+            <section className="draftLibraryGroup">
+              <div className="draftLibraryGroupHead">
+                <h2>AI suggested drafts</h2>
+                <span>{aiSuggestedDraftGroups.length}</span>
+              </div>
+              {aiSuggestedDraftGroups.length ? (
+                <div className="draftSuggestionStack">
+                  {aiSuggestedDraftGroups.map(({ matter, recommendations }) => (
+                    <article className="draftSuggestionMatter" key={matter.id}>
+                      <h3>{matter.title}</h3>
+                      <div className="draftSuggestionList">
+                        {recommendations.map((recommendation) => (
+                          <button
+                            type="button"
+                            key={recommendation.draft_key || recommendation.title}
+                            className="draftSuggestionItem"
+                            onClick={() =>
+                              navigate(
+                                `/drafting?matter=${encodeURIComponent(matter.id)}&startDraft=${encodeURIComponent(
+                                  recommendation.draft_key || recommendation.title,
+                                )}&draftLabel=${encodeURIComponent(
+                                  recommendation.title,
+                                )}&requestedFrom=drafts&draftKey=${encodeURIComponent(
+                                  recommendation.draft_key,
+                                )}`,
+                              )
+                            }
+                          >
+                            <strong>{recommendation.title}</strong>
+                            <span>{recommendation.reason || "Ready to draft"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="draftLibraryEmpty">
+                  AI suggested drafts will appear after a matter has draft recommendations.
+                </div>
+              )}
+            </section>
           </section>
         ) : (
           <section className="draftBlankLoading">
