@@ -7,7 +7,11 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { buildApiUrl } from "../lib/apiBase";
+import {
+  buildApiUrl,
+  clearApiSessionToken,
+  setApiSessionToken,
+} from "../lib/apiBase";
 import {
   clearActiveCreditCache,
   fetchCreditBalance,
@@ -25,6 +29,7 @@ type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 type InviteAuthError = Error & {
   requiresInvite?: boolean;
   email?: string;
+  pendingInviteToken?: string;
 };
 
 type AuthContextValue = {
@@ -40,7 +45,7 @@ type AuthContextValue = {
     displayName?: string,
     inviteCode?: string,
   ) => Promise<AuthUser>;
-  verifyInviteCode: (code: string) => Promise<AuthUser>;
+  verifyInviteCode: (code: string, pendingInviteToken?: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   refreshPendingInvite: () => Promise<void>;
@@ -112,6 +117,19 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   }, [refreshPendingInvite]);
 
   useEffect(() => {
+    const sessionToken = new URLSearchParams(
+      window.location.hash.replace(/^#/, ""),
+    ).get("sessionToken");
+    if (!sessionToken) return;
+    setApiSessionToken(sessionToken);
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}`,
+    );
+  }, []);
+
+  useEffect(() => {
     void refreshUser();
   }, [refreshUser]);
 
@@ -160,6 +178,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         error?: string;
         requires_invite?: boolean;
         email?: string;
+        pending_invite_token?: string;
+        session_token?: string;
         user?: AuthUser | null;
       };
       if (!response.ok || payload.success === false) {
@@ -169,11 +189,17 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         const authError = new Error(payload.error || "Authentication failed.") as InviteAuthError;
         authError.requiresInvite = Boolean(payload.requires_invite);
         authError.email = payload.email ? String(payload.email) : email;
+        authError.pendingInviteToken = payload.pending_invite_token
+          ? String(payload.pending_invite_token)
+          : "";
         throw authError;
       }
       const nextUser = readUserFromPayload(payload);
       if (!nextUser) {
         throw new Error("Authenticated profile was not returned.");
+      }
+      if (payload.session_token) {
+        setApiSessionToken(payload.session_token);
       }
       setUser(nextUser);
       setStatus("authenticated");
@@ -205,18 +231,19 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     [submitPasswordAuth],
   );
 
-  const verifyInviteCode = useCallback(async (code: string) => {
+  const verifyInviteCode = useCallback(async (code: string, pendingInviteToken = "") => {
     const response = await fetch(buildApiUrl("/api/auth/invite/verify"), {
       method: "POST",
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code, pendingInviteToken: pendingInviteToken || undefined }),
     });
     const payload = (await response.json()) as {
       success?: boolean;
       error?: string;
+      session_token?: string;
       user?: AuthUser | null;
     };
     if (!response.ok || payload.success === false) {
@@ -225,6 +252,9 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     const nextUser = readUserFromPayload(payload);
     if (!nextUser) {
       throw new Error("Authenticated profile was not returned.");
+    }
+    if (payload.session_token) {
+      setApiSessionToken(payload.session_token);
     }
     setUser(nextUser);
     setStatus("authenticated");
@@ -241,6 +271,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     setPendingInviteEmail("");
     setStatus("unauthenticated");
     clearActiveCreditCache();
+    clearApiSessionToken();
     setActiveCreditUser("");
   }, []);
 
