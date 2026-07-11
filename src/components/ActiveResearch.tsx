@@ -400,6 +400,17 @@ const ActiveResearch = ({
     );
   }, [normalResearchMessages]);
 
+  useEffect(() => {
+    if (!isStartingFreshResearch) return;
+    setNormalResearchMessages([]);
+    setNormalResearchError("");
+    setError("");
+    setSaveError("");
+    setSaveSuccess("");
+    setTrackedResearchJobId(null);
+    window.sessionStorage.removeItem(DIRECT_RESEARCH_STORAGE_KEY);
+  }, [isStartingFreshResearch]);
+
   const hydrateResearchById = async (researchId: string) => {
     const normalizedId = String(researchId || "").trim();
     if (!normalizedId || hydratedResearchIds.current.has(normalizedId)) return;
@@ -681,6 +692,7 @@ const ActiveResearch = ({
   const handleSubmitQuery = async (query: string, mode: SearchBarMode) => {
     if (mode === "deep") {
       setNormalResearchError("");
+      onActiveResearchChange(null);
       const jobId = await startDeepResearchJob(query);
       setTrackedResearchJobId(jobId);
       return;
@@ -688,6 +700,7 @@ const ActiveResearch = ({
 
     if (directResearchRetentionExceeded) return;
     setNormalResearchError("");
+    onActiveResearchChange(null);
     const userMessage: DirectResearchAnswer = {
       role: "user",
       content: query,
@@ -866,9 +879,10 @@ const ActiveResearch = ({
       (lane) => lane.lane_id === activeResearch?.selectedLaneId,
     ) || null;
   const canShowContinueResearchButton = Boolean(activeResearch && !isResearchRunning);
-  const workspaceTitle = getResearchWorkspaceTitle(
-    activeResearchJob?.title || activeResearch?.query || "",
-  );
+  const workspaceTitle =
+    isStartingFreshResearch && !activeResearchJob && !activeResearch
+      ? "New research"
+      : getResearchWorkspaceTitle(activeResearchJob?.title || activeResearch?.query || "");
   const activeJobStageIndex = Math.max(
     0,
     RESEARCH_JOB_STAGES.findIndex((stage) => stage.key === activeResearchJob?.stageKey),

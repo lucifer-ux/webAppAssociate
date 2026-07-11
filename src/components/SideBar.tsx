@@ -119,12 +119,12 @@ const SideBar = ({
 
   const hasRecentResearches = recentResearches.length > 0;
   const activeResearchItem =
-    recentResearches.find((item) => item.id === activeResearchId) ||
-    recentResearches[0] ||
-    null;
-  const researchSectionTitle = getResearchSectionTitle(
-    activeResearchItem?.query || "",
-  );
+    (activeResearchId
+      ? recentResearches.find((item) => item.id === activeResearchId)
+      : null) || null;
+  const researchSectionTitle = activeResearchItem
+    ? getResearchSectionTitle(activeResearchItem.query)
+    : "New research";
   const visibleMatters = [
     ...matters.map((matter) => ({
       id: matter.id,
