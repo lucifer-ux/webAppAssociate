@@ -508,6 +508,19 @@
   margin-top: 24px;
 }
 
+.terraResearchCardSummary {
+  margin: 20px 0 0;
+  color: var(--terra-on-surface-variant);
+  font-size: 14px;
+  line-height: 1.55;
+  display: -webkit-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+}
+
 .terraMatterRisk {
   margin: 12px 0 0;
   color: var(--terra-error);

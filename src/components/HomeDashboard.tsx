@@ -3,6 +3,7 @@ import "../componentStyling/TerraDashboard.css";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SavedResearchApiItem } from "./ActiveResearch";
+import { listDrafts, type DraftSummary } from "./draftingApi";
 import { buildApiUrl } from "../lib/apiBase";
 import Loader from "./Loader";
 import SearchBar from "./SearchBar";
@@ -11,6 +12,7 @@ import {
   useMatterStore,
   type MatterRecord,
 } from "../context/MatterStoreContext";
+import { usePipelines, type PipelineJob } from "../context/PipelineContext";
 import { Plus } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 
@@ -42,7 +44,91 @@ const firstText = (...values: unknown[]) =>
   )
     ?.trim() || "";
 
-const getFirstMatterNextStep = (matter: MatterRecord) => {
+const getMatterDraftCandidates = (matter: MatterRecord) => {
+  const candidates = [
+    ...asArray(asRecord(matter.matterUnderstandingV2).draft_sequence),
+    ...asArray(asRecord(matter.latestMatterUnderstandingV2).draft_sequence),
+    ...asArray(asRecord(matter.atlasNextSteps).draftQueue),
+    ...asArray(asRecord(matter.latestAtlasNextSteps).draftQueue),
+  ]
+    .map(asRecord)
+    .map((item) => ({
+      title: firstText(item.title, item.draft_type, item.draftType, item.id),
+      draftType: firstText(item.draft_type, item.draftType, item.id, item.title),
+      reason: firstText(item.rationale, item.description, item.status, "Draft to prepare"),
+    }))
+    .filter((item) => item.title);
+
+  const seen = new Set<string>();
+  return candidates.filter((item) => {
+    const key = `${item.title}:${item.draftType}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const normalizeDraftKey = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+
+const findSavedDraftForCandidate = (
+  matter: MatterRecord,
+  candidate: { title: string; draftType: string },
+  drafts: DraftSummary[],
+) => {
+  const titleKey = normalizeDraftKey(candidate.title);
+  const typeKey = normalizeDraftKey(candidate.draftType);
+  return drafts.find((draft) => {
+    if (draft.matterId !== matter.id) return false;
+    const draftTitleKey = normalizeDraftKey(draft.title);
+    return (
+      (titleKey && draftTitleKey.includes(titleKey)) ||
+      (typeKey && draftTitleKey.includes(typeKey))
+    );
+  });
+};
+
+const findRunningDraftJobForMatter = (
+  matter: MatterRecord,
+  jobs: PipelineJob[],
+) =>
+  jobs.find(
+    (job) =>
+      job.source === "draft-job" &&
+      job.matterId === matter.id &&
+      (job.status === "queued" || job.status === "running"),
+  );
+
+const getFirstMatterNextStep = (
+  matter: MatterRecord,
+  drafts: DraftSummary[],
+  jobs: PipelineJob[],
+) => {
+  const runningDraftJob = findRunningDraftJobForMatter(matter, jobs);
+  if (runningDraftJob) {
+    return {
+      taskLabel: runningDraftJob.title || "Draft generation",
+      contextLabel: runningDraftJob.statusMessage || runningDraftJob.stage || "Drafting is in progress",
+      statusLabel: "Drafting",
+    };
+  }
+
+  const draftCandidates = getMatterDraftCandidates(matter);
+  const firstDraftCandidate = draftCandidates[0];
+  if (firstDraftCandidate) {
+    const savedDraft = findSavedDraftForCandidate(matter, firstDraftCandidate, drafts);
+    return {
+      taskLabel: savedDraft?.title || firstDraftCandidate.title,
+      contextLabel: savedDraft
+        ? "Ready draft stored"
+        : firstDraftCandidate.reason,
+      statusLabel: savedDraft ? "Draft done" : "Draft queued",
+    };
+  }
+
   const overviewSources = [
     matter.executiveSummary,
     asRecord(matter.latestExecutiveSummary).summary,
@@ -115,10 +201,26 @@ const getFirstMatterNextStep = (matter: MatterRecord) => {
   }
 
   return {
-    taskLabel: "Review matter brief",
-    contextLabel: matter.status === "processing" ? "Analysis in progress" : "Open matter workspace",
+    taskLabel: matter.status === "processing" ? "Matter analysis" : "Open matter workspace",
+    contextLabel: matter.status === "processing" ? "Analysis in progress" : "No draft queue yet",
     statusLabel: matter.status === "processed" ? "Ready" : "Queued",
   };
+};
+
+const getResearchSummary = (research: SavedResearchApiItem) =>
+  firstText(
+    research.finalPayload?.final_response?.short_answer,
+    research.finalPayload?.final_response?.authority_selection_summary,
+    research.finalPayload?.final_response?.analysis,
+    "Completed deep research is ready to review.",
+  );
+
+const getResearchMeta = (research: SavedResearchApiItem) => {
+  const authorityCount = research.finalPayload?.final_response?.key_authorities?.length || 0;
+  const sourceCount = research.finalPayload?.final_response?.sources?.length || 0;
+  return `${authorityCount} authorit${authorityCount === 1 ? "y" : "ies"} · ${sourceCount} source${
+    sourceCount === 1 ? "" : "s"
+  }`;
 };
 
 const HomeDashboard = () => {
@@ -129,9 +231,11 @@ const HomeDashboard = () => {
   const [savedResearches, setSavedResearches] = useState<
     SavedResearchApiItem[]
   >([]);
+  const [savedDrafts, setSavedDrafts] = useState<DraftSummary[]>([]);
   const { user, updateDisplayName } = useAuth();
   const { matters, setActiveMatterId, isSavedMattersLoading } =
     useMatterStore();
+  const { jobs } = usePipelines();
   const userTimeZone = getUserTimeZone();
   const currentDisplayName =
     user?.displayName || user?.fullName || user?.email?.split("@")[0] || "";
@@ -243,14 +347,44 @@ const HomeDashboard = () => {
     };
   }, []);
 
+  const completedDraftJobSignature = useMemo(
+    () =>
+      jobs
+        .filter((job) => job.source === "draft-job" && job.status === "succeeded")
+        .map((job) => `${job.id}:${job.resultId || job.draftId || ""}:${job.completedAt || ""}`)
+        .join("|"),
+    [jobs],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void listDrafts()
+      .then((drafts) => {
+        if (!cancelled) setSavedDrafts(drafts);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedDrafts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completedDraftJobSignature]);
+
   const activeMatterCards = useMemo(() => matters.slice(0, 4), [matters]);
+  const completedResearchCards = useMemo(
+    () =>
+      savedResearches
+        .filter((research) => Boolean(research.finalPayload?.final_response))
+        .slice(0, 2),
+    [savedResearches],
+  );
   const workQueueRows = useMemo(
     () =>
       activeMatterCards.slice(0, 4).map((matter) => {
         const documentCount =
           Number(matter.document_count || matter.documents?.length || 0) ||
           (matter.fileName ? 1 : 0);
-        const nextStep = getFirstMatterNextStep(matter);
+        const nextStep = getFirstMatterNextStep(matter, savedDrafts, jobs);
 
         return {
           id: matter.id,
@@ -259,7 +393,7 @@ const HomeDashboard = () => {
           ...nextStep,
         };
       }),
-    [activeMatterCards],
+    [activeMatterCards, jobs, savedDrafts],
   );
   const displayNameValue = nameDraft ?? currentDisplayName;
   const recentActivityMatters = activeMatterCards.slice(0, 3);
@@ -437,7 +571,10 @@ const HomeDashboard = () => {
                       <span className="terraWorkTask">{row.taskLabel}</span>
                       <span
                         className={`terraStatusPill ${
-                          row.statusLabel.toLowerCase().includes("ready") ? "is-ready" : ""
+                          row.statusLabel.toLowerCase().includes("ready") ||
+                          row.statusLabel.toLowerCase().includes("done")
+                            ? "is-ready"
+                            : ""
                         }`}
                       >
                         {row.statusLabel}
@@ -460,55 +597,55 @@ const HomeDashboard = () => {
           </section>
 
           <section className="terraSection" aria-live="polite">
-            <h2>Active Matters</h2>
+            <h2>Active Research</h2>
             <div className="terraMatterGrid">
-              {isSavedMattersLoading ? (
+              {completedResearchCards.length ? (
+                completedResearchCards.map((research) => (
+                  <button
+                    key={research.id}
+                    type="button"
+                    className="terraMatterCard terraResearchCard"
+                    onClick={() => navigate(`/research?research=${encodeURIComponent(research.id)}`)}
+                  >
+                    <div>
+                      <h3>{research.query}</h3>
+                      <p className="terraMatterCardMeta">{getResearchMeta(research)}</p>
+                    </div>
+                    <p className="terraResearchCardSummary">
+                      {getResearchSummary(research)}
+                    </p>
+                  </button>
+                ))
+              ) : isSavedMattersLoading ? (
                 <div className="terraMatterCard">
-                  <h3>Loading matters</h3>
-                  <p className="terraMatterCardMeta">Matter Library</p>
+                  <h3>Loading research</h3>
+                  <p className="terraMatterCardMeta">Active Research</p>
                 </div>
               ) : (
-                activeMatterCards.slice(0, 2).map((matter, index) => {
-                  const documentCount =
-                    Number(matter.document_count || matter.documents?.length || 0) ||
-                    (matter.fileName ? 1 : 0);
-                  const isReady = index === 0;
-                  return (
-                    <button
-                      key={matter.id}
-                      type="button"
-                      className="terraMatterCard"
-                      onClick={() => {
-                        setActiveMatterId(matter.id);
-                        navigate("/matter");
-                      }}
-                    >
-                      <div>
-                        <h3>{matter.title}</h3>
-                        <p className="terraMatterCardMeta">
-                          {isReady ? "Notice Response" : "Contract Review"} •{" "}
-                          {documentCount} Doc{documentCount === 1 ? "" : "s"}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })
+                <div className="terraMatterCard">
+                  <h3>No completed research yet</h3>
+                  <p className="terraMatterCardMeta">Deep Research</p>
+                  <p className="terraResearchCardSummary">
+                    Run deep research from the search bar or the Research tab. Completed research will appear here.
+                  </p>
+                </div>
               )}
               <div className="terraMatterCard terraStartMatterCard">
-                <h3>Start a New Matter</h3>
+                <h3>Start New Research</h3>
                 <p>
-                  Securely upload documents to begin a new matter. Supported
-                  files include contracts, notices, and pleadings.
+                  Ask a legal question and Associate will run deep research,
+                  save the output, and show it here when complete.
                 </p>
                 <button
                   type="button"
                   className="terraUploadButton"
                   onClick={() => {
-                    setActiveMatterId(null);
-                    navigate("/matter");
+                    navigate("/research", {
+                      state: { startFreshResearch: true, preloadedResearches: savedResearches },
+                    });
                   }}
                 >
-                  UPLOAD DOCUMENTS
+                  START RESEARCH
                 </button>
               </div>
             </div>

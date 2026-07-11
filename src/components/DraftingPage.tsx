@@ -393,31 +393,6 @@ const buildInlineRedlineContent = ({
   ];
 };
 
-const replaceBlockTextById = (
-  node: JSONContent,
-  blockId: string,
-  nextText: string,
-): JSONContent => {
-  if (!node || typeof node !== "object") return node;
-  const attrs = node.attrs && typeof node.attrs === "object" ? node.attrs : undefined;
-  const content = Array.isArray(node.content) ? node.content : undefined;
-  const normalizedBlockId = String(blockId || "").trim();
-  const isTarget = String(attrs?.blockId || "").trim() === normalizedBlockId;
-
-  if (isTarget && (node.type === "paragraph" || node.type === "heading")) {
-    return {
-      ...node,
-      content: makeTextNodesWithBreaks(nextText),
-    };
-  }
-
-  if (!content) return node;
-  return {
-    ...node,
-    content: content.map((child) => replaceBlockTextById(child, blockId, nextText)),
-  };
-};
-
 const replaceExcerptWithInlineRedline = (
   node: JSONContent,
   options: {

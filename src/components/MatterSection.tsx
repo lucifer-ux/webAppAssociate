@@ -61,7 +61,9 @@ import ChatBoxMatterSection, {
 } from "./ChatBoxMatterSection";
 import {
   getDraftRecommendations,
+  listDrafts,
   refreshDraftRecommendations,
+  type DraftSummary,
 } from "./draftingApi";
 import { buildApiUrl } from "../lib/apiBase";
 import {
@@ -1259,7 +1261,7 @@ const MatterSection = ({
   conversationOpenRequest = 0,
 }: MatterSectionProps) => {
   const navigate = useNavigate();
-  const { trackMatterJob } = usePipelines();
+  const { jobs, trackMatterJob } = usePipelines();
   const {
     matters,
     activeMatter,
@@ -1481,6 +1483,7 @@ const MatterSection = ({
   const [caseViewer, setCaseViewer] = useState<CaseViewerState | null>(null);
   const [draftRecommendations, setDraftRecommendations] =
     useState<MatterDraftRecommendations | null>(null);
+  const [savedDrafts, setSavedDrafts] = useState<DraftSummary[]>([]);
   const [isLoadingDraftRecommendations, setIsLoadingDraftRecommendations] =
     useState(false);
   const [draftRecommendationError, setDraftRecommendationError] = useState("");
@@ -2397,6 +2400,77 @@ const MatterSection = ({
         : [],
     [activeMatterUnderstanding?.draft_sequence],
   );
+  const normalizeDraftMatchKey = (value: unknown) =>
+    String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ");
+  const activeMatterSavedDrafts = useMemo(
+    () =>
+      activeMatter?.id
+        ? savedDrafts.filter((draft) => draft.matterId === activeMatter.id)
+        : [],
+    [activeMatter?.id, savedDrafts],
+  );
+  const activeMatterRunningDraftJobs = useMemo(
+    () =>
+      activeMatter?.id
+        ? jobs.filter(
+            (job) =>
+              job.source === "draft-job" &&
+              job.matterId === activeMatter.id &&
+              (job.status === "queued" || job.status === "running"),
+          )
+        : [],
+    [activeMatter?.id, jobs],
+  );
+  const resolveDraftGenerationState = (input: {
+    title?: string;
+    draftType?: string;
+    id?: string;
+  }) => {
+    const titleKey = normalizeDraftMatchKey(input.title);
+    const typeKey = normalizeDraftMatchKey(input.draftType || input.id);
+    const runningJob = activeMatterRunningDraftJobs.find((job) => {
+      const jobTitleKey = normalizeDraftMatchKey(job.title);
+      const requestKey = normalizeDraftMatchKey(job.requestKey);
+      return (
+        (titleKey && jobTitleKey.includes(titleKey)) ||
+        (typeKey && (jobTitleKey.includes(typeKey) || requestKey.includes(typeKey)))
+      );
+    });
+    if (runningJob) {
+      return {
+        status: "running" as const,
+        label: "Drafting",
+        draft: null,
+        job: runningJob,
+      };
+    }
+
+    const savedDraft = activeMatterSavedDrafts.find((draft) => {
+      const draftTitleKey = normalizeDraftMatchKey(draft.title);
+      return (
+        (titleKey && draftTitleKey.includes(titleKey)) ||
+        (typeKey && draftTitleKey.includes(typeKey))
+      );
+    });
+    if (savedDraft) {
+      return {
+        status: "done" as const,
+        label: "Draft done",
+        draft: savedDraft,
+        job: null,
+      };
+    }
+
+    return {
+      status: "queued" as const,
+      label: "Draft queued",
+      draft: null,
+      job: null,
+    };
+  };
   const matterUnderstandingTimeline = useMemo(
     () =>
       Array.isArray(activeMatterUnderstanding?.timeline)
@@ -4437,6 +4511,32 @@ const MatterSection = ({
     activeMatter?.draftRecommendations?.generated_at,
     activeMatter?.draftRecommendations?.counts?.total,
   ]);
+
+  const completedDraftJobSignature = useMemo(
+    () =>
+      jobs
+        .filter((job) => job.source === "draft-job" && job.status === "succeeded")
+        .map(
+          (job) =>
+            `${job.id}:${job.resultId || job.draftId || ""}:${job.completedAt || ""}`,
+        )
+        .join("|"),
+    [jobs],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void listDrafts()
+      .then((drafts) => {
+        if (!cancelled) setSavedDrafts(drafts);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedDrafts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completedDraftJobSignature]);
 
   const runPeopleExtraction = async (
     matterId: string,
@@ -11342,30 +11442,54 @@ const MatterSection = ({
                 </div>
                 {matterUnderstandingDrafts.length ? (
                   <div className="matterNextStepsStack">
-                    {matterUnderstandingDrafts.map((item, index) => (
-                      <article
-                        className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
-                        key={`${item.draft_type || item.title}-${index}`}
-                      >
-                        <div className="matterNextStepCardHead">
-                          <strong>{item.title || item.draft_type}</strong>
-                          <Button
-                            type="button"
-                            className="matterStartDraftingBtn"
-                            onClick={() =>
-                              void startAtlasDraftGeneration(
-                                {
-                                  id: item.draft_type || item.title,
-                                  draftType: item.draft_type,
-                                  title: item.title,
-                                },
-                                "drafts",
-                              )
-                            }
-                          >
-                            Start drafting
-                          </Button>
-                        </div>
+                    {matterUnderstandingDrafts.map((item, index) => {
+                      const draftState = resolveDraftGenerationState({
+                        id: item.draft_type || item.title,
+                        draftType: item.draft_type,
+                        title: item.title,
+                      });
+                      return (
+                        <article
+                          className={`matterNextStepsPanel matterNextStepsStaticCard isDraft is-${draftState.status}`}
+                          key={`${item.draft_type || item.title}-${index}`}
+                        >
+                          <div className="matterNextStepCardHead">
+                            <strong>{item.title || item.draft_type}</strong>
+                            <div className="matterDraftCardActions">
+                              <span
+                                className={`matterBriefStatus ${
+                                  draftState.status === "done"
+                                    ? "is-ready"
+                                    : draftState.status === "running"
+                                      ? "is-processing"
+                                      : ""
+                                }`}
+                              >
+                                {draftState.label}
+                              </span>
+                              <Button
+                                type="button"
+                                className="matterStartDraftingBtn"
+                                disabled={draftState.status === "running"}
+                                onClick={() =>
+                                  void startAtlasDraftGeneration(
+                                    {
+                                      id: item.draft_type || item.title,
+                                      draftType: item.draft_type,
+                                      title: item.title,
+                                    },
+                                    "drafts",
+                                  )
+                                }
+                              >
+                                {draftState.status === "done"
+                                  ? "Redraft"
+                                  : draftState.status === "running"
+                                    ? "Drafting"
+                                    : "Start drafting"}
+                              </Button>
+                            </div>
+                          </div>
                         <p className="matterNextStepsPreview">
                           {item.rationale ||
                             "Recommended by the matter understanding pass."}
@@ -11402,7 +11526,8 @@ const MatterSection = ({
                           </details>
                         ) : null}
                       </article>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : isAtlasMatterFlow ? (
                   atlasDraftQueue.length ? (
@@ -11412,34 +11537,59 @@ const MatterSection = ({
                           const dependencies = visibleDraftDependencies(
                             item.unblocksWhen,
                           );
+                          const draftState = resolveDraftGenerationState({
+                            id: item.id,
+                            draftType: item.draftType,
+                            title: item.title,
+                          });
                           return (
                             <article
-                              className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
+                              className={`matterNextStepsPanel matterNextStepsStaticCard isDraft is-${draftState.status}`}
                               key={item.id}
                             >
                               <div className="matterNextStepCardHead">
                                 <strong>{item.title}</strong>
-                                <Button
-                                  type="button"
-                                  className="matterStartDraftingBtn"
-                                  disabled={item.isStartable === false}
-                                  onClick={() =>
-                                    item.isStartable === false
-                                      ? undefined
-                                      : void startAtlasDraftGeneration(
-                                          {
-                                            id: item.id,
-                                            draftType: item.draftType,
-                                            title: item.title,
-                                          },
-                                          "drafts",
-                                        )
-                                  }
-                                >
-                                  {item.isStartable === false
-                                    ? "Not yet supported"
-                                    : "Start drafting"}
-                                </Button>
+                                <div className="matterDraftCardActions">
+                                  <span
+                                    className={`matterBriefStatus ${
+                                      draftState.status === "done"
+                                        ? "is-ready"
+                                        : draftState.status === "running"
+                                          ? "is-processing"
+                                          : ""
+                                    }`}
+                                  >
+                                    {draftState.label}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    className="matterStartDraftingBtn"
+                                    disabled={
+                                      item.isStartable === false ||
+                                      draftState.status === "running"
+                                    }
+                                    onClick={() =>
+                                      item.isStartable === false
+                                        ? undefined
+                                        : void startAtlasDraftGeneration(
+                                            {
+                                              id: item.id,
+                                              draftType: item.draftType,
+                                              title: item.title,
+                                            },
+                                            "drafts",
+                                          )
+                                    }
+                                  >
+                                    {item.isStartable === false
+                                      ? "Not yet supported"
+                                      : draftState.status === "done"
+                                        ? "Redraft"
+                                        : draftState.status === "running"
+                                          ? "Drafting"
+                                          : "Start drafting"}
+                                  </Button>
+                                </div>
                               </div>
                               <p className="matterNextStepsPreview">
                                 {renderEmphasizedInlineText(item.description, [

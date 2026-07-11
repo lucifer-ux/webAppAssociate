@@ -67,7 +67,8 @@ type PipelineContextValue = {
 
 const STORAGE_KEY = "associate.pipelineJobs";
 const MAX_JOBS = 25;
-const POLL_MS = 2500;
+const MATTER_POLL_MS = 2500;
+const DRAFT_POLL_MS = 5000;
 
 const PipelineContext = createContext<PipelineContextValue | null>(null);
 
@@ -272,7 +273,7 @@ export const PipelineProvider = ({ children }: PropsWithChildren) => {
       Promise.all(activeMatterJobs.map((job) => pollMatterJob(job))).finally(() => {
         pollingRef.current = false;
       });
-    }, POLL_MS);
+    }, MATTER_POLL_MS);
     return () => window.clearInterval(interval);
   }, [jobs, pollMatterJob]);
 
@@ -394,7 +395,7 @@ export const PipelineProvider = ({ children }: PropsWithChildren) => {
       );
       if (!activeDraftJobs.length) return;
       void Promise.all(activeDraftJobs.map((job) => pollDraftJob(job)));
-    }, POLL_MS);
+    }, DRAFT_POLL_MS);
     return () => window.clearInterval(interval);
   }, [jobs, pollDraftJob]);
 

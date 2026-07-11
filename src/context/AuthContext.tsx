@@ -8,6 +8,11 @@ import {
   type PropsWithChildren,
 } from "react";
 import { buildApiUrl } from "../lib/apiBase";
+import {
+  clearActiveCreditCache,
+  fetchCreditBalance,
+  setActiveCreditUser,
+} from "../lib/creditCache";
 
 export type AuthUser = {
   email: string;
@@ -109,6 +114,15 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     void refreshUser();
   }, [refreshUser]);
+
+  useEffect(() => {
+    if (!user?.email) {
+      setActiveCreditUser("");
+      return;
+    }
+    setActiveCreditUser(user.email);
+    void fetchCreditBalance();
+  }, [user?.email]);
 
   const loginWithGoogle = useCallback(() => {
     window.location.href = buildApiUrl("/auth/google");
@@ -226,6 +240,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     setUser(null);
     setPendingInviteEmail("");
     setStatus("unauthenticated");
+    clearActiveCreditCache();
+    setActiveCreditUser("");
   }, []);
 
   const updateDisplayName = useCallback(async (displayName: string) => {

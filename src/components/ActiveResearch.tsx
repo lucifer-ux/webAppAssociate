@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "./Button";
 import { ArrowUpRight, Trash2 } from "lucide-react";
 import "../componentStyling/ActiveResearch.css";
-import SearchBar, { type SearchBarMode } from "./SearchBar";
+import SearchBar from "./SearchBar";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { RecentResearchItem } from "./ActiveResearchPage";
 import { buildApiUrl } from "../lib/apiBase";
@@ -503,7 +503,7 @@ const ActiveResearch = ({
     }
   }
 
-  const handleSubmitQuery = async (query: string, _mode: SearchBarMode) => {
+  const handleSubmitQuery = async (query: string) => {
     await startDeepResearchJob(query);
   };
 

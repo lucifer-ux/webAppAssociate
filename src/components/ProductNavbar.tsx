@@ -33,7 +33,6 @@ import {
   Printer,
   Redo2,
   Search,
-  Share2,
   Scale,
   Strikethrough,
   Table2,
@@ -119,9 +118,7 @@ const ProductNavbar = ({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [isJobCenterOpen, setIsJobCenterOpen] = useState(false);
-  const [creditBalance, setCreditBalance] = useState<number | null>(() =>
-    getCachedCreditBalance(),
-  );
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const { user } = useAuth();
   const {
     jobs,
@@ -155,16 +152,19 @@ const ProductNavbar = ({
     const unsubscribe = subscribeToCreditBalance((value) => {
       if (!cancelled) setCreditBalance(value);
     });
-    if (creditBalance === null) {
+    if (!user?.email) {
+      setCreditBalance(null);
+    } else {
+      setCreditBalance(getCachedCreditBalance(user.email));
       void fetchCreditBalance().then((value) => {
-        if (!cancelled && value !== null) setCreditBalance(value);
+        if (!cancelled) setCreditBalance(value);
       });
     }
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [creditBalance]);
+  }, [user?.email]);
   const creditLabel =
     creditBalance === null
       ? "0 credits"

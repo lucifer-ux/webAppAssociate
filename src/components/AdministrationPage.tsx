@@ -17,6 +17,7 @@ type InviteRecord = {
 type CreditTopUpResponse = {
   success?: boolean;
   error?: string;
+  registeredUser?: boolean;
   credits?: {
     email?: string;
     balance?: number;
@@ -267,8 +268,12 @@ const AdministrationPage = () => {
         throw new Error(payload.error || "Credits could not be added.");
       }
       const available = Number(payload.credits.available ?? payload.credits.balance ?? 0);
+      const targetEmail = payload.credits.email || topUpEmail;
+      const grantScope = payload.registeredUser
+        ? "registered account"
+        : "pending email account";
       setStatus(
-        `Added ${credits.toLocaleString("en-IN")} credits to ${payload.credits.email || topUpEmail}. Available balance: ${Math.floor(available).toLocaleString("en-IN")} credits.`,
+        `Added ${credits.toLocaleString("en-IN")} credits to ${targetEmail} (${grantScope}). Available balance: ${Math.floor(available).toLocaleString("en-IN")} credits.`,
       );
       setTopUpEmail("");
       setTopUpCredits("");
@@ -458,7 +463,7 @@ const AdministrationPage = () => {
                   <p className="adminEyebrow">Credits</p>
                   <h2>Top up user credits</h2>
                   <p className="adminPanelNote">
-                    Adds credits to an existing registered user. This does not expose any frontend mutation path to normal users.
+                    Adds custom credits to any email. If the user has not signed in yet, the grant is held for that email and attaches when the account is created.
                   </p>
                 </div>
               </div>

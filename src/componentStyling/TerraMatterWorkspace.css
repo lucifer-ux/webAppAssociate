@@ -1704,6 +1704,22 @@
   vertical-align: middle;
 }
 
+.terraMatterPage .terraMatterDraftsTab .matterDraftCardActions {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  flex: 0 0 auto !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepsStaticCard.is-done {
+  border-color: rgba(120, 168, 134, 0.55) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepsStaticCard.is-running {
+  border-color: rgba(180, 157, 91, 0.62) !important;
+}
+
 .terraMatterPage .terraMatterDraftsTab .matterStartDraftingBtn {
   flex: 0 0 auto !important;
   min-height: 44px !important;

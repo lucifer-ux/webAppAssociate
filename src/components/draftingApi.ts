@@ -198,20 +198,6 @@ export type DraftDetail = DraftSummary & {
   createdAt: string;
 };
 
-export type DraftVersionSummary = {
-  id: string;
-  draftId: string;
-  saveVersion: number;
-  saveReason: string;
-  contentHash: string;
-  changeSummary: string | null;
-  createdAt: string;
-};
-
-export type DraftVersionDetail = DraftVersionSummary & {
-  snapshotJson: Record<string, unknown>;
-};
-
 export type DraftComment = {
   id: string;
   author: string;
@@ -257,12 +243,6 @@ export type DraftReviewJob = {
   updatedAt: string;
 };
 
-export type DraftRecommendationsResponse = {
-  matterId: string;
-  draftRecommendations: MatterDraftRecommendations;
-  result?: MatterProcessedResult;
-};
-
 export type PendingAnnotation = {
   from: number;
   to: number;
@@ -299,10 +279,6 @@ const readJson = async <T>(response: Response) => {
     throw new Error(String(payload?.error || "Draft request failed."));
   }
   return payload;
-};
-
-export const getDraftUserId = () => {
-  return "session-user";
 };
 
 export const hashDraftContent = (content: JSONContent) => {
@@ -367,30 +343,6 @@ export const deleteDraft = async (draftId: string) => {
       storageFiles: Array<Record<string, unknown>>;
     };
   }>(response);
-};
-
-export const listDraftVersions = async (draftId: string) => {
-  const response = await fetch(
-    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/versions`),
-    {
-      headers: buildDraftHeaders(false),
-    },
-  );
-  const payload = await readJson<{ versions: DraftVersionSummary[]; success: true }>(response);
-  return Array.isArray(payload.versions) ? payload.versions : [];
-};
-
-export const getDraftVersion = async (draftId: string, saveVersion: number) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/drafts/${encodeURIComponent(draftId)}/versions/${encodeURIComponent(String(saveVersion))}`,
-    ),
-    {
-      headers: buildDraftHeaders(false),
-    },
-  );
-  const payload = await readJson<{ version: DraftVersionDetail; success: true }>(response);
-  return payload.version;
 };
 
 export const patchDraft = async (
@@ -565,49 +517,12 @@ export const refreshDraftRecommendations = async (matterId: string) => {
   };
 };
 
-export const startDraftRecommendation = async (input: {
-  matterId: string;
-  recommendation: MatterDraftRecommendation;
-  allowIncomplete?: boolean;
-}) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/matters/${encodeURIComponent(input.matterId)}/draft-recommendations/${encodeURIComponent(input.recommendation.draft_key)}/start`,
-    ),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({
-        allow_incomplete: Boolean(input.allowIncomplete),
-      }),
-    },
-  );
-  const payload = await readJson<{
-    success: true;
-    draft: DraftDetail;
-    draft_recommendations?: MatterDraftRecommendations;
-    result?: MatterProcessedResult;
-  }>(response);
-  return payload;
-};
-
 export type DraftFormatProposal = {
   title: string;
   contentJson: JSONContent;
   contextPatch: Partial<DraftContext>;
   sources: Array<{ title: string; url: string; highlights?: string[] }>;
   meta?: Record<string, unknown>;
-};
-
-export type DraftIdentificationResult = {
-  selectedDraftType: string;
-  selectedDraftKey: string;
-  draftTitle: string;
-  searchIntent: string;
-  exaQueries: string[];
-  matterContext?: Record<string, unknown>;
-  model?: string;
-  usedFallback?: boolean;
 };
 
 export type SingleDraftStreamRequest = {
@@ -658,40 +573,6 @@ export const openSingleDraftStream = async (
       }),
     },
   );
-};
-
-export const getNextStepTemplate = async (input: {
-  matterId: string;
-  groundId: string;
-  stepId: string;
-  templateKey: string;
-}) => {
-  const response = await fetch(
-    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/next-steps/template`),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({
-        ground_id: input.groundId,
-        step_id: input.stepId,
-        template_key: input.templateKey,
-      }),
-    },
-  );
-  const payload = await readJson<{
-    success: true;
-    template: {
-      template_key?: string;
-      title?: string;
-      source_url?: string;
-      content_html?: string;
-      content_text?: string;
-      fetched_at?: string;
-      draft_type?: string | null;
-      search_query?: string | null;
-    };
-  }>(response);
-  return payload.template;
 };
 
 const extractDefinedTerm = (value: string): DefinedTerm | null => {
