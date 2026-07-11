@@ -57,7 +57,7 @@ type PipelineContextValue = {
     targetPath?: string;
     type?: PipelineType;
   }) => void;
-  startDeepResearchJob: (query: string) => Promise<void>;
+  startDeepResearchJob: (query: string) => Promise<string | null>;
   startSingleDraftJob: (input: SingleDraftJobInput) => string | null;
   markRead: (jobId: string) => void;
   markAllRead: () => void;
@@ -69,6 +69,7 @@ const STORAGE_KEY = "associate.pipelineJobs";
 const MAX_JOBS = 25;
 const MATTER_POLL_MS = 2500;
 const DRAFT_POLL_MS = 5000;
+const RESEARCH_POLL_MS = 5000;
 
 const PipelineContext = createContext<PipelineContextValue | null>(null);
 
@@ -112,6 +113,7 @@ export const PipelineProvider = ({ children }: PropsWithChildren) => {
   const { addMatter, updateMatter } = useMatterStore();
   const [jobs, setJobs] = useState<PipelineJob[]>(() => readStoredJobs());
   const pollingRef = useRef(false);
+  const researchPollingRef = useRef(false);
   const runningDraftRequestsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -399,124 +401,158 @@ export const PipelineProvider = ({ children }: PropsWithChildren) => {
     return () => window.clearInterval(interval);
   }, [jobs, pollDraftJob]);
 
+  const pollResearchJob = useCallback(
+    async (job: PipelineJob) => {
+      if (!job.jobId || job.status !== "running") return;
+      try {
+        const response = await fetch(
+          buildApiUrl(`/api/researches/jobs/${encodeURIComponent(job.jobId)}`),
+        );
+        const payload = (await response.json()) as {
+          success?: boolean;
+          error?: string;
+          job?: {
+            status?: string;
+            stage?: string;
+            stage_key?: string;
+            status_message?: string;
+            progress?: number;
+            title?: string;
+            research_id?: string | null;
+            error?: string | null;
+          };
+        };
+        if (!response.ok || !payload.success || !payload.job) {
+          throw new Error(payload.error || "Research job status failed.");
+        }
+
+        const serverJob = payload.job;
+        const researchId = String(serverJob.research_id || job.resultId || "").trim();
+        if (serverJob.status === "processed") {
+          patchJob(job.id, {
+            status: "succeeded",
+            title: serverJob.title || job.title,
+            stage: "Research completed",
+            stageKey: serverJob.stage_key || "completed",
+            statusMessage: serverJob.status_message || "Research completed.",
+            progress: 100,
+            resultId: researchId || undefined,
+            completedAt: nowIso(),
+            unread: true,
+            targetPath: researchId
+              ? `/research?research=${encodeURIComponent(researchId)}`
+              : "/research",
+          });
+          void fetchCreditBalance();
+          return;
+        }
+        if (serverJob.status === "failed") {
+          patchJob(job.id, {
+            status: "failed",
+            title: serverJob.title || job.title,
+            stage: "Research failed",
+            stageKey: serverJob.stage_key || "failed",
+            statusMessage: serverJob.status_message || "Research failed.",
+            error: serverJob.error || serverJob.status_message || "Research failed.",
+            progress: 100,
+            completedAt: nowIso(),
+            unread: true,
+          });
+          void fetchCreditBalance();
+          return;
+        }
+
+        patchJob(job.id, {
+          title: serverJob.title || job.title,
+          stage: serverJob.stage || job.stage,
+          stageKey: serverJob.stage_key || job.stageKey,
+          statusMessage: serverJob.status_message || serverJob.stage || job.statusMessage,
+          progress: clampProgress(serverJob.progress ?? job.progress),
+        });
+      } catch (error) {
+        patchJob(job.id, {
+          stage: "Waiting to reconnect",
+          statusMessage: "Waiting to reconnect to research job.",
+          error: error instanceof Error ? error.message : "Unable to poll research job.",
+        });
+      }
+    },
+    [patchJob],
+  );
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (researchPollingRef.current) return;
+      const activeResearchJobs = jobs.filter(
+        (job) => job.source === "research-deep" && job.status === "running" && job.jobId,
+      );
+      if (!activeResearchJobs.length) return;
+      researchPollingRef.current = true;
+      Promise.all(activeResearchJobs.map((job) => pollResearchJob(job))).finally(() => {
+        researchPollingRef.current = false;
+      });
+    }, RESEARCH_POLL_MS);
+    return () => window.clearInterval(interval);
+  }, [jobs, pollResearchJob]);
+
   const startDeepResearchJob = useCallback(
     async (query: string) => {
       const trimmed = query.trim();
-      if (!trimmed) return;
-      const jobId = `research:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`;
+      if (!trimmed) return null;
+      const localJobId = `research:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`;
       const timestamp = nowIso();
       upsertJob({
-        id: jobId,
+        id: localJobId,
         type: "research",
         source: "research-deep",
         title: trimmed,
         status: "running",
-        stage: "Running research intake",
-        progress: 10,
+        stage: "Starting research job",
+        stageKey: "queued",
+        statusMessage: "Starting research job.",
+        progress: 4,
         targetPath: "/research",
         createdAt: timestamp,
         updatedAt: timestamp,
       });
       try {
-        const intakeResponse = await fetch(buildApiUrl("/api/agent/research-intent-intake"), {
+        const response = await fetch(buildApiUrl("/api/researches/jobs"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             query: trimmed,
             jurisdiction: "India",
             clarification_answer: null,
-          }),
-        });
-        const intakePayload = await intakeResponse.json();
-        updateCreditCacheFromPayload(intakePayload);
-        if (!intakeResponse.ok || !intakePayload?.success) {
-          throw new Error(
-            intakePayload?.error || intakePayload?.details || "Research intake failed.",
-          );
-        }
-        const selectedLaneId =
-          intakePayload.selected_lane_id ||
-          intakePayload.agent_2_output?.recommendation?.suggested_lane ||
-          intakePayload.agent_2_output?.lanes?.[0]?.lane_id ||
-          "";
-        patchJob(jobId, {
-          stage: selectedLaneId
-            ? "Running deep research"
-            : "Research intake completed",
-          progress: selectedLaneId ? 48 : 100,
-        });
-        let finalPayload = null;
-        if (selectedLaneId) {
-          const continueResponse = await fetch(
-            buildApiUrl("/api/agent/research-intent-continue"),
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                query: trimmed,
-                jurisdiction: "India",
-                agent_1_output: intakePayload.agent_1_output,
-                agent_1_output_for_agent_2:
-                  intakePayload.agent_1_output_for_agent_2,
-                agent_2_output: intakePayload.agent_2_output,
-                selected_lane_id: selectedLaneId,
-              }),
-            },
-          );
-          finalPayload = await continueResponse.json();
-          updateCreditCacheFromPayload(finalPayload);
-          if (!continueResponse.ok || !finalPayload?.success) {
-            throw new Error(
-              finalPayload?.error || finalPayload?.details || "Deep research failed.",
-            );
-          }
-        }
-        const createdAt = nowIso();
-        const saveResponse = await fetch(buildApiUrl("/api/researches/save"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
             orgName: window.localStorage.getItem("orgName") || null,
-            query: trimmed,
-            createdAt,
-            intakePayload,
-            finalPayload,
-            selectedLaneId: selectedLaneId || null,
-            clarificationAnswer: null,
           }),
         });
-        const savePayload = await saveResponse.json();
-        updateCreditCacheFromPayload(savePayload);
-        const resultId =
-          String(
-            savePayload?.neon_record?.id ||
-              savePayload?.research?.id ||
-              savePayload?.id ||
-              "",
-          ).trim() || undefined;
-        patchJob(jobId, {
-          status: "succeeded",
-          stage: "Research completed",
-          progress: 100,
-          completedAt: nowIso(),
-          unread: true,
-          resultId,
-          targetPath: resultId
-            ? `/research?research=${encodeURIComponent(resultId)}`
-            : "/research",
+        const payload = await response.json();
+        updateCreditCacheFromPayload(payload);
+        if (!response.ok || !payload?.success || !payload?.job_id) {
+          throw new Error(payload?.error || payload?.details || "Failed to start research job.");
+        }
+        const serverJob = payload.job || {};
+        patchJob(localJobId, {
+          jobId: String(payload.job_id),
+          title: serverJob.title || trimmed,
+          stage: serverJob.stage || "Research job is queued.",
+          stageKey: serverJob.stage_key || "queued",
+          statusMessage: serverJob.status_message || "Research job is queued.",
+          progress: clampProgress(serverJob.progress ?? 4),
         });
-        void fetchCreditBalance();
+        return localJobId;
       } catch (error) {
-        patchJob(jobId, {
+        patchJob(localJobId, {
           status: "failed",
           stage: "Research failed",
+          statusMessage: error instanceof Error ? error.message : "Failed to start research job.",
+          error: error instanceof Error ? error.message : "Failed to start research job.",
           progress: 100,
-          error:
-            error instanceof Error ? error.message : "Deep research failed.",
           completedAt: nowIso(),
           unread: true,
         });
         void fetchCreditBalance();
+        return localJobId;
       }
     },
     [patchJob, upsertJob],

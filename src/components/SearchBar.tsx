@@ -10,6 +10,7 @@ type SearchBarProps = {
   activeSection: "matterLibrary" | "activeResearch";
   onSubmitQuery?: (query: string, mode: SearchBarMode) => Promise<void> | void;
   isSubmitting?: boolean;
+  isSubmissionBlocked?: boolean;
   placeholderOverride?: string;
   allowTextOnly?: boolean;
   enableSubmit?: boolean;
@@ -23,6 +24,7 @@ const SearchBar = ({
   activeSection,
   onSubmitQuery,
   isSubmitting = false,
+  isSubmissionBlocked = false,
   placeholderOverride,
   allowTextOnly = false,
   enableSubmit,
@@ -52,7 +54,7 @@ const SearchBar = ({
   }, [query]);
 
   const submitQuery = async () => {
-    if (!canSubmit || isSubmitting) {
+    if (!canSubmit || isSubmitting || isSubmissionBlocked) {
       return;
     }
 
@@ -108,7 +110,7 @@ const SearchBar = ({
           onFocus={onActivate}
           onClick={onActivate}
           onKeyDown={handleKeyDown}
-          disabled={!isInputEnabled || isSubmitting}
+          disabled={!isInputEnabled || isSubmitting || isSubmissionBlocked}
           placeholder={
             placeholderOverride
               ? placeholderOverride
@@ -123,7 +125,7 @@ const SearchBar = ({
           className="chatSendBtn"
           type="submit"
           aria-label="Send search"
-          disabled={!canSubmit || !query.trim() || isSubmitting}
+          disabled={!canSubmit || !query.trim() || isSubmitting || isSubmissionBlocked}
         >
           <ArrowUp size={18} />
         </Button>

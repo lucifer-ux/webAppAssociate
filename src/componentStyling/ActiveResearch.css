@@ -191,6 +191,89 @@
   color: #4b3c34;
 }
 
+.researchLiveConversation {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.researchLiveStatus {
+  background: #fffaf2;
+  border-color: #dcc8ae;
+}
+
+.researchLiveStatusHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.researchLiveStatusHeader h4 {
+  margin: 0;
+}
+
+.researchLiveStatusHeader > span:last-child {
+  margin-left: auto;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  color: #6f5f56;
+}
+
+.researchLiveIndicator {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #a2442f;
+  animation: researchLivePulse 1.4s ease-in-out infinite;
+}
+
+.researchJobSteps {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-left: 0;
+  list-style-position: inside;
+}
+
+.researchLiveThought {
+  margin: 14px 0 0;
+  color: #4e3f36;
+}
+
+.researchRetentionCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #dcc8ae;
+  background: #fffaf2;
+}
+
+.researchRetentionCard p {
+  margin: 0;
+  color: #4e3f36;
+}
+
+@media (max-width: 620px) {
+  .researchRetentionCard {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@keyframes researchLivePulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 620px) {
+  .researchJobSteps {
+    grid-template-columns: 1fr;
+  }
+}
+
 .researchResultCard {
   display: grid;
   gap: 14px;
