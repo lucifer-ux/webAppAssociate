@@ -1,5 +1,5 @@
 .enhancedResearchWorkspace {
-  padding-bottom: 170px;
+  padding-bottom: 171px;
 }
 
 .searchOnlyWorkspace {
@@ -577,7 +577,10 @@
   color: #43352f;
   padding: 12px;
   cursor: pointer;
-  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    transform 0.16s ease;
 }
 
 .clarificationOptionCard:hover,
@@ -639,7 +642,10 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
 }
 
 .continueResearchButton:hover:not(:disabled) {
@@ -755,7 +761,11 @@
   border-radius: 0;
   border: 1px solid rgba(185, 151, 91, 0.22);
   background:
-    linear-gradient(180deg, rgba(26, 28, 32, 0.86) 0%, rgba(17, 19, 24, 0.96) 100%),
+    linear-gradient(
+      180deg,
+      rgba(26, 28, 32, 0.86) 0%,
+      rgba(17, 19, 24, 0.96) 100%
+    ),
     #111318;
   box-shadow:
     inset 0 1px 0 rgba(231, 193, 129, 0.08),
