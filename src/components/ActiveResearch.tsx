@@ -748,6 +748,9 @@ const ActiveResearch = ({
   const handleStartNewNormalResearch = () => {
     setNormalResearchMessages([]);
     setNormalResearchError("");
+    setTrackedResearchJobId(null);
+    onActiveResearchChange(null);
+    navigate(location.pathname, { replace: true, state: null });
     window.sessionStorage.removeItem(DIRECT_RESEARCH_STORAGE_KEY);
   };
 
