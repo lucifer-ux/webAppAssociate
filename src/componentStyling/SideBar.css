@@ -374,10 +374,10 @@
 .collapsedActiveMatterWord {
   width: 100%;
   min-height: 32px;
-  border: 1px solid transparent;
+  border: 1px solid rgba(185, 151, 91, 0.24);
   border-radius: 9px;
-  background: transparent;
-  color: #4a302c;
+  background: rgba(23, 26, 33, 0.72);
+  color: #d1c5b5;
   font-family: "Work Sans", sans-serif;
   font-size: 11px;
   font-weight: 700;
@@ -387,10 +387,30 @@
 }
 
 .collapsedActiveMatterWord:hover {
-  border-color: #e0d0c3;
-  background: #f1ece5;
-  color: #700d0d;
+  border-color: rgba(231, 193, 129, 0.48);
+  background: rgba(30, 32, 36, 0.96);
+  color: #e7c181;
   cursor: pointer;
+}
+
+.leftRail.collapsed .matterRecentItem {
+  border-color: rgba(185, 151, 91, 0.24);
+  background: rgba(23, 26, 33, 0.72);
+}
+
+.leftRail.collapsed .matterRecentItem.active,
+.leftRail.collapsed .matterRecentItem:hover {
+  border-color: rgba(231, 193, 129, 0.48);
+  background: rgba(30, 32, 36, 0.96);
+}
+
+.leftRail.collapsed .matterRecentItem .recentItemCompact {
+  color: #d1c5b5;
+}
+
+.leftRail.collapsed .matterRecentItem.active .recentItemCompact,
+.leftRail.collapsed .matterRecentItem:hover .recentItemCompact {
+  color: #e7c181;
 }
 
 .leftRail.collapsed .railItem {

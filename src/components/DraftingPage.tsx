@@ -1,4 +1,5 @@
 import "../componentStyling/HomeDashboardStyling.css";
+import "../componentStyling/TerraDraftEditor.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { generateJSON } from "@tiptap/html";
@@ -6,32 +7,37 @@ import type { JSONContent } from "@tiptap/core";
 import { ChevronLeft, X } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import Button from "./Button";
-import Loader from "./Loader";
 import DraftingDocument, {
   type DraftingEditorHandle,
   type DraftingToolbarState,
 } from "./DraftingDocument";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
-import { useMatterStore } from "../context/MatterStoreContext";
 import {
-  startMatterDraftGeneration,
-  continueMatterDraftGeneration,
-  cancelMatterDraftGeneration,
+  useMatterStore,
+  type MatterDraftRecommendations,
+} from "../context/MatterStoreContext";
+import { usePipelines } from "../context/PipelineContext";
+import {
   createDraft,
-  getMatterDraftGenerationThread,
+  deleteDraft,
   deriveDraftContextFromMatter,
   getDraftReview,
   getDraft,
+  listDrafts,
+  getDraftRecommendations,
   generateDraftFormat,
   hashDraftContent,
   patchDraft,
   saveDraft,
+  openSingleDraftStream,
+  openDraftCritiqueStream,
+  askDraftAi,
+  formatDraft,
   triggerDraftReview,
   type AccessRole,
   type DraftComment,
   type DraftDetail,
-  type DraftGenerationCheckpoint,
-  type DraftGenerationThread,
+  type DraftSummary,
   type DraftFormatProposal,
   type PendingAnnotation,
   type ParagraphStyle,
@@ -45,56 +51,16 @@ import {
 const FONT_FAMILIES = ["Newsreader", "Georgia", "Times New Roman", "Work Sans"];
 const COLOR_CHOICES = ["#1b1c19", "#4c0003", "#6f5d55", "#0f5b78"];
 const DRAFT_REVIEW_POLL_INTERVAL_MS = 5000;
-const MATTER_APPEND_UPLOAD_SESSION_KEY = "open_matter_append_uploader";
-const MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY =
-  "matter_uploader_prefill_context";
-const DRAFT_GENERATION_LOADER_MIN_DELAY_MS = 4000;
-const DRAFT_GENERATION_LOADER_MAX_DELAY_MS = 9000;
-const DRAFT_GENERATION_LOADER_LIBRARY = [
-  "Reviewing the draft request against the matter objective",
-  "Reconfirming document-backed facts before stronger assertions are written",
-  "Matching the draft posture to the current proof record",
-  "Checking which source excerpts can be stated directly",
-  "Separating verified terms from client allegations",
-  "Normalizing dates, parties, and agreement references",
-  "Carrying open proof items into guarded drafting language",
-  "Reducing unsupported conclusions before section writing begins",
-  "Checking whether the current record supports stronger notice language",
-  "Confirming which provisions belong in the memo and which remain background only",
-  "Preparing a compact working set for section-by-section drafting",
-  "Verifying that unsupported factual claims stay attributed and qualified",
-  "Balancing memo structure, source coverage, and drafting posture",
-  "Cross-checking proof gaps against the requested draft objective",
-  "Translating retrieved support into section-specific drafting inputs",
-  "Screening the record for refund, cure, and notice dependencies",
-  "Compressing research context into usable drafting evidence",
-  "Rechecking whether any open proof gap can be handled as a review note",
-  "Ordering section generation by drafting risk and evidence coverage",
-  "Checking for contradictions between the uploaded record and draft posture",
-  "Preserving unresolved issues for lawyer review instead of overclaiming",
-  "Preparing the next validated section for insertion into the draft",
-  "Reviewing generated language for unsupported factual drift",
-  "Assembling the memo so each section reflects its source posture clearly",
-];
-
-const shuffleList = <T,>(values: T[]) => {
-  const next = [...values];
-  for (let index = next.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-  }
-  return next;
+const formatTimingSeconds = (elapsedMs: number) => Number((elapsedMs / 1000).toFixed(2));
+const logDraftTiming = (
+  label: string,
+  payload: Record<string, unknown>,
+) => {
+  console.info("[draft-timing]", {
+    label,
+    ...payload,
+  });
 };
-
-const getRandomLoaderDelay = () =>
-  DRAFT_GENERATION_LOADER_MIN_DELAY_MS +
-  Math.floor(
-    Math.random() *
-      (DRAFT_GENERATION_LOADER_MAX_DELAY_MS -
-        DRAFT_GENERATION_LOADER_MIN_DELAY_MS +
-        1),
-  );
-
 const styleMap: Record<ParagraphStyle, string> = {
   normal: "P",
   title: "TITLE",
@@ -210,148 +176,393 @@ const initialToolbarState: DraftingToolbarState = {
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error" | "loading";
 
-const normalizeCheckpointText = (value: unknown) =>
-  String(value || "").replaceAll("\n", " ").replaceAll("\t", " ").trim().toLowerCase();
+type SingleDraftStreamState = {
+  draftId: string;
+  title: string;
+  stage: string;
+  statusMessage: string;
+  thinkingText: string;
+  thinkingHistory: string[];
+};
 
-const renderWarningText = (warning: unknown) => {
-  if (typeof warning === "string") {
-    return warning.trim();
+type StreamedCritiqueState = {
+  status: "idle" | "running" | "ready" | "error";
+  message: string;
+  commentCount: number;
+};
+
+type DraftFormattingState = {
+  status: "idle" | "running" | "ready" | "error";
+  message: string;
+};
+
+type AskAiState = {
+  isOpen: boolean;
+  message: string;
+  status: "idle" | "running" | "ready" | "error";
+  answer: string;
+  error: string;
+};
+
+const appendLimitedEntries = (current: string[], next: string, maxEntries = 80) => {
+  const normalized = String(next || "").trim();
+  if (!normalized) return current;
+  const deduped =
+    current.length && current[current.length - 1] === normalized
+      ? current
+      : [...current, normalized];
+  return deduped.slice(-maxEntries);
+};
+
+const summarizeSingleDraftThought = (value: string, maxChars = 180) => {
+  const normalized = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\[[A-Z_]+\]/g, "")
+    .trim();
+  if (!normalized) return "";
+  const firstSentence =
+    normalized.match(/^(.{24,}?[.!?])\s/)?.[1] ||
+    normalized
+      .split(/(?<=\.)\s+(?=[A-Z])/)
+      .find((item) => item.trim().length >= 24) ||
+    normalized;
+  const compact = firstSentence.trim();
+  if (compact.length <= maxChars) return compact;
+  return `${compact.slice(0, maxChars - 1).replace(/\s+\S*$/, "")}.`;
+};
+
+const stageLabelForThought = (stage: string) => {
+  switch (stage) {
+    case "loading_context":
+      return "Context";
+    case "draft_type_resolution":
+      return "Intent";
+    case "reference_selection":
+    case "reference_rule_extraction":
+      return "Reference";
+    case "blueprint_generation":
+      return "Blueprint";
+    case "fact_hydration":
+      return "Facts";
+    case "gap_gate":
+      return "Gaps";
+    case "draft_execution_packet":
+      return "Execution";
+    case "section_drafting":
+      return "Sections";
+    case "review":
+      return "Review";
+    case "targeted_patching":
+      return "Patcher";
+    case "matter_grounding":
+    case "targeted_grounding":
+      return "Matter";
+    case "query_enhancement":
+      return "Query";
+    case "reference_retrieval":
+      return "Reference";
+    case "skeleton_generation":
+      return "Skeleton";
+    case "draft_finalization":
+      return "Finalizer";
+    case "case_citation_review":
+      return "Citations";
+    case "formatting":
+      return "Formatter";
+    case "saving":
+      return "Saving";
+    default:
+      return "Drafting";
   }
-  if (warning && typeof warning === "object") {
-    const candidate = warning as {
-      description?: unknown;
-      section?: unknown;
-      warning_type?: unknown;
-      message?: unknown;
-      note?: unknown;
-    };
-    const description =
-      typeof candidate.description === "string" ? candidate.description.trim() : "";
-    const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
-    const note = typeof candidate.note === "string" ? candidate.note.trim() : "";
-    const section = typeof candidate.section === "string" ? candidate.section.trim() : "";
-    const warningType =
-      typeof candidate.warning_type === "string" ? candidate.warning_type.trim() : "";
-    const mainText = description || message || note;
-    if (section && mainText) return `${section}: ${mainText}`;
-    if (mainText) return mainText;
-    if (section && warningType) return `${section}: ${warningType}`;
-    if (section) return section;
-    if (warningType) return warningType;
-    try {
-      return JSON.stringify(warning);
-    } catch {
-      return "";
+};
+
+const splitSingleDraftThought = (entry: string) => {
+  const normalized = String(entry || "").trim();
+  const match = normalized.match(/^([^:]{2,24}):\s*(.+)$/);
+  return match
+    ? { label: match[1], text: match[2] }
+    : { label: "Drafting", text: normalized };
+};
+
+const makeTextNodesWithBreaks = (text: string): JSONContent[] => {
+  const lines = String(text || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim());
+  const content: JSONContent[] = [];
+  lines.forEach((line, index) => {
+    if (index > 0) {
+      content.push({ type: "hardBreak" });
+    }
+    if (line) {
+      content.push({ type: "text", text: line });
+    }
+  });
+  return content;
+};
+
+const makeMarkedTextNodesWithBreaks = (
+  text: string,
+  marks: JSONContent["marks"] = [],
+): JSONContent[] => {
+  const lines = String(text || "")
+    .replace(/\r/g, "")
+    .split("\n");
+  const content: JSONContent[] = [];
+  lines.forEach((line, index) => {
+    if (index > 0) {
+      content.push({ type: "hardBreak" });
+    }
+    if (line) {
+      content.push({
+        type: "text",
+        text: line,
+        ...(marks && marks.length ? { marks } : {}),
+      });
+    }
+  });
+  return content;
+};
+
+const normalizeWithIndexMap = (text: string) => {
+  const normalizedChars: string[] = [];
+  const map: number[] = [];
+  let previousWasSpace = true;
+  Array.from(String(text || "")).forEach((char, index) => {
+    if (/\s/.test(char)) {
+      if (!previousWasSpace) {
+        normalizedChars.push(" ");
+        map.push(index);
+      }
+      previousWasSpace = true;
+      return;
+    }
+    normalizedChars.push(char);
+    map.push(index);
+    previousWasSpace = false;
+  });
+  while (normalizedChars.length && normalizedChars[normalizedChars.length - 1] === " ") {
+    normalizedChars.pop();
+    map.pop();
+  }
+  return {
+    normalized: normalizedChars.join(""),
+    map,
+  };
+};
+
+const findTextRange = (text: string, excerpt: string) => {
+  const original = String(text || "");
+  const exactExcerpt = String(excerpt || "");
+  const exactIndex = exactExcerpt ? original.indexOf(exactExcerpt) : -1;
+  if (exactIndex >= 0) {
+    return { start: exactIndex, end: exactIndex + exactExcerpt.length };
+  }
+  const normalizedText = normalizeWithIndexMap(original);
+  const normalizedExcerpt = normalizeWithIndexMap(exactExcerpt).normalized;
+  const normalizedIndex = normalizedExcerpt
+    ? normalizedText.normalized.indexOf(normalizedExcerpt)
+    : -1;
+  if (normalizedIndex < 0) return null;
+  const start = normalizedText.map[normalizedIndex];
+  const endMapped = normalizedText.map[normalizedIndex + normalizedExcerpt.length - 1];
+  if (!Number.isInteger(start) || !Number.isInteger(endMapped)) return null;
+  return { start, end: endMapped + 1 };
+};
+
+const buildInlineRedlineContent = ({
+  fullText,
+  excerpt,
+  suggestedText,
+}: {
+  fullText: string;
+  excerpt: string;
+  suggestedText: string;
+}) => {
+  const range = findTextRange(fullText, excerpt);
+  if (!range) return null;
+  const before = fullText.slice(0, range.start);
+  const after = fullText.slice(range.end);
+  return [
+    ...makeTextNodesWithBreaks(before),
+    ...makeMarkedTextNodesWithBreaks(suggestedText, [
+      { type: "highlight", attrs: { color: "#fef3c7" } },
+      { type: "textStyle", attrs: { color: "#713f12" } },
+    ]),
+    ...makeTextNodesWithBreaks(after),
+  ];
+};
+
+const replaceExcerptWithInlineRedline = (
+  node: JSONContent,
+  options: {
+    blockId?: string;
+    excerpt: string;
+    suggestedText: string;
+  },
+): { node: JSONContent; replaced: boolean; originalText: string } => {
+  if (!node || typeof node !== "object") {
+    return { node, replaced: false, originalText: "" };
+  }
+  const content = Array.isArray(node.content) ? node.content : undefined;
+  const attrs = node.attrs && typeof node.attrs === "object" ? node.attrs : undefined;
+  const targetBlockId = String(options.blockId || "").trim();
+  const isCandidate =
+    (node.type === "paragraph" || node.type === "heading") &&
+    (!targetBlockId || String(attrs?.blockId || "").trim() === targetBlockId);
+  if (isCandidate) {
+    const fullText = extractInlineText(node);
+    const redlineContent = buildInlineRedlineContent({
+      fullText,
+      excerpt: options.excerpt,
+      suggestedText: options.suggestedText,
+    });
+    if (redlineContent) {
+      const range = findTextRange(fullText, options.excerpt);
+      return {
+        replaced: true,
+        originalText: range ? fullText.slice(range.start, range.end) : options.excerpt,
+        node: {
+          ...node,
+          content: redlineContent,
+        },
+      };
     }
   }
-  return String(warning || "").trim();
-};
-
-const shouldShowCheckpointQuestion = (
-  question: DraftGenerationCheckpoint["questions"][number],
-  checkpoint: DraftGenerationCheckpoint,
-) => {
-  const sourceText = normalizeCheckpointText(
-    (question as Record<string, unknown>).sourceItem || question.question,
-  );
-  if (!sourceText) return false;
-  const systemResolvable = Array.isArray(
-    (checkpoint as unknown as { gapClassification?: { systemResolvable?: unknown[] } })
-      .gapClassification?.systemResolvable,
-  )
-    ? ((checkpoint as unknown as { gapClassification?: { systemResolvable?: unknown[] } })
-        .gapClassification?.systemResolvable || [])
-    : [];
-  if (
-    systemResolvable.some((item) => normalizeCheckpointText(item) === sourceText)
-  ) {
-    return false;
-  }
-  const disposition = String(
-    (question as Record<string, unknown>).disposition ||
-      (question as Record<string, unknown>).owner ||
-      "",
-  );
-  if (disposition === "user_confirmation") return true;
-  if (question.answerType === "date" || question.answerType === "amount") return true;
-  if (Array.isArray(question.options) && question.options.length > 0) return true;
-  if (question.suggestedAnswer) return true;
-  return false;
-};
-
-const normalizeLawyerFacingQuestion = (
-  question: DraftGenerationCheckpoint["questions"][number],
-) => {
-  const wordCount = String(question.question || "")
-    .trim()
-    .split(" ")
-    .filter(Boolean).length;
-  const shouldRewriteStrategyPrompt =
-    question.linkedIssue === "workflow_requirements" &&
-    wordCount > 0 &&
-    wordCount <= 8 &&
-    !String(question.question || "").trim().endsWith("?");
+  if (!content) return { node, replaced: false, originalText: "" };
+  let replaced = false;
+  let originalText = "";
+  const nextContent = content.map((child) => {
+    if (replaced) return child;
+    const result = replaceExcerptWithInlineRedline(child, options);
+    if (result.replaced) {
+      replaced = true;
+      originalText = result.originalText;
+    }
+    return result.node;
+  });
   return {
-    ...question,
-    question: shouldRewriteStrategyPrompt
-      ? "What outcome is your client seeking for this draft?"
-      : question.question,
-    whyItMatters: shouldRewriteStrategyPrompt
-      ? "This determines whether the draft should emphasise formal enforcement, negotiated resolution, preservation of the relationship, or another commercial priority."
-      : question.whyItMatters,
+    replaced,
+    originalText,
+    node: replaced ? { ...node, content: nextContent } : node,
   };
 };
 
-const normalizeDraftGenerationCheckpoint = (
-  checkpoint: DraftGenerationCheckpoint | null | undefined,
-): DraftGenerationCheckpoint | null => {
-  if (!checkpoint) return null;
-  const rawQuestions = Array.isArray(checkpoint.questions) ? checkpoint.questions : [];
-  const normalized = {
-    ...checkpoint,
-    questions: rawQuestions
-      .filter((question) => shouldShowCheckpointQuestion(question, checkpoint))
-      .map(normalizeLawyerFacingQuestion),
-    requestedDocuments: Array.isArray(checkpoint.requestedDocuments)
-      ? checkpoint.requestedDocuments
-      : [],
-    blockingItems: Array.isArray(checkpoint.blockingItems) ? checkpoint.blockingItems : [],
-    unsafeClaims: Array.isArray(checkpoint.unsafeClaims) ? checkpoint.unsafeClaims : [],
-    recommendedActions: Array.isArray(checkpoint.recommendedActions)
-      ? checkpoint.recommendedActions
-      : [],
-  };
-  return normalized.questions.length || normalized.requestedDocuments.length
-    ? normalized
-    : null;
+const replaceInlineRedlineWithText = (
+  node: JSONContent,
+  options: {
+    blockId?: string;
+    originalText: string;
+    appliedText: string;
+    keep: "original" | "applied";
+  },
+): { node: JSONContent; replaced: boolean } => {
+  const replacement = options.keep === "applied" ? options.appliedText : options.originalText;
+  const combined = `${options.originalText}${options.appliedText}`;
+  const result = replaceFirstMatchingExcerpt(
+    node,
+    combined,
+    replacement,
+    options.blockId,
+  );
+  if (result.replaced) return result;
+  return replaceFirstMatchingExcerpt(
+    node,
+    options.appliedText,
+    replacement,
+    options.blockId,
+  );
 };
 
-const getDraftCheckpointEyebrow = (
-  checkpoint: DraftGenerationCheckpoint | null,
-) => {
-  const status = String(checkpoint?.status || checkpoint?.readinessStatus || "").trim();
-  if (status === "review_ready_with_optional_inputs" || status === "review_ready") {
-    return "Review Draft Available";
+const extractInlineText = (node: JSONContent | null | undefined): string => {
+  if (!node || typeof node !== "object") return "";
+  if (node.type === "text") return String(node.text || "");
+  if (node.type === "hardBreak") return "\n";
+  const content = Array.isArray(node.content) ? node.content : [];
+  return content.map((child) => extractInlineText(child)).join("");
+};
+
+const findBlockTextById = (
+  node: JSONContent,
+  blockId: string,
+): string => {
+  if (!node || typeof node !== "object") return "";
+  const attrs = node.attrs && typeof node.attrs === "object" ? node.attrs : undefined;
+  const normalizedBlockId = String(blockId || "").trim();
+  if (String(attrs?.blockId || "").trim() === normalizedBlockId) {
+    return extractInlineText(node).trim();
   }
-  if (status === "blocked") {
-    return "Draft Blocked";
+  const content = Array.isArray(node.content) ? node.content : [];
+  for (const child of content) {
+    const result = findBlockTextById(child, blockId);
+    if (result) return result;
   }
-  return "Input Required";
+  return "";
+};
+
+const replaceFirstMatchingExcerpt = (
+  node: JSONContent,
+  excerpt: string,
+  nextText: string,
+  blockId?: string,
+): { node: JSONContent; replaced: boolean } => {
+  if (!node || typeof node !== "object") return { node, replaced: false };
+  const content = Array.isArray(node.content) ? node.content : undefined;
+  const attrs = node.attrs && typeof node.attrs === "object" ? node.attrs : undefined;
+  const targetBlockId = String(blockId || "").trim();
+  const normalizedExcerpt = String(excerpt || "").replace(/\s+/g, " ").trim();
+  const fullText = extractInlineText(node);
+  const nodeText = fullText.replace(/\s+/g, " ").trim();
+  if (
+    normalizedExcerpt &&
+    nodeText &&
+    (node.type === "paragraph" || node.type === "heading") &&
+    (!targetBlockId || String(attrs?.blockId || "").trim() === targetBlockId) &&
+    nodeText.includes(normalizedExcerpt)
+  ) {
+    const range = findTextRange(fullText, excerpt);
+    return {
+      replaced: true,
+      node: {
+        ...node,
+        content: range
+          ? makeTextNodesWithBreaks(
+              `${fullText.slice(0, range.start)}${nextText}${fullText.slice(range.end)}`,
+            )
+          : makeTextNodesWithBreaks(nextText),
+      },
+    };
+  }
+  if (!content) return { node, replaced: false };
+  let replaced = false;
+  const nextContent = content.map((child) => {
+    if (replaced) return child;
+    const result = replaceFirstMatchingExcerpt(child, excerpt, nextText, blockId);
+    if (result.replaced) replaced = true;
+    return result.node;
+  });
+  return {
+    replaced,
+    node: replaced ? { ...node, content: nextContent } : node,
+  };
 };
 
 const DraftingPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const editorRef = useRef<DraftingEditorHandle | null>(null);
+  const activeDraftRef = useRef<DraftDetail | null>(null);
   const savedHashRef = useRef("");
   const currentHashRef = useRef("");
   const contextDirtyRef = useRef(false);
-  const pendingCheckpointDismissThreadRef = useRef<string | null>(null);
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
   const { matters, activeMatter, setActiveMatterId } = useMatterStore();
+  const { jobs, startSingleDraftJob } = usePipelines();
   const matterIdFromQuery = String(searchParams.get("matter") || "").trim();
   const draftIdFromQuery = String(searchParams.get("draft") || "").trim();
+  const draftJobIdFromQuery = String(searchParams.get("draftJob") || "").trim();
+  const blankDraftFromQuery = searchParams.get("blank") === "1";
   const startDraftFromQuery = String(searchParams.get("startDraft") || "").trim();
   const draftLabelFromQuery = String(searchParams.get("draftLabel") || "").trim();
   const draftKeyFromQuery = String(searchParams.get("draftKey") || "").trim();
@@ -361,7 +572,6 @@ const DraftingPage = () => {
   const blankDraftRequestRef = useRef("");
   const draftGenerationStartRequestRef = useRef("");
   const lastDraftReviewPollAtRef = useRef<Record<string, number>>({});
-  const manualDraftGenerationOverrideRef = useRef<string | null>(null);
   const selectedMatter = useMemo(
     () =>
       matters.find((matter) => matter.id === matterIdFromQuery) ||
@@ -373,8 +583,66 @@ const DraftingPage = () => {
     selectedMatter && isMockMatterId(selectedMatter.id)
       ? null
       : selectedMatter?.id || null;
+  const draftRequestKey = useMemo(
+    () =>
+      selectedMatterDraftId && startDraftFromQuery
+        ? [
+            selectedMatterDraftId,
+            startDraftFromQuery,
+            draftKeyFromQuery,
+            draftLabelFromQuery,
+            requestedFromQuery === "drafts" ? "drafts" : "overview",
+          ].join(":")
+        : "",
+    [
+      draftKeyFromQuery,
+      draftLabelFromQuery,
+      requestedFromQuery,
+      selectedMatterDraftId,
+      startDraftFromQuery,
+    ],
+  );
+  const activeDraftPipelineJob = useMemo(
+    () =>
+      jobs.find((job) => draftJobIdFromQuery && job.id === draftJobIdFromQuery) ||
+      jobs.find(
+        (job) =>
+          job.source === "draft-job" &&
+          job.requestKey === draftRequestKey &&
+          (job.status === "queued" || job.status === "running"),
+      ) ||
+      null,
+    [
+      draftJobIdFromQuery,
+      draftRequestKey,
+      jobs,
+    ],
+  );
+  const runningDraftJobs = useMemo(
+    () =>
+      jobs.filter(
+        (job) =>
+          job.source === "draft-job" &&
+          (job.status === "queued" || job.status === "running"),
+      ),
+    [jobs],
+  );
+  const runningDraftByDraftId = useMemo(() => {
+    const map = new Map<string, (typeof runningDraftJobs)[number]>();
+    runningDraftJobs.forEach((job) => {
+      const draftId = String(job.draftId || job.resultId || "").trim();
+      if (draftId) map.set(draftId, job);
+    });
+    return map;
+  }, [runningDraftJobs]);
 
   const [activeDraft, setActiveDraft] = useState<DraftDetail | null>(null);
+  const [draftLibrary, setDraftLibrary] = useState<DraftSummary[]>([]);
+  const [isDraftLibraryLoading, setIsDraftLibraryLoading] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState("");
+  const [draftSuggestionByMatterId, setDraftSuggestionByMatterId] = useState<
+    Record<string, MatterDraftRecommendations>
+  >({});
   const [documentTitle, setDocumentTitle] = useState("Untitled legal draft");
   const [currentRole] = useState<AccessRole>("editor");
   const [requestEditPending, setRequestEditPending] = useState(false);
@@ -391,149 +659,486 @@ const DraftingPage = () => {
   const [formatProposal, setFormatProposal] = useState<DraftFormatProposal | null>(null);
   const [isGeneratingFormat, setIsGeneratingFormat] = useState(false);
   const [formatGenerationError, setFormatGenerationError] = useState("");
-  const [draftGenerationThread, setDraftGenerationThread] =
-    useState<DraftGenerationThread | null>(null);
-  const [draftGenerationCheckpoint, setDraftGenerationCheckpoint] =
-    useState<DraftGenerationCheckpoint | null>(null);
-  const [draftGenerationAnswers, setDraftGenerationAnswers] = useState<Record<string, string>>({});
-  const [draftGenerationError, setDraftGenerationError] = useState("");
-  const [isSubmittingDraftGeneration, setIsSubmittingDraftGeneration] =
-    useState(false);
-  const [draftGenerationTypedStatus, setDraftGenerationTypedStatus] = useState("");
-  const [draftGenerationLoaderSteps, setDraftGenerationLoaderSteps] = useState<string[]>([]);
-  const checkpointQuestions = useMemo(
-    () => (Array.isArray(draftGenerationCheckpoint?.questions) ? draftGenerationCheckpoint.questions : []),
-    [draftGenerationCheckpoint],
-  );
-  const checkpointRequestedDocuments = useMemo(
-    () =>
-      Array.isArray(draftGenerationCheckpoint?.requestedDocuments)
-        ? draftGenerationCheckpoint.requestedDocuments
-        : [],
-    [draftGenerationCheckpoint],
-  );
-  const draftGenerationLoaderRef = useRef<{
-    threadId: string;
-    orderedSteps: string[];
-    timerId: number | null;
-  }>({
-    threadId: "",
-    orderedSteps: [],
-    timerId: null,
+  const [streamedCritiqueState, setStreamedCritiqueState] = useState<StreamedCritiqueState>({
+    status: "idle",
+    message: "",
+    commentCount: 0,
   });
-  const draftGenerationMessageRef = useRef("");
-  const loaderCurrentStep =
-    draftGenerationLoaderSteps[draftGenerationLoaderSteps.length - 1] || "";
-  const loaderProgress = draftGenerationLoaderRef.current.orderedSteps.length
-    ? Math.min(
-        95,
-        Math.max(
-        10,
-        Math.round(
-          (draftGenerationLoaderSteps.length /
-            draftGenerationLoaderRef.current.orderedSteps.length) *
-            100,
+  const [draftFormattingState, setDraftFormattingState] = useState<DraftFormattingState>({
+    status: "idle",
+    message: "",
+  });
+  const visibleDraftLibrary = useMemo(
+    () =>
+      draftLibrary.filter((draft) => {
+        if (runningDraftByDraftId.has(draft.id)) return false;
+        const generationStatus = String(draft.generationStatus || "").toLowerCase();
+        if (generationStatus === "running" || generationStatus === "failed") return false;
+        if (generationStatus && generationStatus !== "completed") return false;
+        return Boolean(draft.lastSavedAt || draft.saveVersion > 0 || generationStatus === "completed");
+      }),
+    [draftLibrary, runningDraftByDraftId],
+  );
+  const aiSuggestedDraftGroups = useMemo(
+    () =>
+      matters
+        .map((matter) => {
+          const seen = new Set<string>();
+          const draftRecommendations =
+            matter.draftRecommendations || draftSuggestionByMatterId[matter.id] || null;
+          const catalogueSuggestions = (draftRecommendations?.recommendations || [])
+            .filter((recommendation) => recommendation.can_generate_now)
+            .map((recommendation) => ({
+              draft_key: recommendation.draft_key,
+              template_key: recommendation.template_key,
+              title: recommendation.title,
+              reason: recommendation.reason || recommendation.purpose || "Ready to draft",
+            }));
+          const atlasDraftQueue =
+            matter.atlasNextSteps && typeof matter.atlasNextSteps === "object"
+              ? (matter.atlasNextSteps as { draftQueue?: Array<{
+                  id?: string;
+                  title?: string;
+                  description?: string;
+                  draftType?: string;
+                  status?: string;
+                  isStartable?: boolean;
+                }> }).draftQueue || []
+              : [];
+          const latestAtlasDraftQueue =
+            matter.latestAtlasNextSteps && typeof matter.latestAtlasNextSteps === "object"
+              ? (matter.latestAtlasNextSteps as { draftQueue?: Array<{
+                  id?: string;
+                  title?: string;
+                  description?: string;
+                  draftType?: string;
+                  status?: string;
+                  isStartable?: boolean;
+                }> }).draftQueue || []
+              : [];
+          const understandingDraftSequence =
+            matter.matterUnderstandingV2 && typeof matter.matterUnderstandingV2 === "object"
+              ? (matter.matterUnderstandingV2 as { draft_sequence?: Array<{
+                  draft_type?: string;
+                  title?: string;
+                  rationale?: string;
+                }> }).draft_sequence || []
+              : [];
+          const latestUnderstandingDraftSequence =
+            matter.latestMatterUnderstandingV2 && typeof matter.latestMatterUnderstandingV2 === "object"
+              ? (matter.latestMatterUnderstandingV2 as { draft_sequence?: Array<{
+                  draft_type?: string;
+                  title?: string;
+                  rationale?: string;
+                }> }).draft_sequence || []
+              : [];
+          const atlasSuggestions = [...atlasDraftQueue, ...latestAtlasDraftQueue]
+            .filter((item) => item.status !== "blocked")
+            .filter((item) => item.isStartable !== false)
+            .map((item) => ({
+              draft_key: item.id || item.draftType || item.title || "",
+              template_key: item.draftType || item.id || "",
+              title: item.title || item.draftType || "Suggested draft",
+              reason: item.description || "Suggested from matter next steps",
+            }));
+          const understandingSuggestions = [
+            ...understandingDraftSequence,
+            ...latestUnderstandingDraftSequence,
+          ].map((item) => ({
+            draft_key: item.draft_type || item.title || "",
+            template_key: item.draft_type || "",
+            title: item.title || item.draft_type || "Suggested draft",
+            reason: item.rationale || "Suggested from matter understanding",
+          }));
+          const nextStepSuggestions = (matter.nextStepPlan?.items || [])
+            .map((item) => item.primary_drafting_action)
+            .filter(Boolean)
+            .map((action) => ({
+              draft_key: action?.template_key || action?.draft_type || action?.label || "",
+              template_key: action?.template_key || action?.draft_type || "",
+              title: action?.label || action?.draft_type || "Suggested draft",
+              reason: action?.cta || "Suggested next draft",
+            }));
+          const recommendations = [
+            ...catalogueSuggestions,
+            ...atlasSuggestions,
+            ...understandingSuggestions,
+            ...nextStepSuggestions,
+          ]
+            .filter((recommendation) => String(recommendation.title || "").trim())
+            .filter((recommendation) => {
+              const key = String(
+                recommendation.draft_key || recommendation.template_key || recommendation.title || "",
+              )
+                .trim()
+                .toLowerCase();
+              if (!key || seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+            .slice(0, 6);
+          return {
+            matter,
+            recommendations,
+          };
+        })
+        .filter((group) => group.recommendations.length > 0),
+    [draftSuggestionByMatterId, matters],
+  );
+  const [askAiState, setAskAiState] = useState<AskAiState>({
+    isOpen: false,
+    message: "",
+    status: "idle",
+    answer: "",
+    error: "",
+  });
+  const [singleDraftStreamState, setSingleDraftStreamState] =
+    useState<SingleDraftStreamState | null>(null);
+  const [singleDraftTypedThinking, setSingleDraftTypedThinking] = useState("");
+  const singleDraftCritiqueRequestRef = useRef("");
+  const singleDraftFormattingRequestRef = useRef("");
+  const singleDraftFormattingRetryRef = useRef("");
+  const singleDraftTimingRef = useRef<{
+    startedAt: number;
+    currentStage: string;
+    currentStageStartedAt: number;
+    currentDocumentFileName: string;
+    currentDocumentStartedAt: number;
+    completedDocuments: number;
+    totalDocuments: number;
+    draftId: string;
+    formattingStartedAt: number;
+  }>({
+    startedAt: 0,
+    currentStage: "",
+    currentStageStartedAt: 0,
+    currentDocumentFileName: "",
+    currentDocumentStartedAt: 0,
+    completedDocuments: 0,
+    totalDocuments: 0,
+    draftId: "",
+    formattingStartedAt: 0,
+  });
+  const markSingleDraftStageComplete = useCallback(
+    (completedAt: number, reason?: string) => {
+      const tracker = singleDraftTimingRef.current;
+      if (!tracker.currentStage || tracker.currentStageStartedAt <= 0) return;
+      const elapsedMs = Math.max(0, completedAt - tracker.currentStageStartedAt);
+      logDraftTiming("stage_complete", {
+        matterId: matterIdFromQuery,
+        draftId: tracker.draftId,
+        stage: tracker.currentStage,
+        elapsedMs,
+        elapsedSeconds: formatTimingSeconds(elapsedMs),
+        totalElapsedMs: Math.max(0, completedAt - tracker.startedAt),
+        totalElapsedSeconds: formatTimingSeconds(
+          Math.max(0, completedAt - tracker.startedAt),
         ),
+        ...(reason ? { reason } : {}),
+      });
+      tracker.currentStage = "";
+      tracker.currentStageStartedAt = 0;
+    },
+    [matterIdFromQuery],
+  );
+  const beginSingleDraftStage = useCallback(
+    (stage: string, startedAt: number, reason?: string) => {
+      if (!stage) return;
+      const tracker = singleDraftTimingRef.current;
+      tracker.currentStage = stage;
+      tracker.currentStageStartedAt = startedAt;
+      logDraftTiming("stage_started", {
+        matterId: matterIdFromQuery,
+        draftId: tracker.draftId,
+        stage,
+        totalElapsedMs: Math.max(0, startedAt - tracker.startedAt),
+        totalElapsedSeconds: formatTimingSeconds(
+          Math.max(0, startedAt - tracker.startedAt),
         ),
-      )
-    : 12;
-  const loaderHighlights = useMemo(() => {
-    const readiness = draftGenerationThread?.uiSummary?.readiness || null;
-    return [
-      readiness?.safeGenerationMode
-        ? `Mode: ${String(readiness.safeGenerationMode).replace(/_/g, " ")}`
-        : "Mode: guarded source-grounded drafting",
-      draftGenerationThread?.uiSummary?.sourceCoverage
-        ? `Verified support: ${
-            draftGenerationThread.uiSummary.sourceCoverage.verifiedCount || 0
-          }/${draftGenerationThread.uiSummary.sourceCoverage.requirementCount || 0}`
-        : "Verified support is being checked section by section",
-      draftGenerationThread?.uiSummary?.blockers?.length
-        ? `${draftGenerationThread.uiSummary.blockers.length} open proof item(s) are being carried into review language`
-        : "Open proof items are being preserved as review notes where needed",
+        ...(reason ? { reason } : {}),
+      });
+    },
+    [matterIdFromQuery],
+  );
+  useEffect(() => {
+    activeDraftRef.current = activeDraft;
+  }, [activeDraft]);
+  const isSingleDraftStreaming = Boolean(singleDraftStreamState);
+  const isSingleDraftFormattingStage =
+    singleDraftStreamState?.stage === "formatting" ||
+    singleDraftStreamState?.stage === "saving";
+  const singleDraftThinkingTranscript = useMemo(() => {
+    if (!singleDraftStreamState) return [];
+    const entries = [...singleDraftStreamState.thinkingHistory];
+    const liveEntry = String(singleDraftStreamState.thinkingText || "").trim();
+    if (liveEntry && (!entries.length || entries[entries.length - 1] !== liveEntry)) {
+      entries.push(liveEntry);
+    }
+    return entries.slice(-24);
+  }, [singleDraftStreamState]);
+  const singleDraftRecentThoughts = useMemo(
+    () => singleDraftThinkingTranscript.slice(-5, -1),
+    [singleDraftThinkingTranscript],
+  );
+  const singleDraftCurrentThought = useMemo(() => {
+    const liveEntry = String(singleDraftStreamState?.thinkingText || "").trim();
+    return liveEntry || singleDraftThinkingTranscript[singleDraftThinkingTranscript.length - 1] || "";
+  }, [singleDraftStreamState?.thinkingText, singleDraftThinkingTranscript]);
+  const singleDraftExecutionSteps = useMemo(() => {
+    const currentStage = String(singleDraftStreamState?.stage || "");
+    const latestStageOrder = [
+      "loading_context",
+      "draft_type_resolution",
+      "reference_selection",
+      "reference_rule_extraction",
+      "blueprint_generation",
+      "fact_hydration",
+      "gap_gate",
+      "draft_execution_packet",
+      "section_drafting",
+      "review",
+      "targeted_patching",
+      "formatting",
+      "saving",
     ];
-  }, [draftGenerationThread]);
-  const draftGenerationLoaderMessage = useMemo(() => {
-    const statuses = Array.isArray(draftGenerationThread?.uiSummary?.sectionStatuses)
-      ? draftGenerationThread.uiSummary.sectionStatuses
-      : [];
-    const runningSection =
-      statuses.find((item) => item.status === "running") ||
-      statuses.find((item) => item.status === "needs_evidence") ||
-      statuses.find((item) => item.status === "ready") ||
-      null;
-    if (draftGenerationCheckpoint) {
-      return "Associate is checking what must be confirmed before drafting.";
-    }
-    if (draftGenerationThread?.status === "running" && loaderCurrentStep) {
-      return `${loaderCurrentStep}\n\nAssociate is validating sources, preserving open proof items, and preparing lawyer-review drafting language section by section.`;
-    }
-    if (runningSection) {
-      return `Associate is drafting ${runningSection.title}.`;
-    }
-    if (draftGenerationThread?.status === "completed") {
-      return "Draft generation is complete.";
-    }
-    if (draftGenerationThread?.status === "running") {
-      return "Associate is assembling the draft section by section.";
-    }
-    return "";
-  }, [draftGenerationCheckpoint, draftGenerationThread?.status, draftGenerationThread?.uiSummary?.sectionStatuses, loaderCurrentStep]);
+    const legacyStageOrder = [
+      "loading_context",
+      "matter_grounding",
+      "targeted_grounding",
+      "query_enhancement",
+      "reference_retrieval",
+      "skeleton_generation",
+      "draft_finalization",
+      "case_citation_review",
+      "formatting",
+      "saving",
+    ];
+    const isLatestStage = latestStageOrder.includes(currentStage);
+    const visibleStages = isLatestStage
+      ? [
+          { id: "loading_context", label: "Load matter context" },
+          { id: "draft_type_resolution", label: "Resolve draft intent" },
+          { id: "reference_selection", label: "Select reference form" },
+          { id: "reference_rule_extraction", label: "Extract reference rules" },
+          { id: "blueprint_generation", label: "Create blueprint" },
+          { id: "fact_hydration", label: "Hydrate matter facts" },
+          { id: "gap_gate", label: "Check gaps" },
+          { id: "draft_execution_packet", label: "Lock execution packet" },
+          { id: "section_drafting", label: "Draft sections" },
+          { id: "review", label: "Review draft" },
+          { id: "targeted_patching", label: "Patch flagged sections" },
+          { id: "formatting", label: "Format structure" },
+          { id: "saving", label: "Save workspace" },
+        ]
+      : [
+          { id: "loading_context", label: "Load matter context" },
+          { id: "matter_grounding", label: "Use matter grounding" },
+          { id: "targeted_grounding", label: "Fetch missing document facts" },
+          { id: "query_enhancement", label: "Refine draft request" },
+          { id: "reference_retrieval", label: "Pull reference guidance" },
+          { id: "skeleton_generation", label: "Generate draft skeleton" },
+          { id: "draft_finalization", label: "Finalize draft content" },
+          { id: "case_citation_review", label: "Check case citations" },
+          { id: "formatting", label: "Format the structure" },
+          { id: "saving", label: "Save to draft workspace" },
+        ];
+    const order = isLatestStage ? latestStageOrder : legacyStageOrder;
+    const currentIndex = order.indexOf(currentStage);
+    return [
+      ...visibleStages,
+    ].map((item, index) => ({
+      ...item,
+      status:
+        currentIndex < 0
+          ? "pending"
+          : index < currentIndex
+            ? "done"
+            : index === currentIndex
+              ? "current"
+              : "pending",
+    }));
+  }, [singleDraftStreamState?.stage]);
   const draftSidePanelKey = useMemo(() => {
-    if (draftGenerationCheckpoint) {
-      return `checkpoint:${draftGenerationThread?.id || "none"}:${draftGenerationCheckpoint.status || "unknown"}:${draftGenerationCheckpoint.title || "draft"}`;
-    }
-    if (draftGenerationThread) {
-      return `generation:${draftGenerationThread.id}:${draftGenerationThread.status || "unknown"}`;
-    }
     if (formatProposal || formatGenerationError) {
       return `format:${formatProposal?.title || "error"}:${formatGenerationError || "ok"}`;
     }
-    if (startDraftFromQuery && !activeDraft) {
-      return `starting:${startDraftFromQuery}:${draftLabelFromQuery}`;
-    }
     return "";
   }, [
-    activeDraft,
-    draftGenerationCheckpoint,
-    draftGenerationThread,
-    draftLabelFromQuery,
     formatGenerationError,
     formatProposal,
-    startDraftFromQuery,
   ]);
   const [dismissedDraftSidePanelKey, setDismissedDraftSidePanelKey] = useState("");
   const isDraftSidePanelVisible =
     Boolean(draftSidePanelKey) && draftSidePanelKey !== dismissedDraftSidePanelKey;
   const hasDraftSidePanelContent = Boolean(
-    draftGenerationThread ||
-      draftGenerationCheckpoint ||
-      (startDraftFromQuery && !activeDraft) ||
-      formatProposal ||
-      formatGenerationError,
+    !isSingleDraftStreaming && (formatProposal || formatGenerationError),
   );
-  const openMatterSupportUploader = useCallback(
-    (documentLabel: string, reason: string) => {
-      if (activeMatter?.id) {
-        setActiveMatterId(activeMatter.id);
-      }
-      const draftTitle = String(
-        draftGenerationCheckpoint?.title || "this draft",
+  const shouldShowDraftLibrary =
+    !draftIdFromQuery &&
+    !blankDraftFromQuery &&
+    !sourceDocumentFromQuery &&
+    !startDraftFromQuery &&
+    !isSingleDraftStreaming &&
+    !activeDraft;
+  const completedDraftJobSignature = useMemo(
+    () =>
+      jobs
+        .filter((job) => job.source === "draft-job" && job.status === "succeeded")
+        .map(
+          (job) =>
+            `${job.id}:${job.resultId || job.draftId || ""}:${job.completedAt || ""}`,
+        )
+        .join("|"),
+    [jobs],
+  );
+
+  useEffect(() => {
+    if (!shouldShowDraftLibrary) return;
+    let cancelled = false;
+    setIsDraftLibraryLoading(true);
+    void listDrafts()
+      .then((drafts) => {
+        if (cancelled) return;
+        setDraftLibrary(drafts);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDraftLibrary([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsDraftLibraryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completedDraftJobSignature, shouldShowDraftLibrary]);
+
+  useEffect(() => {
+    if (!shouldShowDraftLibrary || !matters.length) return;
+    let cancelled = false;
+    const candidates = matters.filter(
+      (matter) => {
+        const hasFetchedSuggestions = Object.prototype.hasOwnProperty.call(
+          draftSuggestionByMatterId,
+          matter.id,
+        );
+        return !matter.draftRecommendations?.recommendations?.length && !hasFetchedSuggestions;
+      },
+    );
+    if (!candidates.length) return;
+
+    void Promise.all(
+      candidates.map((matter) =>
+        getDraftRecommendations(matter.id, { includeResult: false })
+          .then((payload) => ({
+            matterId: matter.id,
+            recommendations: payload.draftRecommendations,
+          }))
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const nextEntries = results.filter(
+        (
+          result,
+        ): result is {
+          matterId: string;
+          recommendations: MatterDraftRecommendations;
+        } => Boolean(result?.recommendations),
+      );
+      if (!nextEntries.length) return;
+      setDraftSuggestionByMatterId((current) => {
+        const next = { ...current };
+        nextEntries.forEach((entry) => {
+          next[entry.matterId] = entry.recommendations;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draftSuggestionByMatterId, matters, shouldShowDraftLibrary]);
+
+  useEffect(() => {
+    if (!activeDraftPipelineJob || activeDraftPipelineJob.source !== "draft-job") {
+      return;
+    }
+
+    if (activeDraftPipelineJob.status === "failed") {
+      setSingleDraftTypedThinking("");
+      setSingleDraftStreamState(null);
+      setSaveStatus("error");
+      setLoadError(activeDraftPipelineJob.error || "Draft generation failed.");
+      const failedDraftId = String(
+        activeDraftPipelineJob.draftId || activeDraftPipelineJob.resultId || "",
       ).trim();
-      const prefill = [
-        `Add supporting files for: ${documentLabel}.`,
-        reason ? `Why needed: ${reason}.` : "",
-        `Target draft: ${draftTitle}.`,
-        "Upload the most direct supporting records available and note any missing dates or disputed facts.",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      sessionStorage.setItem(MATTER_APPEND_UPLOAD_SESSION_KEY, "1");
-      sessionStorage.setItem(MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY, prefill);
-      navigate("/matter");
-    },
-    [activeMatter?.id, draftGenerationCheckpoint?.title, navigate, setActiveMatterId],
-  );
+      if (failedDraftId && draftIdFromQuery !== failedDraftId) {
+        navigate(
+          `/drafting?draft=${encodeURIComponent(failedDraftId)}${
+            activeDraftPipelineJob.matterId
+              ? `&matter=${encodeURIComponent(activeDraftPipelineJob.matterId)}`
+              : ""
+          }&mode=edit`,
+          { replace: true },
+        );
+      }
+      return;
+    }
+
+    if (activeDraftPipelineJob.status === "succeeded") {
+      setSingleDraftTypedThinking("");
+      setSingleDraftStreamState(null);
+      setLoadError("");
+      const completedDraftId = String(
+        activeDraftPipelineJob.draftId || activeDraftPipelineJob.resultId || "",
+      ).trim();
+      if (completedDraftId && draftIdFromQuery !== completedDraftId) {
+        navigate(
+          `/drafting?draft=${encodeURIComponent(completedDraftId)}${
+            activeDraftPipelineJob.matterId
+              ? `&matter=${encodeURIComponent(activeDraftPipelineJob.matterId)}`
+              : ""
+          }&mode=edit`,
+          { replace: true },
+        );
+      }
+      return;
+    }
+
+    setSaveStatus("loading");
+    setLoadError("");
+    setActiveDraft(null);
+    setCurrentContentJson({});
+    savedHashRef.current = "";
+    currentHashRef.current = "";
+    contextDirtyRef.current = false;
+    setSingleDraftStreamState({
+      draftId: String(activeDraftPipelineJob.draftId || ""),
+      title:
+        activeDraftPipelineJob.title ||
+        draftLabelFromQuery ||
+        startDraftFromQuery ||
+        "Generating draft",
+      stage: String(activeDraftPipelineJob.stageKey || "loading_context"),
+      statusMessage:
+        activeDraftPipelineJob.statusMessage ||
+        activeDraftPipelineJob.stage ||
+        "Associate is drafting from the matter record.",
+      thinkingText: String(activeDraftPipelineJob.thinkingText || ""),
+      thinkingHistory: Array.isArray(activeDraftPipelineJob.thinkingHistory)
+        ? activeDraftPipelineJob.thinkingHistory
+        : [],
+    });
+
+  }, [
+    activeDraftPipelineJob,
+    draftIdFromQuery,
+    draftLabelFromQuery,
+    navigate,
+    startDraftFromQuery,
+  ]);
 
   useEffect(() => {
     if (!matterIdFromQuery) return;
@@ -542,6 +1147,22 @@ const DraftingPage = () => {
   }, [matterIdFromQuery, matters, setActiveMatterId]);
 
   useEffect(() => {
+    if (
+      activeDraftPipelineJob?.source === "draft-job" &&
+      (activeDraftPipelineJob.status === "queued" ||
+        activeDraftPipelineJob.status === "running")
+    ) {
+      setActiveDraft(null);
+      setDocumentTitle("Untitled legal draft");
+      setCurrentContentJson({});
+      savedHashRef.current = "";
+      currentHashRef.current = "";
+      contextDirtyRef.current = false;
+      setSaveStatus("loading");
+      setLoadError("");
+      return;
+    }
+
     if (!draftIdFromQuery) {
       setActiveDraft(null);
       setDocumentTitle("Untitled legal draft");
@@ -580,7 +1201,7 @@ const DraftingPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [draftIdFromQuery]);
+  }, [activeDraftPipelineJob, draftIdFromQuery]);
 
   const createEditableDraft = useCallback(
     async ({
@@ -670,65 +1291,9 @@ const DraftingPage = () => {
   }, [createEditableDraft, draftIdFromQuery, selectedMatter, selectedMatterDraftId, sourceDocumentFromQuery]);
 
   useEffect(() => {
-    if (draftIdFromQuery || sourceDocumentFromQuery || !matterIdFromQuery || !startDraftFromQuery) {
+    if (!blankDraftFromQuery || draftIdFromQuery || sourceDocumentFromQuery || startDraftFromQuery) {
       return;
     }
-
-    const requestKey = [
-      matterIdFromQuery,
-      startDraftFromQuery,
-      draftKeyFromQuery,
-      draftLabelFromQuery,
-      requestedFromQuery,
-    ].join(":");
-    if (draftGenerationStartRequestRef.current === requestKey) return;
-    draftGenerationStartRequestRef.current = requestKey;
-
-    setSaveStatus("loading");
-    setLoadError("");
-    setDraftGenerationError("");
-
-    void startMatterDraftGeneration({
-      matterId: matterIdFromQuery,
-      draftType: startDraftFromQuery,
-      draftKey: draftKeyFromQuery || undefined,
-      draftTitle: draftLabelFromQuery || undefined,
-      source: "atlas_next_steps",
-      requestedFrom:
-        requestedFromQuery === "drafts" ? "drafts" : "overview",
-    })
-      .then((payload) => {
-        setDraftGenerationCheckpoint(normalizeDraftGenerationCheckpoint(payload.checkpoint || null));
-        setDraftGenerationAnswers({});
-        navigate(
-          `/drafting?draft=${encodeURIComponent(payload.draft.id)}&matter=${encodeURIComponent(
-            matterIdFromQuery,
-          )}&mode=edit`,
-          { replace: true },
-        );
-      })
-      .catch((error) => {
-        setSaveStatus("error");
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "Failed to start draft generation.",
-        );
-      });
-  }, [
-    draftIdFromQuery,
-    draftGenerationStartRequestRef,
-    draftKeyFromQuery,
-    draftLabelFromQuery,
-    matterIdFromQuery,
-    navigate,
-    requestedFromQuery,
-    sourceDocumentFromQuery,
-    startDraftFromQuery,
-  ]);
-
-  useEffect(() => {
-    if (draftIdFromQuery || sourceDocumentFromQuery || startDraftFromQuery) return;
 
     const requestKey = selectedMatter?.id || "blank";
     if (blankDraftRequestRef.current === requestKey) return;
@@ -753,7 +1318,485 @@ const DraftingPage = () => {
     };
 
     void createBlankDraft();
-  }, [createEditableDraft, draftIdFromQuery, selectedMatter, selectedMatterDraftId, sourceDocumentFromQuery, startDraftFromQuery]);
+  }, [
+    blankDraftFromQuery,
+    createEditableDraft,
+    draftIdFromQuery,
+    selectedMatter,
+    selectedMatterDraftId,
+    sourceDocumentFromQuery,
+    startDraftFromQuery,
+  ]);
+
+  useEffect(() => {
+    if (sourceDocumentFromQuery || !matterIdFromQuery || !startDraftFromQuery) {
+      return;
+    }
+    if (!selectedMatterDraftId) {
+      setSaveStatus("error");
+      setLoadError("This drafting test needs a real saved matter, not a mock-only matter.");
+      return;
+    }
+
+    const requestKey = [
+      selectedMatterDraftId,
+      startDraftFromQuery,
+      draftKeyFromQuery,
+      draftLabelFromQuery,
+      requestedFromQuery,
+    ].join(":");
+    if (draftGenerationStartRequestRef.current === requestKey) return;
+    draftGenerationStartRequestRef.current = requestKey;
+
+    const pipelineJobId = startSingleDraftJob({
+      matterId: selectedMatterDraftId,
+      draftType: startDraftFromQuery,
+      draftKey: draftKeyFromQuery || undefined,
+      draftTitle: draftLabelFromQuery || undefined,
+      source: "atlas_next_steps",
+      requestedFrom: requestedFromQuery === "drafts" ? "drafts" : "overview",
+      targetBasePath: "/drafting",
+    });
+    if (pipelineJobId && draftJobIdFromQuery !== pipelineJobId) {
+      navigate(
+        `/drafting?matter=${encodeURIComponent(selectedMatterDraftId)}&startDraft=${encodeURIComponent(
+          startDraftFromQuery,
+        )}&draftLabel=${encodeURIComponent(
+          draftLabelFromQuery || startDraftFromQuery,
+        )}&requestedFrom=${encodeURIComponent(
+          requestedFromQuery,
+        )}&draftKey=${encodeURIComponent(draftKeyFromQuery || "")}&draftJob=${encodeURIComponent(
+          pipelineJobId,
+        )}`,
+        { replace: true },
+      );
+    }
+    return;
+
+    setSaveStatus("loading");
+    setLoadError("");
+    singleDraftTimingRef.current = {
+      startedAt: performance.now(),
+      currentStage: "loading_context",
+      currentStageStartedAt: performance.now(),
+      currentDocumentFileName: "",
+      currentDocumentStartedAt: 0,
+      completedDocuments: 0,
+      totalDocuments: 0,
+      draftId: "",
+      formattingStartedAt: 0,
+    };
+    logDraftTiming("draft_run_started", {
+      matterId: selectedMatterDraftId,
+      requestedDraftType: startDraftFromQuery,
+      requestedDraftLabel: draftLabelFromQuery || startDraftFromQuery,
+    });
+    logDraftTiming("stage_started", {
+      matterId: selectedMatterDraftId,
+      draftId: "",
+      stage: "loading_context",
+      totalElapsedMs: 0,
+      totalElapsedSeconds: 0,
+    });
+    setSingleDraftStreamState({
+      draftId: "",
+      title: draftLabelFromQuery || startDraftFromQuery,
+      stage: "loading_context",
+      statusMessage: "Opening the drafting workspace.",
+      thinkingText: "",
+      thinkingHistory: [],
+    });
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let completed = false;
+    let streamedDraftId = draftIdFromQuery;
+    let streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+    const syncActiveDraft = async (draftId: string) => {
+      if (!draftId) return;
+      const nextDraft = sanitizeDraftDetailContent(await getDraft(draftId));
+      if (cancelled) return;
+      setActiveDraft(nextDraft);
+      setDocumentTitle(nextDraft.title);
+      setCurrentContentJson(nextDraft.contentJson || {});
+      const nextHash = hashDraftContent(nextDraft.contentJson || {});
+      savedHashRef.current = nextHash;
+      currentHashRef.current = nextHash;
+      setSaveStatus("saved");
+    };
+
+    const handleStreamEvent = async (eventName: string, payload: Record<string, unknown>) => {
+      if (cancelled) return;
+      const pushThinkingEntry = (nextText: string, label?: string) => {
+        const summary = summarizeSingleDraftThought(nextText);
+        if (!summary) return;
+        setSingleDraftStreamState((current) => {
+          if (!current) return current;
+          const nextLabel = label || stageLabelForThought(current.stage);
+          const normalized = `${nextLabel}: ${summary}`;
+          const nextHistory = current.thinkingText
+            ? appendLimitedEntries(current.thinkingHistory, current.thinkingText, 24)
+            : current.thinkingHistory;
+          return {
+            ...current,
+            thinkingHistory: nextHistory,
+            thinkingText: normalized,
+          };
+        });
+      };
+      switch (eventName) {
+        case "draft_created": {
+          streamedDraftId = String(payload.draftId || "").trim();
+          singleDraftTimingRef.current.draftId = streamedDraftId;
+          const nextTitle = String(payload.title || draftLabelFromQuery || startDraftFromQuery).trim();
+          setSingleDraftStreamState((current) =>
+            current
+              ? {
+                  ...current,
+                  draftId: streamedDraftId,
+                  title: nextTitle || current.title,
+                }
+              : current,
+          );
+          navigate(
+            `/drafting?draft=${encodeURIComponent(streamedDraftId)}&matter=${encodeURIComponent(
+              matterIdFromQuery,
+            )}&startDraft=${encodeURIComponent(startDraftFromQuery)}&draftLabel=${encodeURIComponent(
+              draftLabelFromQuery || nextTitle,
+            )}&requestedFrom=${encodeURIComponent(
+              requestedFromQuery,
+            )}&draftKey=${encodeURIComponent(draftKeyFromQuery || "")}`,
+            { replace: true },
+          );
+          await syncActiveDraft(streamedDraftId);
+          break;
+        }
+        case "status": {
+          const tracker = singleDraftTimingRef.current;
+          const now = performance.now();
+          const nextStage = String(payload.stage || tracker.currentStage || "skeleton_generation");
+          if (nextStage && nextStage !== tracker.currentStage) {
+            markSingleDraftStageComplete(now, "status_transition");
+            beginSingleDraftStage(nextStage, now, String(payload.message || "").trim());
+          }
+          setSingleDraftStreamState((current) =>
+            current
+              ? {
+                  ...current,
+                  stage: String(payload.stage || current.stage || "skeleton_generation"),
+                  statusMessage: String(payload.message || current.statusMessage || ""),
+                }
+              : current,
+          );
+          break;
+        }
+        case "draft_chunk": {
+          break;
+        }
+        case "document_start": {
+          const tracker = singleDraftTimingRef.current;
+          tracker.currentDocumentFileName = String(payload.fileName || "Document").trim();
+          tracker.currentDocumentStartedAt = performance.now();
+          tracker.totalDocuments = Number(payload.total || tracker.totalDocuments || 0);
+          logDraftTiming("document_started", {
+            matterId: selectedMatterDraftId,
+            draftId: tracker.draftId,
+            fileName: tracker.currentDocumentFileName,
+            index: Number(payload.index || tracker.completedDocuments + 1),
+            total: tracker.totalDocuments,
+            totalElapsedMs: Math.max(0, tracker.currentDocumentStartedAt - tracker.startedAt),
+            totalElapsedSeconds: formatTimingSeconds(
+              Math.max(0, tracker.currentDocumentStartedAt - tracker.startedAt),
+            ),
+          });
+          break;
+        }
+        case "document_summary": {
+          const note = String(payload.summary || "").trim();
+          if (!note) break;
+          const fileName = String(payload.fileName || "Document").trim();
+          const tracker = singleDraftTimingRef.current;
+          const completedAt = performance.now();
+          const source = String(payload.source || "").trim();
+          if (source === "matter_cache") {
+            logDraftTiming("document_grounded_from_matter", {
+              matterId: selectedMatterDraftId,
+              draftId: tracker.draftId,
+              fileName,
+              index: Number(payload.index || 0),
+              total: Number(payload.total || 0),
+              totalElapsedMs: Math.max(0, completedAt - tracker.startedAt),
+              totalElapsedSeconds: formatTimingSeconds(
+                Math.max(0, completedAt - tracker.startedAt),
+              ),
+            });
+          } else {
+            const documentElapsedMs =
+              tracker.currentDocumentStartedAt > 0
+                ? Math.max(0, completedAt - tracker.currentDocumentStartedAt)
+                : 0;
+            tracker.completedDocuments += 1;
+            logDraftTiming("document_complete", {
+              matterId: selectedMatterDraftId,
+              draftId: tracker.draftId,
+              fileName,
+              completedDocuments: tracker.completedDocuments,
+              totalDocuments: tracker.totalDocuments,
+              elapsedMs: documentElapsedMs,
+              elapsedSeconds: formatTimingSeconds(documentElapsedMs),
+              totalElapsedMs: Math.max(0, completedAt - tracker.startedAt),
+              totalElapsedSeconds: formatTimingSeconds(
+                Math.max(0, completedAt - tracker.startedAt),
+              ),
+              ...(source ? { source } : {}),
+            });
+          }
+          pushThinkingEntry(`${fileName}: ${note}`, "Matter");
+          break;
+        }
+        case "provider_switch": {
+          const reason = String(payload.reason || "").trim();
+          pushThinkingEntry(
+            reason
+              ? `Switching model provider. ${reason}`
+              : "Switching model provider.",
+            "Model",
+          );
+          break;
+        }
+        case "reference_candidate_selected": {
+          const choice = payload.choice as
+            | { match_type?: string; reason?: string }
+            | undefined;
+          const referenceBacked = Boolean(payload.referenceBacked);
+          const reason = String(choice?.reason || "").trim();
+          pushThinkingEntry(
+            referenceBacked
+              ? reason || "Reference form selected."
+              : reason || "No reference-backed form selected; using fallback structure.",
+            "Reference",
+          );
+          break;
+        }
+        case "blueprint_ready": {
+          const sectionCount = Number(payload.sectionCount || 0);
+          pushThinkingEntry(
+            sectionCount
+              ? `Blueprint created with ${sectionCount} sections.`
+              : "Blueprint created.",
+            "Blueprint",
+          );
+          break;
+        }
+        case "facts_hydrated": {
+          const factCount = Number(payload.factCount || 0);
+          const missingCount = Number(payload.missingCount || 0);
+          pushThinkingEntry(
+            `Hydrated ${factCount} facts and identified ${missingCount} missing inputs.`,
+            "Facts",
+          );
+          break;
+        }
+        case "gap_gate_ready": {
+          const totalMissing = Number(payload.totalMissing || 0);
+          pushThinkingEntry(
+            totalMissing
+              ? `${totalMissing} placeholders remain allowed for drafting.`
+              : "Required facts passed the gap check.",
+            "Gaps",
+          );
+          break;
+        }
+        case "review_ready": {
+          const patchCount = Number(payload.patchCount || 0);
+          pushThinkingEntry(
+            patchCount
+              ? `Review requested patches for ${patchCount} sections.`
+              : "Review completed without targeted patches.",
+            "Review",
+          );
+          break;
+        }
+        case "patch_ready": {
+          const patchedSectionCount = Number(payload.patchedSectionCount || 0);
+          pushThinkingEntry(
+            patchedSectionCount
+              ? `Patched ${patchedSectionCount} flagged sections.`
+              : "Patch pass completed.",
+            "Patcher",
+          );
+          break;
+        }
+        case "thinking": {
+          const text = String(payload.text || "").trim();
+          if (!text) break;
+          pushThinkingEntry(text);
+          break;
+        }
+        case "final": {
+          streamedDraftId = String(payload.draftId || streamedDraftId || "").trim();
+          if (streamedDraftId) {
+            singleDraftTimingRef.current.draftId = streamedDraftId;
+          }
+          setSingleDraftTypedThinking("");
+          setSingleDraftStreamState((current) =>
+            current
+              ? {
+                  ...current,
+                  draftId: streamedDraftId || current.draftId,
+                  stage: "saving",
+                  statusMessage: "Loading the generated draft.",
+                  thinkingText: "",
+                  thinkingHistory: [],
+                }
+              : current,
+          );
+          break;
+        }
+        case "done": {
+          const completedAt = performance.now();
+          markSingleDraftStageComplete(completedAt, "stream_done");
+          const finalDraftId = String(payload.draftId || streamedDraftId || "").trim();
+          if (finalDraftId) {
+            await syncActiveDraft(finalDraftId);
+            if (cancelled) return;
+            navigate(
+              `/drafting?draft=${encodeURIComponent(finalDraftId)}&matter=${encodeURIComponent(
+                matterIdFromQuery,
+              )}&mode=edit`,
+              { replace: true },
+            );
+          }
+          completed = true;
+          logDraftTiming("draft_run_complete", {
+            matterId: selectedMatterDraftId,
+            draftId: finalDraftId || singleDraftTimingRef.current.draftId,
+            totalElapsedMs: Math.max(0, completedAt - singleDraftTimingRef.current.startedAt),
+            totalElapsedSeconds: formatTimingSeconds(
+              Math.max(0, completedAt - singleDraftTimingRef.current.startedAt),
+            ),
+          });
+          setSingleDraftTypedThinking("");
+          setSingleDraftStreamState(null);
+          break;
+        }
+        case "error": {
+          throw new Error(
+            String(payload.message || "Single draft generation failed."),
+          );
+        }
+        default:
+          break;
+      }
+    };
+
+    const runSingleDraftStream = async () => {
+      try {
+        const response = await openSingleDraftStream(
+          {
+            matterId: selectedMatterDraftId || "",
+            draftType: startDraftFromQuery,
+            draftKey: draftKeyFromQuery || undefined,
+            draftTitle: draftLabelFromQuery || undefined,
+            source: "atlas_next_steps",
+            requestedFrom:
+              requestedFromQuery === "drafts" ? "drafts" : "overview",
+          },
+          controller.signal,
+        );
+
+        if (!response.ok || !response.body) {
+          const raw = await response.text();
+          let message = "Failed to start draft generation.";
+          try {
+            const parsed = JSON.parse(raw || "{}") as { error?: string };
+            if (parsed?.error) message = parsed.error;
+          } catch {
+            if (raw.trim()) message = raw.trim();
+          }
+          throw new Error(message);
+        }
+
+        const reader = response.body.getReader();
+        streamReader = reader;
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!cancelled) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let delimiterIndex = buffer.indexOf("\n\n");
+          while (delimiterIndex >= 0) {
+            const block = buffer.slice(0, delimiterIndex).trim();
+            buffer = buffer.slice(delimiterIndex + 2);
+            if (block) {
+              const lines = block.split("\n");
+              let eventName = "message";
+              const dataLines: string[] = [];
+              for (const line of lines) {
+                if (line.startsWith("event:")) {
+                  eventName = line.slice(6).trim();
+                } else if (line.startsWith("data:")) {
+                  dataLines.push(line.slice(5).trim());
+                }
+              }
+              if (dataLines.length) {
+                const parsedPayload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+                await handleStreamEvent(eventName, parsedPayload);
+                if (completed) {
+                  return;
+                }
+              }
+            }
+            delimiterIndex = buffer.indexOf("\n\n");
+          }
+        }
+      } catch (error) {
+        if (cancelled || controller.signal.aborted || completed) return;
+        draftGenerationStartRequestRef.current = "";
+        setSingleDraftTypedThinking("");
+        setSingleDraftStreamState(null);
+        setActiveDraft(null);
+        setSaveStatus("error");
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Failed to start draft generation.",
+        );
+      }
+    };
+
+    void runSingleDraftStream();
+
+    return () => {
+      cancelled = true;
+      void streamReader?.cancel().catch(() => {});
+      if (!completed) {
+        controller.abort();
+      }
+    };
+  }, [
+    draftGenerationStartRequestRef,
+    draftJobIdFromQuery,
+    draftKeyFromQuery,
+    draftLabelFromQuery,
+    matterIdFromQuery,
+    navigate,
+    requestedFromQuery,
+    selectedMatterDraftId,
+    sourceDocumentFromQuery,
+    startSingleDraftJob,
+    startDraftFromQuery,
+  ]);
+
+  useEffect(() => {
+    if (draftIdFromQuery || sourceDocumentFromQuery || startDraftFromQuery) return;
+    setSaveStatus("idle");
+    setLoadError("");
+  }, [draftIdFromQuery, sourceDocumentFromQuery, startDraftFromQuery]);
 
   useEffect(() => {
     if (!activeDraft) return;
@@ -782,46 +1825,9 @@ const DraftingPage = () => {
     };
   }, [activeDraft, documentTitle]);
 
-  const updateCurrentDocument = (
-    contentJson: JSONContent,
-    meta?: { userInitiated?: boolean },
-  ) => {
+  const updateCurrentDocument = (contentJson: JSONContent) => {
     setCurrentContentJson(contentJson);
     currentHashRef.current = hashDraftContent(contentJson);
-    const draftGenerationThreadId = String(
-      activeDraft?.context?.draftGenerationThreadId || "",
-    ).trim();
-    const draftGenerationContext = (activeDraft?.context?.draftGeneration ||
-      {}) as Record<string, unknown>;
-    const allowAutoApply = draftGenerationContext.allowAutoApply !== false;
-    if (
-      activeDraft?.id &&
-      draftGenerationThreadId &&
-      allowAutoApply &&
-      meta?.userInitiated === true &&
-      currentHashRef.current !== savedHashRef.current &&
-      manualDraftGenerationOverrideRef.current !== activeDraft.id
-    ) {
-      manualDraftGenerationOverrideRef.current = activeDraft.id;
-      void patchDraft(activeDraft.id, {
-        context: {
-          ...(activeDraft.context || {}),
-          generationStatus: "manual_override",
-          draftGeneration: {
-            ...((activeDraft.context?.draftGeneration as Record<string, unknown>) ||
-              {}),
-            allowAutoApply: false,
-            manuallyEditedAt: new Date().toISOString(),
-          },
-        },
-      })
-        .then((patchedDraft) => {
-          setActiveDraft(sanitizeDraftDetailContent(patchedDraft));
-        })
-        .catch(() => {
-          manualDraftGenerationOverrideRef.current = null;
-        });
-    }
     if (saveStatus !== "saving" && saveStatus !== "loading") {
       setSaveStatus(
         currentHashRef.current === savedHashRef.current && documentTitle.trim() === activeDraft?.title
@@ -936,311 +1942,338 @@ const DraftingPage = () => {
 
   useEffect(() => {
     const draftId = String(activeDraft?.id || "").trim();
-    const matterId = String(
-      activeDraft?.matterId || activeDraft?.context?.matterId || matterIdFromQuery || "",
-    ).trim();
-    const threadId = String(activeDraft?.context?.draftGenerationThreadId || "").trim();
-    const generationStatus = String(activeDraft?.context?.generationStatus || "").trim().toLowerCase();
-    if (!draftId || !matterId || !threadId) {
+    const singleDraftStreamContext =
+      activeDraft?.context?.singleDraftStream &&
+      typeof activeDraft.context.singleDraftStream === "object"
+        ? (activeDraft.context.singleDraftStream as Record<string, unknown>)
+        : null;
+    const latestCritiqueContext =
+      activeDraft?.context?.latestCritiqueReview &&
+      typeof activeDraft.context.latestCritiqueReview === "object"
+        ? (activeDraft.context.latestCritiqueReview as Record<string, unknown>)
+        : null;
+    const singleDraftStatus = String(singleDraftStreamContext?.status || "").trim();
+    const latestCritiqueStatus = String(latestCritiqueContext?.status || "").trim();
+    const isMockPipelineCheck =
+      [
+        activeDraft?.templateId,
+        activeDraft?.title,
+        activeDraft?.context?.selectedDraftType,
+        activeDraft?.context?.enhancedDraftQuery &&
+        typeof activeDraft.context.enhancedDraftQuery === "object"
+          ? (activeDraft.context.enhancedDraftQuery as Record<string, unknown>).source
+          : "",
+        activeDraft?.context?.singleDraftStream &&
+        typeof activeDraft.context.singleDraftStream === "object"
+          ? (activeDraft.context.singleDraftStream as Record<string, unknown>).pipelineVersion
+          : "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes("mock_pipeline_reference_check") ||
+      (
+        String(activeDraft?.title || "").toLowerCase() ===
+          "suit for recovery under order xxxvii cpc" &&
+        String(activeDraft?.context?.selectedDraftType || "")
+          .toLowerCase()
+          .includes("i_want_to_draft_a_civil_pleadings_suit_for_recovery")
+      );
+    if (!draftId || singleDraftStatus !== "completed") {
+      setStreamedCritiqueState((current) =>
+        current.status === "running"
+          ? { status: "idle", message: "", commentCount: 0 }
+          : current,
+      );
       return;
     }
-    if (
-      generationStatus &&
-      ["completed", "failed", "cancelled", "manual_override", "needs_review"].includes(generationStatus)
-    ) {
+    if (isMockPipelineCheck) {
+      setStreamedCritiqueState((current) =>
+        current.status === "running"
+          ? { status: "idle", message: "", commentCount: 0 }
+          : current,
+      );
       return;
     }
+    if (latestCritiqueStatus === "completed") {
+      return;
+    }
+    if (singleDraftCritiqueRequestRef.current === draftId) {
+      return;
+    }
+    singleDraftCritiqueRequestRef.current = draftId;
+    setStreamedCritiqueState({
+      status: "running",
+      message: "Critique is reviewing the generated draft.",
+      commentCount: 0,
+    });
 
+    const controller = new AbortController();
     let cancelled = false;
-    let intervalId: number | null = null;
+    let streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
-    const poll = async () => {
+    const runCritiqueStream = async () => {
       try {
-        const thread = await getMatterDraftGenerationThread({
-          matterId,
-          threadId,
-        });
-        if (cancelled) return;
-        setDraftGenerationThread(thread);
-        const normalizedCheckpoint = normalizeDraftGenerationCheckpoint(
-          thread.checkpointPayload || null,
-        );
-        if (
-          pendingCheckpointDismissThreadRef.current &&
-          pendingCheckpointDismissThreadRef.current === thread.id
-        ) {
-          if (!normalizedCheckpoint) {
-            pendingCheckpointDismissThreadRef.current = null;
-            setDraftGenerationCheckpoint(null);
-          }
-        } else {
-          setDraftGenerationCheckpoint(normalizedCheckpoint);
-        }
-        const latestDraft = sanitizeDraftDetailContent(await getDraft(draftId));
-        if (cancelled) return;
-        setActiveDraft((current) => {
-          if (!current || current.id !== latestDraft.id) {
-            return latestDraft;
-          }
-          const currentGenerationStatus = String(
-            current.context?.generationStatus || "",
-          ).trim();
-          const nextGenerationStatus = String(
-            latestDraft.context?.generationStatus || "",
-          ).trim();
-          const currentSectionStatuses = JSON.stringify(
-            (current.context?.sectionStatuses as unknown) || null,
-          );
-          const nextSectionStatuses = JSON.stringify(
-            (latestDraft.context?.sectionStatuses as unknown) || null,
-          );
-          const currentContentHash = hashDraftContent(current.contentJson || {});
-          const nextContentHash = hashDraftContent(latestDraft.contentJson || {});
-          if (
-            current.title === latestDraft.title &&
-            currentGenerationStatus === nextGenerationStatus &&
-            currentSectionStatuses === nextSectionStatuses &&
-            currentContentHash === nextContentHash
-          ) {
-            return current;
-          }
-          return latestDraft;
-        });
-
-        const latestDraftGenerationContext = (latestDraft?.context
-          ?.draftGeneration || {}) as Record<string, unknown>;
-        const allowAutoApply =
-          latestDraftGenerationContext.allowAutoApply !== false;
-        if (allowAutoApply) {
-          const nextHash = hashDraftContent(latestDraft.contentJson || {});
-          if (nextHash !== savedHashRef.current) {
-            setCurrentContentJson(latestDraft.contentJson || {});
-            savedHashRef.current = nextHash;
-            currentHashRef.current = nextHash;
-            setDocumentTitle(latestDraft.title);
-          }
+        const response = await openDraftCritiqueStream(draftId, controller.signal);
+        if (!response.ok || !response.body) {
+          const raw = await response.text();
+          throw new Error(raw.trim() || "Failed to start critique review.");
         }
 
-        if (
-          thread.status === "completed" ||
-          thread.status === "failed" ||
-          thread.status === "cancelled" ||
-          thread.status === "needs_review"
-        ) {
-          if (intervalId != null) {
-            window.clearInterval(intervalId);
+        streamReader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!cancelled) {
+          const { value, done } = await streamReader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let delimiterIndex = buffer.indexOf("\n\n");
+          while (delimiterIndex >= 0) {
+            const block = buffer.slice(0, delimiterIndex).trim();
+            buffer = buffer.slice(delimiterIndex + 2);
+            if (block) {
+              const lines = block.split("\n");
+              let eventName = "message";
+              const dataLines: string[] = [];
+              for (const line of lines) {
+                if (line.startsWith("event:")) {
+                  eventName = line.slice(6).trim();
+                } else if (line.startsWith("data:")) {
+                  dataLines.push(line.slice(5).trim());
+                }
+              }
+              if (dataLines.length) {
+                const payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+                if (eventName === "critique_status") {
+                  setStreamedCritiqueState((current) => ({
+                    status: "running",
+                    commentCount: current.commentCount,
+                    message: String(payload.message || "Critique is reviewing the draft."),
+                  }));
+                } else if (eventName === "critique_comment") {
+                  const annotation = payload.annotation as DraftComment | undefined;
+                  if (annotation?.id) {
+                    setComments((prev) => {
+                      const existing = prev.find((item) => item.id === annotation.id);
+                      if (existing) return prev;
+                      return [...prev, annotation];
+                    });
+                    setStreamedCritiqueState((current) => ({
+                      status: "running",
+                      commentCount: current.commentCount + 1,
+                      message:
+                        String(payload.annotation && "AI generated comment added.") ||
+                        current.message,
+                    }));
+                  }
+                } else if (eventName === "critique_done") {
+                  setStreamedCritiqueState((current) => ({
+                    status: "ready",
+                    commentCount:
+                      Number(payload.commentCount || current.commentCount || 0) ||
+                      current.commentCount,
+                    message: "Critique review is complete.",
+                  }));
+                } else if (eventName === "error") {
+                  throw new Error(String(payload.message || "Critique review failed."));
+                }
+              }
+            }
+            delimiterIndex = buffer.indexOf("\n\n");
           }
         }
-      } catch {
-        if (cancelled) return;
+      } catch (error) {
+        if (cancelled || controller.signal.aborted) return;
+        setStreamedCritiqueState({
+          status: "error",
+          message:
+            error instanceof Error ? error.message : "Critique review failed.",
+          commentCount: 0,
+        });
+        singleDraftCritiqueRequestRef.current = "";
       }
     };
 
-    void poll();
-    intervalId = window.setInterval(() => {
-      void poll();
-    }, 1500);
+    void runCritiqueStream();
 
     return () => {
       cancelled = true;
-      if (intervalId != null) {
-        window.clearInterval(intervalId);
-      }
+      void streamReader?.cancel().catch(() => {});
+      controller.abort();
     };
-  }, [
-    activeDraft?.id,
-    activeDraft?.matterId,
-    activeDraft?.context?.draftGenerationThreadId,
-    activeDraft?.context?.generationStatus,
-    matterIdFromQuery,
-  ]);
+  }, [activeDraft?.context, activeDraft?.id]);
 
   useEffect(() => {
-    const loaderState = draftGenerationLoaderRef.current;
-    if (
-      draftGenerationThread?.status !== "running" ||
-      draftGenerationCheckpoint
-    ) {
-      if (loaderState.timerId) {
-        window.clearTimeout(loaderState.timerId);
+    const draftId = String(activeDraft?.id || "").trim();
+    const singleDraftStreamContext =
+      activeDraft?.context?.singleDraftStream &&
+      typeof activeDraft.context.singleDraftStream === "object"
+        ? (activeDraft.context.singleDraftStream as Record<string, unknown>)
+        : null;
+    const latestFormattingContext =
+      activeDraft?.context?.latestFormatting &&
+      typeof activeDraft.context.latestFormatting === "object"
+        ? (activeDraft.context.latestFormatting as Record<string, unknown>)
+        : null;
+    const singleDraftStatus = String(singleDraftStreamContext?.status || "").trim();
+    const latestFormattingStatus = String(latestFormattingContext?.status || "").trim();
+    const hasFormattedText = Boolean(
+      String(activeDraft?.context?.singleDraftFormattedText || "").trim(),
+    );
+
+    if (!draftId || singleDraftStatus !== "completed") {
+      setDraftFormattingState((current) =>
+        current.status === "running" ? { status: "idle", message: "" } : current,
+      );
+      return;
+    }
+
+    if (latestFormattingStatus === "completed") {
+      setDraftFormattingState({
+        status: "ready",
+        message: "Formatting complete.",
+      });
+      return;
+    }
+
+    if (latestFormattingStatus === "error") {
+      if (!hasFormattedText && singleDraftFormattingRetryRef.current !== draftId) {
+        singleDraftFormattingRetryRef.current = draftId;
+      } else {
+        setDraftFormattingState({
+          status: "error",
+          message: String(latestFormattingContext?.message || "Draft formatting failed."),
+        });
+        return;
       }
-      draftGenerationLoaderRef.current = {
-        threadId: "",
-        orderedSteps: [],
-        timerId: null,
-      };
-      setDraftGenerationLoaderSteps([]);
+    }
+
+    if (singleDraftFormattingRequestRef.current === draftId) {
       return;
     }
-    const threadId = String(draftGenerationThread?.id || "").trim();
-    if (!threadId) return;
-    if (loaderState.threadId === threadId && loaderState.orderedSteps.length) {
-      return;
-    }
-    if (loaderState.timerId) {
-      window.clearTimeout(loaderState.timerId);
-    }
-    const orderedSteps = shuffleList(DRAFT_GENERATION_LOADER_LIBRARY).slice(0, 12);
-    draftGenerationLoaderRef.current = {
-      threadId,
-      orderedSteps,
-      timerId: null,
-    };
-    setDraftGenerationLoaderSteps(orderedSteps.length ? [orderedSteps[0]] : []);
-    const scheduleNextStep = (nextIndex: number) => {
-      if (nextIndex >= orderedSteps.length) return;
-      const timerId = window.setTimeout(() => {
-        setDraftGenerationLoaderSteps((current) =>
-          current.length >= nextIndex + 1
-            ? current
-            : [...current, orderedSteps[nextIndex]],
+
+    singleDraftFormattingRequestRef.current = draftId;
+    singleDraftTimingRef.current.formattingStartedAt = performance.now();
+    logDraftTiming("formatting_started", {
+      matterId: selectedMatterDraftId,
+      draftId,
+      totalElapsedMs: Math.max(
+        0,
+        singleDraftTimingRef.current.formattingStartedAt - singleDraftTimingRef.current.startedAt,
+      ),
+      totalElapsedSeconds: formatTimingSeconds(
+        Math.max(
+          0,
+          singleDraftTimingRef.current.formattingStartedAt - singleDraftTimingRef.current.startedAt,
+        ),
+      ),
+    });
+    setDraftFormattingState({
+      status: "running",
+      message: "Formatting the draft for readability.",
+    });
+
+    void formatDraft(draftId)
+      .then((payload) => {
+        const nextDraft = sanitizeDraftDetailContent(payload.draft);
+        setActiveDraft((current) =>
+          current && current.id === nextDraft.id ? nextDraft : current,
         );
-        scheduleNextStep(nextIndex + 1);
-      }, getRandomLoaderDelay());
-      draftGenerationLoaderRef.current = {
-        threadId,
-        orderedSteps,
-        timerId,
-      };
-    };
-    scheduleNextStep(1);
-    return () => {
-      if (draftGenerationLoaderRef.current.timerId) {
-        window.clearTimeout(draftGenerationLoaderRef.current.timerId);
-      }
-    };
-  }, [draftGenerationCheckpoint, draftGenerationThread?.id, draftGenerationThread?.status]);
+        setCurrentContentJson(nextDraft.contentJson || {});
+        setDocumentTitle(nextDraft.title);
+        const nextHash = hashDraftContent(nextDraft.contentJson || {});
+        savedHashRef.current = nextHash;
+        currentHashRef.current = nextHash;
+        contextDirtyRef.current = false;
+        const completedAt = performance.now();
+        const formattingElapsedMs =
+          singleDraftTimingRef.current.formattingStartedAt > 0
+            ? Math.max(
+                0,
+                completedAt - singleDraftTimingRef.current.formattingStartedAt,
+              )
+            : 0;
+        logDraftTiming("formatting_complete", {
+          matterId: selectedMatterDraftId,
+          draftId,
+          elapsedMs: formattingElapsedMs,
+          elapsedSeconds: formatTimingSeconds(formattingElapsedMs),
+          totalElapsedMs: Math.max(0, completedAt - singleDraftTimingRef.current.startedAt),
+          totalElapsedSeconds: formatTimingSeconds(
+            Math.max(0, completedAt - singleDraftTimingRef.current.startedAt),
+          ),
+          formatterStatus: payload.formatting?.status || "completed",
+          formatterModel: payload.formatting?.model || "",
+          sourceCount: payload.formatting?.sourceCount || 0,
+        });
+        setDraftFormattingState({
+          status: "ready",
+          message: "Formatting complete.",
+        });
+      })
+      .catch((error) => {
+        singleDraftFormattingRequestRef.current = "";
+        const completedAt = performance.now();
+        const formattingElapsedMs =
+          singleDraftTimingRef.current.formattingStartedAt > 0
+            ? Math.max(
+                0,
+                completedAt - singleDraftTimingRef.current.formattingStartedAt,
+              )
+            : 0;
+        logDraftTiming("formatting_error", {
+          matterId: selectedMatterDraftId,
+          draftId,
+          elapsedMs: formattingElapsedMs,
+          elapsedSeconds: formatTimingSeconds(formattingElapsedMs),
+          totalElapsedMs: Math.max(0, completedAt - singleDraftTimingRef.current.startedAt),
+          totalElapsedSeconds: formatTimingSeconds(
+            Math.max(0, completedAt - singleDraftTimingRef.current.startedAt),
+          ),
+          error: error instanceof Error ? error.message : "Draft formatting failed.",
+        });
+        setDraftFormattingState({
+          status: "error",
+          message: error instanceof Error ? error.message : "Draft formatting failed.",
+        });
+      });
+  }, [activeDraft?.context, activeDraft?.id]);
 
   useEffect(() => {
-    if (!draftGenerationLoaderMessage) {
-      draftGenerationMessageRef.current = "";
-      setDraftGenerationTypedStatus("");
+    if (!isSingleDraftStreaming || isSingleDraftFormattingStage) {
+      setSingleDraftTypedThinking("");
       return;
     }
-    if (draftGenerationMessageRef.current === draftGenerationLoaderMessage) {
+    if (!singleDraftCurrentThought) {
+      setSingleDraftTypedThinking("");
       return;
     }
-    draftGenerationMessageRef.current = draftGenerationLoaderMessage;
     let cancelled = false;
-    let index = 0;
-    setDraftGenerationTypedStatus("");
-    const intervalId = window.setInterval(() => {
-      if (cancelled) return;
-      index += 1;
-      setDraftGenerationTypedStatus(draftGenerationLoaderMessage.slice(0, index));
-      if (index >= draftGenerationLoaderMessage.length) {
+    let intervalId: number | null = null;
+    let charIndex = 0;
+    setSingleDraftTypedThinking("");
+    intervalId = window.setInterval(() => {
+      if (cancelled) {
+        if (intervalId) window.clearInterval(intervalId);
+        return;
+      }
+      charIndex += 5;
+      setSingleDraftTypedThinking(singleDraftCurrentThought.slice(0, charIndex));
+      if (charIndex >= singleDraftCurrentThought.length && intervalId) {
         window.clearInterval(intervalId);
       }
     }, 18);
+
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      if (intervalId) window.clearInterval(intervalId);
     };
-  }, [draftGenerationLoaderMessage]);
-
-  const continueActiveDraftGeneration = async (chosenAction: string) => {
-    const threadId = String(
-      draftGenerationThread?.id || activeDraft?.context?.draftGenerationThreadId || "",
-    ).trim();
-    const matterId = String(
-      activeDraft?.matterId || activeDraft?.context?.matterId || matterIdFromQuery || "",
-    ).trim();
-    if (!threadId || !matterId || !draftGenerationCheckpoint) {
-      setDraftGenerationError("Draft generation thread is not ready yet. Please retry.");
-      return;
-    }
-    const previousThread = draftGenerationThread;
-    const previousCheckpoint = draftGenerationCheckpoint;
-    try {
-      setIsSubmittingDraftGeneration(true);
-      setDraftGenerationError("");
-      const answers = checkpointQuestions
-        .map((question) => {
-          const raw = String(draftGenerationAnswers[question.id] || "").trim();
-          if (!raw) return null;
-          return {
-            questionId: question.id,
-            answer:
-              question.answerType === "yes_no"
-                ? raw === "yes"
-                  ? true
-                  : raw === "no"
-                    ? false
-                    : raw
-                : raw,
-            answerType: question.answerType,
-          };
-        })
-        .filter(Boolean) as Array<{
-        questionId: string;
-        answer: string | boolean;
-        answerType?: string;
-      }>;
-      console.log("[draft-generation][continue][client]", {
-        matterId,
-        threadId,
-        chosenAction,
-        answers,
-      });
-      setDraftGenerationThread((current) =>
-        current
-          ? {
-              ...current,
-              status: "running",
-              checkpointPayload: null,
-            }
-          : current,
-      );
-      setDraftGenerationCheckpoint(null);
-      const payload = await continueMatterDraftGeneration({
-        matterId,
-        threadId,
-        chosenAction,
-        answers,
-      });
-      pendingCheckpointDismissThreadRef.current = threadId;
-      setDraftGenerationThread((current) =>
-        current
-          ? {
-              ...current,
-              status: "running",
-              checkpointPayload: null,
-            }
-          : current,
-      );
-      setActiveDraft(payload.draft);
-      setDraftGenerationCheckpoint(null);
-      setDraftGenerationAnswers({});
-    } catch (error) {
-      setDraftGenerationThread(previousThread);
-      setDraftGenerationCheckpoint(previousCheckpoint);
-      setDraftGenerationError(
-        error instanceof Error
-          ? error.message
-          : "Failed to continue draft generation.",
-      );
-    } finally {
-      setIsSubmittingDraftGeneration(false);
-    }
-  };
-
-  const cancelActiveDraftGeneration = async () => {
-    if (!activeDraft || !draftGenerationThread) return;
-    try {
-      await cancelMatterDraftGeneration({
-        matterId:
-          String(activeDraft.matterId || activeDraft.context?.matterId || matterIdFromQuery),
-        threadId: draftGenerationThread.id,
-      });
-      setDraftGenerationCheckpoint(null);
-    } catch (error) {
-      setDraftGenerationError(
-        error instanceof Error
-          ? error.message
-          : "Failed to cancel draft generation.",
-      );
-    }
-  };
+  }, [
+    isSingleDraftFormattingStage,
+    isSingleDraftStreaming,
+    singleDraftCurrentThought,
+  ]);
 
   const applyCommand = (command: string, value?: string) => {
     editorRef.current?.applyCommand(command, value);
@@ -1317,10 +2350,199 @@ const DraftingPage = () => {
     setPendingAnnotation(null);
   };
 
+  const runAskAi = async () => {
+    if (!activeDraft || askAiState.status === "running" || !askAiState.message.trim()) return;
+    setAskAiState((current) => ({
+      ...current,
+      status: "running",
+      answer: "",
+      error: "",
+    }));
+    try {
+      await saveCurrentDraft("manual");
+      const payload = await askDraftAi({
+        draftId: activeDraft.id,
+        message: askAiState.message.trim(),
+      });
+      const nextAnnotations = (payload.annotations || []).map((annotation) => ({
+        ...annotation,
+        isAskAiSuggestion: true,
+        originalText:
+          annotation.blockId
+            ? findBlockTextById(currentContentJson, annotation.blockId)
+            : annotation.excerpt,
+      }));
+      setComments((prev) => {
+        const existingIds = new Set(prev.map((item) => item.id));
+        return [
+          ...prev,
+          ...nextAnnotations.filter((item) => !existingIds.has(item.id)),
+        ];
+      });
+      if (nextAnnotations[0]?.id) {
+        setActiveAnnotationId(nextAnnotations[0].id);
+      }
+      setAskAiState((current) => ({
+        ...current,
+        status: "ready",
+        isOpen: nextAnnotations.length ? false : current.isOpen,
+        message: nextAnnotations.length ? "" : current.message,
+        answer:
+          payload.answer ||
+          (nextAnnotations.length
+            ? `${nextAnnotations.length} suggested change${nextAnnotations.length === 1 ? "" : "s"} added.`
+            : "No draft changes were suggested."),
+        error: "",
+      }));
+    } catch (error) {
+      setAskAiState((current) => ({
+        ...current,
+        status: "error",
+        error: error instanceof Error ? error.message : "Ask AI failed.",
+      }));
+    }
+  };
+
   const updateCommentStatus = (id: string, status: DraftComment["status"]) => {
+    const acceptedComment =
+      status === "accepted" ? comments.find((comment) => comment.id === id) || null : null;
+    if (status !== "accepted") {
+      setComments((prev) =>
+        prev.map((comment) => {
+          if (comment.id !== id) return comment;
+          return { ...comment, status };
+        }),
+      );
+      return;
+    }
+    if (
+      status === "accepted" &&
+      acceptedComment?.suggestedText &&
+      activeDraft
+    ) {
+      const redlineResult = replaceExcerptWithInlineRedline(currentContentJson, {
+        blockId: acceptedComment.blockId,
+        excerpt: acceptedComment.excerpt,
+        suggestedText: acceptedComment.suggestedText,
+      });
+      if (!redlineResult.replaced) {
+        return;
+      }
+      const nextContent = redlineResult.node;
+      const originalText = redlineResult.originalText || acceptedComment.excerpt;
+      setComments((prev) =>
+        prev.map((comment) =>
+          comment.id === id
+            ? {
+                ...comment,
+                status,
+                originalText: comment.originalText || originalText,
+                appliedText: acceptedComment.suggestedText,
+              }
+            : comment,
+        ),
+      );
+      setCurrentContentJson(nextContent);
+      setActiveDraft((current) =>
+        current
+          ? {
+              ...current,
+              contentJson: nextContent,
+            }
+          : current,
+      );
+      currentHashRef.current = hashDraftContent(nextContent);
+      contextDirtyRef.current = true;
+      setSaveStatus("dirty");
+      setActiveAnnotationId(null);
+      window.requestAnimationFrame(() => {
+        setActiveAnnotationId(id);
+      });
+      return;
+    }
     setComments((prev) =>
-      prev.map((comment) => (comment.id === id ? { ...comment, status } : comment)),
+      prev.map((comment) => {
+        if (comment.id !== id) return comment;
+        return { ...comment, status };
+      }),
     );
+  };
+
+  const revertAcceptedAskAiChange = (id: string) => {
+    const comment = comments.find((item) => item.id === id);
+    if (!comment?.originalText || !comment.appliedText || !activeDraft) return;
+    const result = replaceInlineRedlineWithText(currentContentJson, {
+      blockId: comment.blockId,
+      originalText: comment.originalText,
+      appliedText: comment.appliedText,
+      keep: "original",
+    });
+    if (!result.replaced) return;
+    const nextContent = result.node;
+    setCurrentContentJson(nextContent);
+    setActiveDraft((current) =>
+      current
+        ? {
+            ...current,
+            contentJson: nextContent,
+          }
+        : current,
+    );
+    setComments((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              status: "pending",
+              appliedText: "",
+            }
+          : item,
+      ),
+    );
+    currentHashRef.current = hashDraftContent(nextContent);
+    contextDirtyRef.current = true;
+    setSaveStatus("dirty");
+  };
+
+  const finalizeAcceptedAskAiChanges = () => {
+    let nextContent = currentContentJson;
+    comments
+      .filter(
+        (comment) =>
+          comment.isAskAiSuggestion &&
+          comment.status === "accepted" &&
+          comment.originalText &&
+          comment.appliedText,
+      )
+      .forEach((comment) => {
+        const result = replaceInlineRedlineWithText(nextContent, {
+          blockId: comment.blockId,
+          originalText: comment.originalText || "",
+          appliedText: comment.appliedText || "",
+          keep: "applied",
+        });
+        if (result.replaced) {
+          nextContent = result.node;
+        }
+      });
+    if (JSON.stringify(nextContent) !== JSON.stringify(currentContentJson)) {
+      setCurrentContentJson(nextContent);
+      setActiveDraft((current) =>
+        current
+          ? {
+              ...current,
+              contentJson: nextContent,
+            }
+          : current,
+      );
+      currentHashRef.current = hashDraftContent(nextContent);
+      contextDirtyRef.current = true;
+      setSaveStatus("dirty");
+    }
+    setComments((prev) =>
+      prev.filter((comment) => !(comment.isAskAiSuggestion && comment.status === "accepted")),
+    );
+    setActiveAnnotationId(null);
   };
 
   const updateCommentNote = (id: string, note: string) => {
@@ -1364,8 +2586,14 @@ const DraftingPage = () => {
           ? "Save failed"
           : "Saved to Associate Drive";
 
-  const canRenderEditor = Boolean(activeDraft);
+  const canRenderEditor = Boolean(activeDraft) && !isSingleDraftStreaming;
   const recommendation = activeDraft?.context?.recommendation;
+  const acceptedAskAiChangeCount = comments.filter(
+    (comment) => comment.isAskAiSuggestion && comment.status === "accepted",
+  ).length;
+  const pendingAskAiChangeCount = comments.filter(
+    (comment) => comment.isAskAiSuggestion && comment.status === "pending",
+  ).length;
   const canGenerateFormat = Boolean(
     activeDraft?.matterId && recommendation?.draft_key,
   );
@@ -1391,6 +2619,27 @@ const DraftingPage = () => {
     }
   };
 
+  const handleDeleteDraft = async (draftId: string) => {
+    const normalizedDraftId = String(draftId || "").trim();
+    if (!normalizedDraftId || deletingDraftId) return;
+    setDeletingDraftId(normalizedDraftId);
+    setLoadError("");
+    try {
+      await deleteDraft(normalizedDraftId);
+      setDraftLibrary((current) =>
+        current.filter((draft) => draft.id !== normalizedDraftId),
+      );
+      if (activeDraft?.id === normalizedDraftId) {
+        setActiveDraft(null);
+        navigate("/drafting", { replace: true });
+      }
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Failed to delete draft.");
+    } finally {
+      setDeletingDraftId("");
+    }
+  };
+
   const acceptFormatProposal = () => {
     if (!activeDraft || !formatProposal) return;
     const nextContext = {
@@ -1413,7 +2662,7 @@ const DraftingPage = () => {
   };
 
   return (
-    <div className="homeDashPage">
+    <div className="homeDashPage terraDraftingPage">
       <ProductNavbar
         isSideBarCollapsed={isSideBarCollapsed}
         onToggleSidebar={() => setIsSideBarCollapsed((prev) => !prev)}
@@ -1489,7 +2738,7 @@ const DraftingPage = () => {
       />
 
       <main
-        className={`homeDashMain ${
+        className={`homeDashMain terraDraftingMain ${
           canRenderEditor ? "draftingMain" : "draftingTemplateMain"
         } draftingNoAppSidebar`}
       >
@@ -1502,295 +2751,6 @@ const DraftingPage = () => {
           >
             <ChevronLeft size={16} />
           </button>
-        ) : null}
-        {isDraftSidePanelVisible &&
-        (draftGenerationThread || (startDraftFromQuery && !activeDraft)) &&
-        !draftGenerationCheckpoint ? (
-          <aside className="draftFormatProposal">
-            <button
-              type="button"
-              className="draftFormatProposalClose"
-              aria-label="Close draft generation panel"
-              onClick={() => setDismissedDraftSidePanelKey(draftSidePanelKey)}
-            >
-              <X size={16} />
-            </button>
-            {draftGenerationThread?.status === "running" &&
-            !draftGenerationCheckpoint ? (
-              <>
-                <Loader
-                  mode="inline"
-                  variant="timeline"
-                  eyebrow="Draft Generation"
-                  title={
-                    activeDraft?.title || draftLabelFromQuery || "Preparing draft"
-                  }
-                  message={
-                    draftGenerationTypedStatus ||
-                    "Associate is validating sources, structuring sections, and preparing review-safe drafting language."
-                  }
-                  stage={loaderCurrentStep || "Preparing guarded draft working set"}
-                  progress={loaderProgress}
-                  steps={draftGenerationLoaderSteps}
-                  fileName={activeDraft?.title || draftLabelFromQuery || "Draft"}
-                />
-                <div className="draftFormatLoaderHighlights">
-                  {loaderHighlights.map((item) => (
-                    <div className="draftFormatLoaderHighlight" key={item}>
-                      <strong>Working note</strong>
-                      <p>{item}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="draftFormatProposalActions">
-                  <Button
-                    type="button"
-                    onClick={() => void cancelActiveDraftGeneration()}
-                  >
-                    Cancel drafting
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <p className="draftTemplateEyebrow">Draft Generation</p>
-                  <h2>
-                    {activeDraft?.title || draftLabelFromQuery || "Preparing draft"}
-                  </h2>
-                  <p className="draftFormatLead">
-                    {draftGenerationTypedStatus ||
-                      "Associate is preparing the draft and will add sections as they are validated."}
-                    {draftGenerationThread?.status === "running" ? " |" : ""}
-                  </p>
-                  {draftGenerationThread?.uiSummary?.format ? (
-                    <div className="draftFormatSources">
-                      <span>
-                        Format: {draftGenerationThread.uiSummary.format.draftFamily || "discovered"}
-                      </span>
-                      <span>
-                        Format confidence: {draftGenerationThread.uiSummary.format.confidence || "unknown"}
-                      </span>
-                      <span>
-                        Format source: {draftGenerationThread.uiSummary.format.cacheStatus === "hit" ? "cached research" : "fresh research"}
-                      </span>
-                    </div>
-                  ) : null}
-                  {draftGenerationThread?.uiSummary?.sourceCoverage ? (
-                    <div className="draftFormatSources">
-                      <span>
-                        Verified requirements: {draftGenerationThread.uiSummary.sourceCoverage.verifiedCount || 0}/
-                        {draftGenerationThread.uiSummary.sourceCoverage.requirementCount || 0}
-                      </span>
-                      <span>
-                        User-supplied assertions: {draftGenerationThread.uiSummary.sourceCoverage.userSuppliedCount || 0}
-                      </span>
-                    </div>
-                  ) : null}
-                  {draftGenerationThread?.uiSummary?.sectionStatuses?.length ? (
-                    <div className="draftFormatSources">
-                      {draftGenerationThread.uiSummary.sectionStatuses
-                        .slice(0, 8)
-                        .map((item) => (
-                          <span key={item.sectionId}>
-                            {item.title}: {item.status.replace(/_/g, " ")}
-                            {item.sourceRefCount ? ` · ${item.sourceRefCount} sources` : ""}
-                            {item.warningCount ? ` · ${item.warningCount} warnings` : ""}
-                          </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {draftGenerationThread?.uiSummary?.criticReport?.warnings?.length ? (
-                    <div className="draftFormatSources">
-                      {draftGenerationThread.uiSummary.criticReport.warnings
-                        .map((warning) => renderWarningText(warning))
-                        .filter(Boolean)
-                        .slice(0, 4)
-                        .map((warning, index) => (
-                          <span key={`critic-warning-${index}-${warning.slice(0, 48)}`}>
-                            Critic: {warning}
-                          </span>
-                        ))}
-                    </div>
-                  ) : null}
-                  {draftGenerationError ? <p>{draftGenerationError}</p> : null}
-                </div>
-                <div className="draftFormatProposalActions">
-                  {draftGenerationThread?.status === "running" ? (
-                    <Button type="button" onClick={() => void cancelActiveDraftGeneration()}>
-                      Cancel drafting
-                    </Button>
-                  ) : null}
-                </div>
-              </>
-            )}
-          </aside>
-        ) : null}
-        {isDraftSidePanelVisible && draftGenerationCheckpoint ? (
-          <aside className="draftFormatProposal">
-            <button
-              type="button"
-              className="draftFormatProposalClose"
-              aria-label="Close draft generation panel"
-              onClick={() => setDismissedDraftSidePanelKey(draftSidePanelKey)}
-            >
-              <X size={16} />
-            </button>
-            <div>
-              <p className="draftTemplateEyebrow">
-                {getDraftCheckpointEyebrow(draftGenerationCheckpoint)}
-              </p>
-              <h2>{draftGenerationCheckpoint.title}</h2>
-              <p>{draftGenerationCheckpoint.messageToUser}</p>
-              {checkpointQuestions.map((question) => (
-                <div key={question.id} style={{ marginTop: 12 }}>
-                  <strong>{question.question}</strong>
-                  <p>{question.whyItMatters}</p>
-                  {question.answerType === "yes_no" ? (
-                    <div className="draftFormatProposalActions">
-                      <Button
-                        type="button"
-                        onClick={() =>
-                          setDraftGenerationAnswers((current) => ({
-                            ...current,
-                            [question.id]: "yes",
-                          }))
-                        }
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={() =>
-                          setDraftGenerationAnswers((current) => ({
-                            ...current,
-                            [question.id]: "no",
-                          }))
-                        }
-                      >
-                        No
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      {question.suggestedAnswer ? (
-                        <div className="draftFormatProposalActions">
-                          <Button
-                            type="button"
-                            onClick={() =>
-                              setDraftGenerationAnswers((current) => ({
-                                ...current,
-                                [question.id]: question.suggestedAnswer || "",
-                              }))
-                            }
-                          >
-                            Use suggested answer
-                          </Button>
-                        </div>
-                      ) : null}
-                      <input
-                        className="draftFormatQuestionInput"
-                        value={draftGenerationAnswers[question.id] || ""}
-                        onChange={(event) =>
-                          setDraftGenerationAnswers((current) => ({
-                            ...current,
-                            [question.id]: event.target.value,
-                          }))
-                        }
-                      />
-                    </>
-                  )}
-                </div>
-              ))}
-              {checkpointRequestedDocuments.length ? (
-                <div style={{ marginTop: 12 }}>
-                  <strong>
-                    {draftGenerationCheckpoint.status === "review_ready_with_optional_inputs"
-                      ? "Supporting proof that strengthens this draft"
-                      : "Supporting documents needed for drafting"}
-                  </strong>
-                  <p style={{ marginTop: 8 }}>
-                    {draftGenerationCheckpoint.status === "review_ready_with_optional_inputs"
-                      ? "You can still continue with a guarded review draft now. Uploading these records lets the draft state the facts more strongly and quantify relief more precisely."
-                      : "These records will help the draft proceed with stronger factual support."}
-                  </p>
-                  <div
-                    className="draftFormatProposalActions"
-                    style={{
-                      marginTop: 12,
-                      flexDirection: "column",
-                      alignItems: "stretch",
-                    }}
-                  >
-                    {checkpointRequestedDocuments.map((item) => (
-                      <div
-                        key={item.id}
-                        style={{
-                          border: "1px solid rgba(28, 26, 23, 0.14)",
-                          padding: 14,
-                          background: "rgba(255,255,255,0.62)",
-                        }}
-                      >
-                        <strong>{item.label}</strong>
-                        <p style={{ marginTop: 6 }}>{item.whyNeeded}</p>
-                        <p style={{ marginTop: 6, fontSize: 13, opacity: 0.8 }}>
-                          Accepted formats:{" "}
-                          {item.acceptedTypes?.length
-                            ? item.acceptedTypes.join(", ").toUpperCase()
-                            : "PDF, DOCX, email, image, spreadsheet"}
-                        </p>
-                        <div
-                          className="draftFormatProposalActions"
-                          style={{ marginTop: 10 }}
-                        >
-                          <Button
-                            type="button"
-                            onClick={() =>
-                              openMatterSupportUploader(
-                                item.label,
-                                item.whyNeeded,
-                              )
-                            }
-                          >
-                            {item.interactionType === "either"
-                              ? "Answer or upload support"
-                              : "Upload supporting files"}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <div className="draftFormatProposalActions">
-              <Button
-                type="button"
-                onClick={() => void continueActiveDraftGeneration("review_draft_with_placeholders")}
-                disabled={isSubmittingDraftGeneration}
-              >
-                {draftGenerationCheckpoint.status === "review_ready_with_optional_inputs"
-                  ? "Generate guarded review draft"
-                  : "Generate review draft"}
-              </Button>
-              {draftGenerationCheckpoint.recommendedAlternativeDraftType ? (
-                <Button
-                  type="button"
-                  onClick={() => void continueActiveDraftGeneration("generate_safer_first_draft")}
-                  disabled={isSubmittingDraftGeneration}
-                >
-                  Generate safer first draft
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                onClick={() => void continueActiveDraftGeneration("lawyer_review_draft")}
-                disabled={isSubmittingDraftGeneration}
-              >
-                Continue as lawyer-review draft
-              </Button>
-            </div>
-          </aside>
         ) : null}
         {isDraftSidePanelVisible && (formatProposal || formatGenerationError) ? (
           <aside className="draftFormatProposal">
@@ -1834,47 +2794,401 @@ const DraftingPage = () => {
             </div>
           </aside>
         ) : null}
-        {activeDraft ? (
-          <DraftingDocument
-            ref={editorRef}
-            draft={activeDraft}
-            currentRole={currentRole}
-            zoomLevel={zoomLevel}
-            activeAnnotationId={activeAnnotationId}
-            pendingAnnotation={pendingAnnotation}
-            commentDraft={commentDraft}
-            comments={comments}
-            onDocumentChange={updateCurrentDocument}
-            onDraftContextChange={updateDraftContext}
-            onToolbarStateChange={setToolbarState}
-            onCommentDraftChange={setCommentDraft}
-            onStartAnnotation={(annotation) => {
-              setPendingAnnotation(annotation);
-              setCommentDraft("");
-              setActiveAnnotationId(null);
-            }}
-            onClearPendingAnnotation={() => {
-              setPendingAnnotation(null);
-              setCommentDraft("");
-            }}
-            onAddPendingComment={addPendingComment}
-            onAddReaction={addReaction}
-            onSelectAnnotation={setActiveAnnotationId}
-            onAcceptComment={(id) => updateCommentStatus(id, "accepted")}
-            onRejectComment={(id) => updateCommentStatus(id, "rejected")}
-            onUpdateComment={updateCommentNote}
-            onDeleteComment={deleteComment}
-            onAddReply={addCommentReply}
-            onMapComments={setComments}
-            onRequestSave={() => void saveCurrentDraft("manual")}
-          />
+        {canRenderEditor && activeDraft ? (
+          <>
+            {acceptedAskAiChangeCount > 0 ? (
+              <div className="draftAcceptedChangesBar">
+                <span>
+                  {acceptedAskAiChangeCount} accepted AI change
+                  {acceptedAskAiChangeCount === 1 ? "" : "s"} pending finalization
+                </span>
+                <Button type="button" onClick={finalizeAcceptedAskAiChanges}>
+                  Accept changes
+                </Button>
+              </div>
+            ) : null}
+            <DraftingDocument
+              ref={editorRef}
+              draft={activeDraft}
+              currentRole={currentRole}
+              zoomLevel={zoomLevel}
+              activeAnnotationId={activeAnnotationId}
+              pendingAnnotation={pendingAnnotation}
+              commentDraft={commentDraft}
+              comments={comments}
+              onDocumentChange={updateCurrentDocument}
+              onDraftContextChange={updateDraftContext}
+              onToolbarStateChange={setToolbarState}
+              onCommentDraftChange={setCommentDraft}
+              onStartAnnotation={(annotation) => {
+                setPendingAnnotation(annotation);
+                setCommentDraft("");
+                setActiveAnnotationId(null);
+              }}
+              onClearPendingAnnotation={() => {
+                setPendingAnnotation(null);
+                setCommentDraft("");
+              }}
+              onAddPendingComment={addPendingComment}
+              onAddReaction={addReaction}
+              onSelectAnnotation={setActiveAnnotationId}
+              onAcceptComment={(id) => updateCommentStatus(id, "accepted")}
+              onRejectComment={(id) => updateCommentStatus(id, "rejected")}
+              onRevertComment={revertAcceptedAskAiChange}
+              onUpdateComment={updateCommentNote}
+              onDeleteComment={deleteComment}
+              onAddReply={addCommentReply}
+              onMapComments={setComments}
+              onRequestSave={() => void saveCurrentDraft("manual")}
+              critiqueState={streamedCritiqueState}
+            />
+            {draftFormattingState.status === "running" ? (
+              <div className="singleDraftFormattingPopup draftPostFormattingPopup" role="status" aria-live="polite">
+                <span className="singleDraftFormattingSpinner" aria-hidden="true" />
+                <div className="singleDraftFormattingCopy">
+                  <p className="draftTemplateEyebrow">Draft Formatting</p>
+                  <h2>Formatting</h2>
+                  <p>{draftFormattingState.message || "Formatting the draft cleanly. Please wait."}</p>
+                </div>
+              </div>
+            ) : null}
+            <div className={`draftAskAiDock ${askAiState.isOpen ? "open" : ""}`}>
+              {askAiState.isOpen ? (
+                <div className="draftAskAiPanel">
+                  <div className="draftAskAiHeader">
+                    <div>
+                      <p className="draftTemplateEyebrow">Ask AI</p>
+                      <h2>Suggest draft changes</h2>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={() => setAskAiState((current) => ({ ...current, isOpen: false }))}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                  <textarea
+                    value={askAiState.message}
+                    onChange={(event) =>
+                      setAskAiState((current) => ({
+                        ...current,
+                        message: event.target.value,
+                      }))
+                    }
+                    placeholder="Ask for wording changes, formatting changes, legal-source checks, or a question about this draft."
+                  />
+                  {askAiState.answer ? (
+                    <p className="draftAskAiAnswer">{askAiState.answer}</p>
+                  ) : null}
+                  {askAiState.error ? (
+                    <p className="draftAskAiError">{askAiState.error}</p>
+                  ) : null}
+                  <div className="draftAskAiFooter">
+                    <span>
+                      {pendingAskAiChangeCount} pending AI suggestion
+                      {pendingAskAiChangeCount === 1 ? "" : "s"}
+                    </span>
+                    <Button
+                      type="button"
+                      className="isPrimary"
+                      onClick={() => void runAskAi()}
+                      disabled={askAiState.status === "running" || !askAiState.message.trim()}
+                    >
+                      {askAiState.status === "running" ? "Thinking" : "Ask AI"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  className="draftAskAiButton"
+                  onClick={() => setAskAiState((current) => ({ ...current, isOpen: true }))}
+                >
+                  Ask AI
+                </Button>
+              )}
+            </div>
+          </>
+        ) : isSingleDraftStreaming ? (
+          <section className="singleDraftGenerationCanvas">
+            <div className="singleDraftThinkingColumn">
+              <p className="draftTemplateEyebrow">Live Execution</p>
+              <h1 className="singleDraftThinkingTitle">
+                {singleDraftStreamState?.title || "Generating draft"}
+              </h1>
+              <p className="singleDraftThinkingStage">
+                {isSingleDraftFormattingStage
+                  ? "Draft generated. Formatting it properly now."
+                  : singleDraftStreamState?.statusMessage ||
+                    "Associate is drafting from the matter record."}
+              </p>
+              <div className="singleDraftThinkingHero">
+                <div className="singleDraftThinkingViewport">
+                  {singleDraftRecentThoughts.length ? (
+                    <div className="singleDraftCollapsedThoughts" aria-label="Recent draft reasoning">
+                      {singleDraftRecentThoughts.map((entry, index) => {
+                        const thought = splitSingleDraftThought(entry);
+                        return (
+                          <div
+                            className="singleDraftCollapsedThought"
+                            key={`${thought.label}-${index}-${thought.text.slice(0, 24)}`}
+                          >
+                            <span>{thought.label}</span>
+                            <p>{thought.text}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <p className="singleDraftThinkingTyped">
+                    {singleDraftTypedThinking ||
+                      (isSingleDraftFormattingStage
+                        ? "Draft generated. Formatting it properly."
+                        : singleDraftCurrentThought ||
+                          "Associate is thinking through the matter.")}
+                    <span className="singleDraftThinkingCursor" aria-hidden="true" />
+                  </p>
+                </div>
+                <div className="singleDraftThinkingMeta">
+                  <span>{singleDraftThinkingTranscript.length} concise updates</span>
+                  <span>
+                    {stageLabelForThought(singleDraftStreamState?.stage || "")} stage
+                  </span>
+                </div>
+              </div>
+            </div>
+            <aside className="singleDraftExecutionRail">
+              <section className="singleDraftExecutionPanel">
+                <p className="draftTemplateEyebrow">Execution Steps</p>
+                <div className="singleDraftExecutionStepList">
+                  {singleDraftExecutionSteps.map((step) => (
+                    <div
+                      key={step.id}
+                      className={`singleDraftExecutionStep singleDraftExecutionStep${step.status[0].toUpperCase()}${step.status.slice(1)}`}
+                    >
+                      <span className="singleDraftExecutionStepMarker" aria-hidden="true" />
+                      <div>
+                        <strong>{step.label}</strong>
+                        {step.status === "current" ? (
+                          <p>
+                            {isSingleDraftFormattingStage && step.id === "formatting"
+                              ? "Draft is generated. Formatting it properly."
+                              : singleDraftStreamState?.statusMessage || "In progress."}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="singleDraftExecutionPanel">
+                <p className="draftTemplateEyebrow">Thinking Stream</p>
+                <div className="singleDraftChunkStack">
+                  {singleDraftThinkingTranscript.slice(-6).map((entry, index, list) => {
+                    const thought = splitSingleDraftThought(entry);
+                    const isActive = index === list.length - 1;
+                    return (
+                      <article
+                        className={`singleDraftChunkCard ${isActive ? "isActive" : ""}`}
+                        key={`${thought.label}-${index}-${thought.text.slice(0, 32)}`}
+                      >
+                        <span>{thought.label}</span>
+                        <p>
+                          {isActive && singleDraftTypedThinking
+                            ? singleDraftTypedThinking.replace(/^[^:]{2,24}:\s*/, "")
+                            : thought.text}
+                          {isActive && singleDraftTypedThinking ? (
+                            <span className="singleDraftThinkingCursor" aria-hidden="true" />
+                          ) : null}
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+              {isSingleDraftFormattingStage ? (
+                <div className="singleDraftFormattingPopup" role="status" aria-live="polite">
+                  <span className="singleDraftFormattingSpinner" aria-hidden="true" />
+                  <div className="singleDraftFormattingCopy">
+                    <p className="draftTemplateEyebrow">Draft Formatting</p>
+                    <h2>Formatting the structure</h2>
+                    <p>
+                      Draft is generated. Formatting it properly. Please wait.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </aside>
+          </section>
+        ) : shouldShowDraftLibrary ? (
+          <section className="draftLibraryCanvas">
+            <div className="draftLibraryHeader">
+              <div>
+                <p className="draftTemplateEyebrow">Drafting</p>
+                <h1>Drafts</h1>
+              </div>
+              <button
+                type="button"
+                className="draftLibraryPrimaryAction"
+                onClick={() => navigate("/drafting?blank=1")}
+              >
+                Start new draft
+              </button>
+            </div>
+
+            {runningDraftJobs.length ? (
+              <section className="draftLibraryGroup">
+                <div className="draftLibraryGroupHead">
+                  <h2>Generating now</h2>
+                  <span>{runningDraftJobs.length}</span>
+                </div>
+                <div className="draftLibraryGrid">
+                  {runningDraftJobs.map((job) => (
+                    <button
+                      type="button"
+                      className="draftLibraryCard isRunning"
+                      key={job.id}
+                      onClick={() => navigate(job.targetPath || "/drafting")}
+                    >
+                      <span>Generating</span>
+                      <strong>{job.title}</strong>
+                      <small>{job.statusMessage || job.stage}</small>
+                      <div className="draftLibraryProgress" aria-hidden="true">
+                        <i style={{ width: `${Math.max(4, job.progress)}%` }} />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="draftLibraryGroup">
+              <div className="draftLibraryGroupHead">
+                <h2>Saved drafts</h2>
+                <span>{visibleDraftLibrary.length}</span>
+              </div>
+              {isDraftLibraryLoading ? (
+                <div className="draftLibraryEmpty">Loading drafts.</div>
+              ) : visibleDraftLibrary.length ? (
+                <div className="draftLibraryGrid">
+                  {visibleDraftLibrary.map((draft) => {
+                    const runningJob = runningDraftByDraftId.get(draft.id);
+                    return (
+                      <article
+                        className={`draftLibraryCard ${runningJob ? "isRunning" : ""}`}
+                        key={draft.id}
+                      >
+                        <button
+                          type="button"
+                          className="draftLibraryCardMain"
+                          onClick={() => {
+                            if (runningJob) {
+                              navigate(runningJob.targetPath || "/drafting");
+                              return;
+                            }
+                            navigate(
+                              `/drafting?draft=${encodeURIComponent(draft.id)}${
+                                draft.matterId
+                                  ? `&matter=${encodeURIComponent(draft.matterId)}`
+                                  : ""
+                              }`,
+                            );
+                          }}
+                        >
+                          <span>{runningJob ? "Generating" : "Draft"}</span>
+                          <strong>{draft.title || "Untitled legal draft"}</strong>
+                          <small>
+                            {runningJob
+                              ? runningJob.statusMessage || runningJob.stage
+                              : draft.lastSavedAt
+                                ? `Saved ${new Date(draft.lastSavedAt).toLocaleString()}`
+                                : "Saved draft"}
+                          </small>
+                          {runningJob ? (
+                            <div className="draftLibraryProgress" aria-hidden="true">
+                              <i style={{ width: `${Math.max(4, runningJob.progress)}%` }} />
+                            </div>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          className="draftLibraryDeleteBtn"
+                          onClick={() => void handleDeleteDraft(draft.id)}
+                          disabled={deletingDraftId === draft.id}
+                        >
+                          {deletingDraftId === draft.id ? "Deleting" : "Delete"}
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="draftLibraryEmpty">
+                  Drafts created from matter drafting actions will appear here.
+                </div>
+              )}
+            </section>
+
+            <section className="draftLibraryGroup">
+              <div className="draftLibraryGroupHead">
+                <h2>AI suggested drafts</h2>
+                <span>{aiSuggestedDraftGroups.length}</span>
+              </div>
+              {aiSuggestedDraftGroups.length ? (
+                <div className="draftSuggestionStack">
+                  {aiSuggestedDraftGroups.map(({ matter, recommendations }) => (
+                    <article className="draftSuggestionMatter" key={matter.id}>
+                      <h3>{matter.title}</h3>
+                      <div className="draftSuggestionList">
+                        {recommendations.map((recommendation) => (
+                          <button
+                            type="button"
+                            key={recommendation.draft_key || recommendation.title}
+                            className="draftSuggestionItem"
+                            onClick={() =>
+                              navigate(
+                                `/drafting?matter=${encodeURIComponent(matter.id)}&startDraft=${encodeURIComponent(
+                                  recommendation.draft_key || recommendation.title,
+                                )}&draftLabel=${encodeURIComponent(
+                                  recommendation.title,
+                                )}&requestedFrom=drafts&draftKey=${encodeURIComponent(
+                                  recommendation.draft_key,
+                                )}`,
+                              )
+                            }
+                          >
+                            <strong>{recommendation.title}</strong>
+                            <span>{recommendation.reason || "Ready to draft"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="draftLibraryEmpty">
+                  AI suggested drafts will appear after a matter has draft recommendations.
+                </div>
+              )}
+            </section>
+          </section>
         ) : (
           <section className="draftBlankLoading">
-            <p className="draftTemplateEyebrow">Drafting Suite</p>
-            <h1>{saveStatus === "error" ? "Unable to open draft" : "Opening document"}</h1>
+            <p className="draftTemplateEyebrow">
+              {isSingleDraftStreaming ? "Draft Generation" : "Drafting Suite"}
+            </p>
+            <h1>
+              {saveStatus === "error"
+                ? "Unable to open draft"
+                : isSingleDraftStreaming
+                  ? "Generating draft"
+                  : "Opening document"}
+            </h1>
             <p>
               {loadError ||
-                (startDraftFromQuery
+                (isSingleDraftStreaming
+                  ? "Associate is thinking through the matter and drafting the document."
+                  : startDraftFromQuery
                   ? "Opening the drafting workspace and preparing the first validated sections."
                   : "Preparing an editable document workspace.")}
             </p>

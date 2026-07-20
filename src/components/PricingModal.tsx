@@ -42,9 +42,10 @@ const PricingModal = ({
         description:
           "For lawyers who want to try the workflow before committing to a paid plan.",
         features: [
-          "1 lite matter analysis",
-          "3 legal research runs",
-          "Preview AI drafting",
+          "1,500 free Associate Credits for invited users",
+          "Trial credits expire after 30 days",
+          "Credits are charged from actual AI and search usage",
+          "1 Associate Credit equals ₹0.05 internal usage budget",
         ],
         ctaLabel: "Start Free",
         action: isAuthenticated ? "dashboard" : "login",
@@ -56,9 +57,9 @@ const PricingModal = ({
         description:
           "For solo lawyers who want matter briefs, legal research, and drafting support.",
         features: [
-          "2 full matter analyses/month",
-          "15 research runs/month",
-          "25 draft generations/month",
+          "Usage-based Associate Credit wallet",
+          "Matter analysis, research, drafting, critique, and chat draw from one pool",
+          "Backend-enforced credit checks before AI work starts",
           "Up to 5 documents per matter",
           "Standard queue",
         ],
@@ -73,11 +74,10 @@ const PricingModal = ({
         description:
           "For lawyers using AI daily for matter analysis, drafting, research, and playbooks.",
         features: [
-          "8 full matter analyses/month",
-          "40 research runs/month",
-          "100 draft generations/month",
-          "Top 5 law + inference cards per matter",
+          "Larger monthly Associate Credit allocation",
+          "Matter analysis, deep research, drafting, critique, and chat draw from one pool",
           "Priority queue",
+          "Top 5 law + inference cards per matter",
           "Draft recommendations + playbook",
         ],
         ctaLabel: "Start Professional",
@@ -92,7 +92,7 @@ const PricingModal = ({
           "For chambers and firms that need higher limits, shared workflows, and bespoke rollout support.",
         features: [
           "Custom seat count",
-          "Custom AI credit allocation",
+          "Custom Associate Credit allocation",
           "Shared matter workspace",
           "Priority onboarding and support",
           "Custom rollout and billing",

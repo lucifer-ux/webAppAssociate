@@ -10,12 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@lexical/history": "^0.44.0",
-    "@lexical/link": "^0.44.0",
-    "@lexical/list": "^0.44.0",
-    "@lexical/react": "^0.44.0",
-    "@lexical/rich-text": "^0.44.0",
-    "@lexical/selection": "^0.44.0",
     "@tiptap/core": "^3.23.4",
     "@tiptap/extension-character-count": "^3.23.4",
     "@tiptap/extension-color": "^3.23.4",
@@ -37,7 +31,6 @@
     "@tiptap/pm": "^3.23.4",
     "@tiptap/react": "^3.23.4",
     "@tiptap/starter-kit": "^3.23.4",
-    "lexical": "^0.44.0",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",

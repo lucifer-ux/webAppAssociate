@@ -17,7 +17,6 @@ import { MessageSquarePlus, SmilePlus } from "lucide-react";
 import { buildDraftingExtensions } from "./draftingExtensions";
 import type {
   AccessRole,
-  DraftBlockMeta,
   DraftComment,
   DraftContext,
   DraftDetail,
@@ -26,41 +25,13 @@ import type {
   ZoomLevel,
 } from "./draftingApi";
 
-export type { AccessRole, DraftComment, PendingAnnotation, ParagraphStyle, ZoomLevel } from "./draftingApi";
-
-const renderWarningText = (warning: unknown) => {
-  if (typeof warning === "string") {
-    return warning.trim();
-  }
-  if (warning && typeof warning === "object") {
-    const candidate = warning as {
-      description?: unknown;
-      section?: unknown;
-      warning_type?: unknown;
-      message?: unknown;
-      note?: unknown;
-    };
-    const description =
-      typeof candidate.description === "string" ? candidate.description.trim() : "";
-    const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
-    const note = typeof candidate.note === "string" ? candidate.note.trim() : "";
-    const section = typeof candidate.section === "string" ? candidate.section.trim() : "";
-    const warningType =
-      typeof candidate.warning_type === "string" ? candidate.warning_type.trim() : "";
-    const mainText = description || message || note;
-    if (section && mainText) return `${section}: ${mainText}`;
-    if (mainText) return mainText;
-    if (section && warningType) return `${section}: ${warningType}`;
-    if (section) return section;
-    if (warningType) return warningType;
-    try {
-      return JSON.stringify(warning);
-    } catch {
-      return "";
-    }
-  }
-  return String(warning || "").trim();
-};
+export type {
+  AccessRole,
+  DraftComment,
+  PendingAnnotation,
+  ParagraphStyle,
+  ZoomLevel,
+} from "./draftingApi";
 
 export type DraftHeadingItem = {
   id: string;
@@ -129,11 +100,17 @@ type DraftingDocumentProps = {
   onSelectAnnotation: (id: string) => void;
   onAcceptComment: (id: string) => void;
   onRejectComment: (id: string) => void;
+  onRevertComment?: (id: string) => void;
   onUpdateComment: (id: string, note: string) => void;
   onDeleteComment: (id: string) => void;
   onAddReply: (id: string, note: string) => void;
   onMapComments: (comments: DraftComment[]) => void;
   onRequestSave: () => void;
+  critiqueState?: {
+    status: "idle" | "running" | "ready" | "error";
+    message: string;
+    commentCount: number;
+  };
 };
 
 type FindReplaceMatch = {
@@ -151,7 +128,9 @@ const emptyHeaderFooter = {
 };
 
 const renderPageNumberText = (value: string, pageNumber = 1) =>
-  String(value || "").replace(/\{page\}/gi, String(pageNumber)).trim();
+  String(value || "")
+    .replace(/\{page\}/gi, String(pageNumber))
+    .trim();
 
 const findReplacePluginKey = new PluginKey("draftFindReplacePlugin");
 
@@ -184,7 +163,10 @@ const collectFindMatches = (
       const index = haystack.indexOf(needle, searchFrom);
       if (index < 0) break;
       const end = index + needle.length;
-      if (!options.wholeWord || isWholeWordBoundary(node.text || "", index, end)) {
+      if (
+        !options.wholeWord ||
+        isWholeWordBoundary(node.text || "", index, end)
+      ) {
         matches.push({
           from: pos + index,
           to: pos + end,
@@ -203,6 +185,44 @@ const getSelectionExcerpt = (editor: Editor | null) => {
   const { from, to, empty } = editor.state.selection;
   if (empty) return "";
   return editor.state.doc.textBetween(from, to, " ").trim();
+};
+
+const normalizeCommentNeedle = (value: string) =>
+  String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+const findCommentTextRange = (
+  editor: Editor | null,
+  comment: DraftComment,
+): { from: number; to: number } | null => {
+  if (!editor) return null;
+  const needles = [
+    comment.status === "accepted" ? comment.appliedText : "",
+    comment.status === "accepted" ? comment.originalText : "",
+    comment.excerpt,
+    comment.appliedText,
+    comment.suggestedText,
+  ]
+    .map((item) => normalizeCommentNeedle(String(item || "")))
+    .filter(Boolean);
+  if (!needles.length) return null;
+
+  let found: { from: number; to: number } | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (found || !node.isText || !node.text) return false;
+    const haystack = normalizeCommentNeedle(node.text);
+    const needle = needles.find((item) => haystack.includes(item));
+    if (!needle) return;
+    const rawIndex = node.text.toLowerCase().indexOf(needle);
+    if (rawIndex >= 0) {
+      found = {
+        from: pos + rawIndex,
+        to: pos + rawIndex + needle.length,
+      };
+      return false;
+    }
+    return;
+  });
+  return found;
 };
 
 const getSelectedBlockId = (editor: Editor | null) => {
@@ -234,11 +254,6 @@ const getSelectedBlockIds = (editor: Editor | null) => {
     }
   });
   return blockIds;
-};
-
-const formatConfidence = (value?: number) => {
-  if (typeof value !== "number" || Number.isNaN(value)) return "Unknown";
-  return `${Math.round(value * 100)}%`;
 };
 
 const getToolbarParagraphStyle = (editor: Editor): ParagraphStyle => {
@@ -313,7 +328,10 @@ const createFindReplacePlugin = (
             const index = haystack.indexOf(normalizedNeedle, searchFrom);
             if (index < 0) break;
             const end = index + normalizedNeedle.length;
-            if (!data.wholeWord || isWholeWordBoundary(node.text || "", index, end)) {
+            if (
+              !data.wholeWord ||
+              isWholeWordBoundary(node.text || "", index, end)
+            ) {
               decorations.push(
                 Decoration.inline(pos + index, pos + end, {
                   class:
@@ -333,7 +351,10 @@ const createFindReplacePlugin = (
     },
   });
 
-const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>(
+const DraftingDocument = forwardRef<
+  DraftingEditorHandle,
+  DraftingDocumentProps
+>(
   (
     {
       draft,
@@ -354,11 +375,13 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       onSelectAnnotation,
       onAcceptComment,
       onRejectComment,
+      onRevertComment,
       onUpdateComment,
       onDeleteComment,
       onAddReply,
       onMapComments,
       onRequestSave,
+      critiqueState,
     },
     ref,
   ) => {
@@ -372,9 +395,18 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       wholeWord: false,
       activeIndex: 0,
     });
-    const [selectionMenuTop, setSelectionMenuTop] = useState<number | null>(null);
-    const [openCommentMenuId, setOpenCommentMenuId] = useState<string | null>(null);
-    const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+    const [selectionMenuTop, setSelectionMenuTop] = useState<number | null>(
+      null,
+    );
+    const [openCommentMenuId, setOpenCommentMenuId] = useState<string | null>(
+      null,
+    );
+    const [editingCommentId, setEditingCommentId] = useState<string | null>(
+      null,
+    );
+    const [expandedCommentId, setExpandedCommentId] = useState<string | null>(
+      null,
+    );
     const [editingDraft, setEditingDraft] = useState("");
     const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
     const [findQuery, setFindQuery] = useState("");
@@ -383,11 +415,13 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
     const [wholeWord, setWholeWord] = useState(false);
     const [findPanelOpen, setFindPanelOpen] = useState(false);
     const [activeFindIndex, setActiveFindIndex] = useState(0);
-    const [commentLayout, setCommentLayout] = useState<Record<string, number>>({});
+    const [commentLayout, setCommentLayout] = useState<Record<string, number>>(
+      {},
+    );
     const [pendingTop, setPendingTop] = useState<number | null>(null);
-    const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
-    const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
-    const [selectionInsightTop, setSelectionInsightTop] = useState<number>(0);
+    const [, setSelectedBlockId] = useState<string | null>(null);
+    const [, setSelectedBlockIds] = useState<string[]>([]);
+    const [, setSelectionInsightTop] = useState<number>(0);
 
     commentsRef.current = comments;
     findReplaceStateRef.current = {
@@ -422,91 +456,6 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
           : [],
       [draft.context.templateProvenance],
     );
-
-    const generatedBlockMeta = useMemo(
-      () => draft.context.generatedBlockMeta || {},
-      [draft.context.generatedBlockMeta],
-    );
-
-    const aiGeneratedComments = useMemo(
-      () =>
-        Array.isArray(draft.context.aiGeneratedComments)
-          ? draft.context.aiGeneratedComments
-          : [],
-      [draft.context.aiGeneratedComments],
-    );
-
-    const selectedBlockMeta = useMemo(() => {
-      if (selectedBlockId && generatedBlockMeta[selectedBlockId]) {
-        return generatedBlockMeta[selectedBlockId];
-      }
-      return null;
-    }, [generatedBlockMeta, selectedBlockId]);
-
-    const selectedBlockMetaList = useMemo(
-      () =>
-        selectedBlockIds
-          .map((blockId) => generatedBlockMeta[blockId])
-          .filter(Boolean),
-      [generatedBlockMeta, selectedBlockIds],
-    );
-
-    const selectedAiNotes = useMemo(() => {
-      if (!selectedBlockIds.length) return [];
-      const blockIdSet = new Set(selectedBlockIds);
-      return aiGeneratedComments.filter((note) =>
-        note.blockId ? blockIdSet.has(note.blockId) : false,
-      );
-    }, [aiGeneratedComments, selectedBlockIds]);
-
-    const selectedInsights = useMemo(() => {
-      const blockIdSet = new Set(selectedBlockIds);
-      const sourceRefs = new Map<string, NonNullable<DraftBlockMeta["sourceRefs"]>[number]>();
-      const legalSourceRefs = new Map<string, NonNullable<DraftBlockMeta["legalSourceRefs"]>[number]>();
-      const provisions = new Map<string, NonNullable<DraftBlockMeta["referencedProvisions"]>[number]>();
-      const warnings = new Set<string>();
-      const placeholders = new Set<string>();
-      const evidenceStatuses = new Set<string>();
-      const sourceTypes = new Set<string>();
-      let highestConfidence = 0;
-
-      selectedBlockMetaList.forEach((blockMeta) => {
-        blockMeta.sourceRefs.forEach((sourceRef) => {
-          const key = JSON.stringify(sourceRef);
-          if (!sourceRefs.has(key)) sourceRefs.set(key, sourceRef);
-        });
-        blockMeta.legalSourceRefs.forEach((sourceRef) => {
-          const key = JSON.stringify(sourceRef);
-          if (!legalSourceRefs.has(key)) legalSourceRefs.set(key, sourceRef);
-        });
-        (blockMeta.referencedProvisions || []).forEach((item) => {
-          const key = JSON.stringify(item);
-          if (!provisions.has(key)) provisions.set(key, item);
-        });
-        (blockMeta.warnings || []).forEach((warning) => {
-          const normalized = renderWarningText(warning);
-          if (normalized) warnings.add(normalized);
-        });
-        (blockMeta.placeholders || []).forEach((item) => placeholders.add(item));
-        if (blockMeta.evidenceStatus) evidenceStatuses.add(blockMeta.evidenceStatus);
-        if (blockMeta.sourceType) sourceTypes.add(blockMeta.sourceType);
-        if (typeof blockMeta.confidence === "number") {
-          highestConfidence = Math.max(highestConfidence, blockMeta.confidence);
-        }
-      });
-
-      return {
-        blockCount: blockIdSet.size,
-        sourceRefs: [...sourceRefs.values()],
-        legalSourceRefs: [...legalSourceRefs.values()],
-        referencedProvisions: [...provisions.values()],
-        warnings: [...warnings.values()],
-        placeholders: [...placeholders.values()],
-        evidenceStatuses: [...evidenceStatuses.values()],
-        sourceTypes: [...sourceTypes.values()],
-        confidence: highestConfidence || undefined,
-      };
-    }, [selectedBlockIds, selectedBlockMetaList]);
 
     const updateHeaderFooterSlot = useCallback(
       (
@@ -544,14 +493,23 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
         onToolbarStateChange({
           paragraphStyle: getToolbarParagraphStyle(editorInstance),
           fontFamily:
-            String(editorInstance.getAttributes("textStyle").fontFamily || "").trim() ||
-            "Newsreader",
+            String(
+              editorInstance.getAttributes("textStyle").fontFamily || "",
+            ).trim() || "Newsreader",
           fontSize: Number.isFinite(fontSizeValue) ? fontSizeValue : 12,
           textColor:
-            String(editorInstance.getAttributes("textStyle").color || "").trim() || "#1b1c19",
-          blankFieldCount: Number(editorInstance.storage.blankField?.count || 0),
-          wordCount: Number(editorInstance.storage.characterCount?.words?.() || 0),
-          characterCount: Number(editorInstance.storage.characterCount?.characters?.() || 0),
+            String(
+              editorInstance.getAttributes("textStyle").color || "",
+            ).trim() || "#1b1c19",
+          blankFieldCount: Number(
+            editorInstance.storage.blankField?.count || 0,
+          ),
+          wordCount: Number(
+            editorInstance.storage.characterCount?.words?.() || 0,
+          ),
+          characterCount: Number(
+            editorInstance.storage.characterCount?.characters?.() || 0,
+          ),
           canUndo: editorInstance.can().chain().focus().undo().run(),
           canRedo: editorInstance.can().chain().focus().redo().run(),
           isBoldActive: editorInstance.isActive("bold"),
@@ -563,7 +521,9 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
           isAlignLeftActive: editorInstance.isActive({ textAlign: "left" }),
           isAlignCenterActive: editorInstance.isActive({ textAlign: "center" }),
           isAlignRightActive: editorInstance.isActive({ textAlign: "right" }),
-          isAlignJustifyActive: editorInstance.isActive({ textAlign: "justify" }),
+          isAlignJustifyActive: editorInstance.isActive({
+            textAlign: "justify",
+          }),
           isBulletListActive: editorInstance.isActive("bulletList"),
           isOrderedListActive: editorInstance.isActive("orderedList"),
           headings: getHeadings(editorInstance),
@@ -582,74 +542,88 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       [],
     );
 
-    const refreshSelectionMenu = useCallback((editorInstance: Editor | null) => {
-      const currentBlockIds = getSelectedBlockIds(editorInstance);
-      setSelectedBlockIds(currentBlockIds);
-      setSelectedBlockId(currentBlockIds[0] || getSelectedBlockId(editorInstance));
-      if (editorInstance && sheetRef.current) {
-        const { from } = editorInstance.state.selection;
-        try {
-          const coords = editorInstance.view.coordsAtPos(from);
-          const sheetRect = sheetRef.current.getBoundingClientRect();
-          setSelectionInsightTop(Math.max(0, coords.top - sheetRect.top));
-        } catch {
+    const refreshSelectionMenu = useCallback(
+      (editorInstance: Editor | null) => {
+        const currentBlockIds = getSelectedBlockIds(editorInstance);
+        setSelectedBlockIds(currentBlockIds);
+        setSelectedBlockId(
+          currentBlockIds[0] || getSelectedBlockId(editorInstance),
+        );
+        if (editorInstance && sheetRef.current) {
+          const { from } = editorInstance.state.selection;
+          try {
+            const coords = editorInstance.view.coordsAtPos(from);
+            const sheetRect = sheetRef.current.getBoundingClientRect();
+            setSelectionInsightTop(Math.max(0, coords.top - sheetRect.top));
+          } catch {
+            setSelectionInsightTop(0);
+          }
+        } else {
           setSelectionInsightTop(0);
         }
-      } else {
-        setSelectionInsightTop(0);
-      }
-      if (!editorInstance || !roleCanEdit(currentRole)) {
-        setSelectionMenuTop(null);
-        return;
-      }
-      const { from, to, empty } = editorInstance.state.selection;
-      if (empty || from === to || !sheetRef.current) {
-        setSelectionMenuTop(null);
-        return;
-      }
-      const startCoords = editorInstance.view.coordsAtPos(from);
-      const endCoords = editorInstance.view.coordsAtPos(to);
-      const sheetRect = sheetRef.current.getBoundingClientRect();
-      setSelectionMenuTop(
-        Math.max(0, (startCoords.top + endCoords.bottom) / 2 - sheetRect.top - 26),
-      );
-    }, [currentRole]);
-
-    const measureCommentLayout = useCallback((editorInstance: Editor | null) => {
-      if (!editorInstance || !sheetRef.current) {
-        setCommentLayout({});
-        setPendingTop(null);
-        return;
-      }
-
-      const sheetRect = sheetRef.current.getBoundingClientRect();
-      const maxPos = editorInstance.state.doc.content.size;
-      const nextLayout: Record<string, number> = {};
-
-      comments.forEach((comment) => {
-        try {
-          const coords = editorInstance.view.coordsAtPos(clampPosition(comment.from, maxPos));
-          nextLayout[comment.id] = Math.max(0, coords.top - sheetRect.top);
-        } catch {
-          nextLayout[comment.id] = 0;
+        if (!editorInstance || !roleCanEdit(currentRole)) {
+          setSelectionMenuTop(null);
+          return;
         }
-      });
-
-      if (pendingAnnotation) {
-        try {
-          const coords = editorInstance.view.coordsAtPos(
-            clampPosition(pendingAnnotation.from, maxPos),
-          );
-          setPendingTop(Math.max(0, coords.top - sheetRect.top));
-        } catch {
-          setPendingTop(0);
+        const { from, to, empty } = editorInstance.state.selection;
+        if (empty || from === to || !sheetRef.current) {
+          setSelectionMenuTop(null);
+          return;
         }
-      } else {
-        setPendingTop(null);
-      }
+        const startCoords = editorInstance.view.coordsAtPos(from);
+        const endCoords = editorInstance.view.coordsAtPos(to);
+        const sheetRect = sheetRef.current.getBoundingClientRect();
+        setSelectionMenuTop(
+          Math.max(
+            0,
+            (startCoords.top + endCoords.bottom) / 2 - sheetRect.top - 26,
+          ),
+        );
+      },
+      [currentRole],
+    );
 
-      setCommentLayout(nextLayout);
-    }, [comments, pendingAnnotation]);
+    const measureCommentLayout = useCallback(
+      (editorInstance: Editor | null) => {
+        if (!editorInstance || !sheetRef.current) {
+          setCommentLayout({});
+          setPendingTop(null);
+          return;
+        }
+
+        const sheetRect = sheetRef.current.getBoundingClientRect();
+        const maxPos = editorInstance.state.doc.content.size;
+        const nextLayout: Record<string, number> = {};
+
+        comments.forEach((comment) => {
+          try {
+            const resolvedRange = findCommentTextRange(editorInstance, comment);
+            const coords = editorInstance.view.coordsAtPos(
+              clampPosition(resolvedRange?.from || comment.from, maxPos),
+            );
+            nextLayout[comment.id] = Math.max(0, coords.top - sheetRect.top);
+          } catch {
+            nextLayout[comment.id] = 0;
+          }
+        });
+
+        if (pendingAnnotation) {
+          try {
+            const coords = editorInstance.view.coordsAtPos(
+              clampPosition(pendingAnnotation.from, maxPos),
+            );
+            setPendingTop(Math.max(0, coords.top - sheetRect.top));
+          } catch {
+            setPendingTop(0);
+          }
+        } else {
+          setPendingTop(null);
+        }
+
+        setCommentLayout(nextLayout);
+      },
+      [comments, pendingAnnotation],
+    );
 
     const startAnnotation = useCallback(
       (editorInstance: Editor | null, type: PendingAnnotation["type"]) => {
@@ -705,8 +679,14 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
         if (transaction.docChanged) {
           const maxPos = editorInstance.state.doc.content.size;
           const mappedComments = commentsRef.current.map((comment) => {
-            const nextFrom = clampPosition(transaction.mapping.map(comment.from, -1), maxPos);
-            const nextTo = clampPosition(transaction.mapping.map(comment.to, 1), maxPos);
+            const nextFrom = clampPosition(
+              transaction.mapping.map(comment.from, -1),
+              maxPos,
+            );
+            const nextTo = clampPosition(
+              transaction.mapping.map(comment.to, 1),
+              maxPos,
+            );
             return {
               ...comment,
               from: Math.min(nextFrom, nextTo),
@@ -716,7 +696,10 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
 
           const changed = mappedComments.some((comment, index) => {
             const current = commentsRef.current[index];
-            return current && (current.from !== comment.from || current.to !== comment.to);
+            return (
+              current &&
+              (current.from !== comment.from || current.to !== comment.to)
+            );
           });
           if (changed) {
             onMapComments(mappedComments);
@@ -736,21 +719,41 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       setSelectedBlockIds(getSelectedBlockIds(editor));
       syncToolbarState(editor);
       measureCommentLayout(editor);
-    }, [draft.id, draft.contentHash, draft.contentJson, editor, measureCommentLayout, syncToolbarState]);
+    }, [
+      draft.id,
+      draft.contentHash,
+      draft.contentJson,
+      editor,
+      measureCommentLayout,
+      syncToolbarState,
+    ]);
 
     useEffect(() => {
       if (!editor) return;
       refreshFindDecorations(editor);
-    }, [activeFindIndex, editor, findPanelOpen, findQuery, matchCase, refreshFindDecorations, wholeWord]);
+    }, [
+      activeFindIndex,
+      editor,
+      findPanelOpen,
+      findQuery,
+      matchCase,
+      refreshFindDecorations,
+      wholeWord,
+    ]);
 
     useEffect(() => {
       if (!editor || !activeAnnotationId) return;
       const comment = comments.find((item) => item.id === activeAnnotationId);
       if (!comment) return;
+      const resolvedRange = findCommentTextRange(editor, comment);
+      const maxPos = editor.state.doc.content.size;
       editor
         .chain()
         .focus()
-        .setTextSelection({ from: comment.from, to: comment.to })
+        .setTextSelection({
+          from: clampPosition(resolvedRange?.from || comment.from, maxPos),
+          to: clampPosition(resolvedRange?.to || comment.to, maxPos),
+        })
         .scrollIntoView()
         .run();
     }, [activeAnnotationId, comments, editor]);
@@ -811,7 +814,12 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
             break;
           case "createLink":
             if (value) {
-              editor.chain().focus().extendMarkRange("link").setLink({ href: value }).run();
+              editor
+                .chain()
+                .focus()
+                .extendMarkRange("link")
+                .setLink({ href: value })
+                .run();
             }
             break;
           case "formatBlock":
@@ -825,7 +833,15 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
               editor
                 .chain()
                 .focus()
-                .setHeading({ level: Number(String(value).replace("H", "")) as 1 | 2 | 3 | 4 | 5 | 6 })
+                .setHeading({
+                  level: Number(String(value).replace("H", "")) as
+                    | 1
+                    | 2
+                    | 3
+                    | 4
+                    | 5
+                    | 6,
+                })
                 .run();
             }
             break;
@@ -840,7 +856,11 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
             }
             break;
           case "hiliteColor":
-            editor.chain().focus().toggleHighlight({ color: value || "#fff0b8" }).run();
+            editor
+              .chain()
+              .focus()
+              .toggleHighlight({ color: value || "#fff0b8" })
+              .run();
             break;
           case "fontSize":
             if (value) {
@@ -848,7 +868,11 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
             }
             break;
           case "insertTable":
-            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+            editor
+              .chain()
+              .focus()
+              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+              .run();
             break;
           default:
             break;
@@ -890,7 +914,10 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       editor?.commands.focus();
     }, [editor]);
 
-    const getSelectedExcerpt = useCallback(() => getSelectionExcerpt(editor), [editor]);
+    const getSelectedExcerpt = useCallback(
+      () => getSelectionExcerpt(editor),
+      [editor],
+    );
 
     const startCommentSelection = useCallback(() => {
       startAnnotation(editor, "comment");
@@ -920,7 +947,10 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
       ],
     );
 
-    const findMatches = collectFindMatches(editor, findQuery, { matchCase, wholeWord });
+    const findMatches = collectFindMatches(editor, findQuery, {
+      matchCase,
+      wholeWord,
+    });
 
     const moveToMatch = (index: number) => {
       if (!editor || !findMatches.length) return;
@@ -938,12 +968,20 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
     const replaceCurrentMatch = () => {
       if (!editor || !findMatches.length) return;
       const match = findMatches[activeFindIndex] || findMatches[0];
-      editor.commands.insertContentAt({ from: match.from, to: match.to }, replaceQuery);
+      editor.commands.insertContentAt(
+        { from: match.from, to: match.to },
+        replaceQuery,
+      );
       refreshFindDecorations(editor);
       window.requestAnimationFrame(() => {
-        const nextMatches = collectFindMatches(editor, findQuery, { matchCase, wholeWord });
+        const nextMatches = collectFindMatches(editor, findQuery, {
+          matchCase,
+          wholeWord,
+        });
         if (nextMatches.length > 0) {
-          setActiveFindIndex((current) => Math.min(current, nextMatches.length - 1));
+          setActiveFindIndex((current) =>
+            Math.min(current, nextMatches.length - 1),
+          );
         } else {
           setActiveFindIndex(0);
         }
@@ -953,11 +991,9 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
     const replaceAllMatches = () => {
       if (!editor || !findMatches.length) return;
       const tr = editor.state.tr;
-      [...findMatches]
-        .reverse()
-        .forEach((match) => {
-          tr.insertText(replaceQuery, match.from, match.to);
-        });
+      [...findMatches].reverse().forEach((match) => {
+        tr.insertText(replaceQuery, match.from, match.to);
+      });
       editor.view.dispatch(tr);
       setActiveFindIndex(0);
       refreshFindDecorations(editor);
@@ -966,41 +1002,15 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
     const headingItems = editor ? getHeadings(editor) : [];
 
     const sortedComments = [...comments].sort(
-      (left, right) => (commentLayout[left.id] || 0) - (commentLayout[right.id] || 0),
+      (left, right) =>
+        (commentLayout[left.id] || 0) - (commentLayout[right.id] || 0),
     );
 
-    const renderSourceRef = (
-      sourceRef: NonNullable<DraftBlockMeta["sourceRefs"]>[number],
-      index: number,
-    ) => (
-      <div key={`${sourceRef.chunk_id || sourceRef.file_name || "source"}-${index}`} className="draftSourceRefRow">
-        <strong>{sourceRef.file_name || sourceRef.document_role || "Matter source"}</strong>
-        <span>
-          {[
-            sourceRef.page_start != null ? `p. ${sourceRef.page_start}` : "",
-            sourceRef.page_end != null &&
-            sourceRef.page_end !== sourceRef.page_start
-              ? `-${sourceRef.page_end}`
-              : "",
-            sourceRef.chunk_id ? `chunk ${sourceRef.chunk_id}` : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        </span>
-        {sourceRef.verbatim_basis && <p>{sourceRef.verbatim_basis}</p>}
-      </div>
-    );
-
-    const renderLegalSourceRef = (
-      sourceRef: NonNullable<DraftBlockMeta["legalSourceRefs"]>[number],
-      index: number,
-    ) => (
-      <div key={`${sourceRef.source_id || sourceRef.title || "authority"}-${index}`} className="draftLegalSourceRow">
-        <strong>{sourceRef.title || sourceRef.source_id || "Legal authority"}</strong>
-        <span>{[sourceRef.court_or_body, sourceRef.citation].filter(Boolean).join(" · ")}</span>
-        {sourceRef.principle && <p>{sourceRef.principle}</p>}
-        {sourceRef.relevance && <small>{sourceRef.relevance}</small>}
-      </div>
+    const expandedComment = useMemo(
+      () =>
+        sortedComments.find((comment) => comment.id === expandedCommentId) ||
+        null,
+      [expandedCommentId, sortedComments],
     );
 
     return (
@@ -1031,7 +1041,9 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                     </Button>
                   ))
                 ) : (
-                  <p className="draftNavigatorEmpty">Add headings to build section navigation.</p>
+                  <p className="draftNavigatorEmpty">
+                    Add headings to build section navigation.
+                  </p>
                 )}
               </div>
             </div>
@@ -1044,13 +1056,212 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                       key={`${item.type || "basis"}-${index}`}
                       className="templateBasisItem"
                     >
-                      <strong>{item.label || item.type || "Source policy"}</strong>
-                      <span>{item.source || item.role || "Declared source policy"}</span>
+                      <strong>
+                        {item.label || item.type || "Source policy"}
+                      </strong>
+                      <span>
+                        {item.source || item.role || "Declared source policy"}
+                      </span>
+                      {Array.isArray(item.acceptable_sources) &&
+                        item.acceptable_sources.length > 0 && (
+                          <p>{item.acceptable_sources[0]}</p>
+                        )}
                     </div>
                   ))}
                 </div>
               </div>
             )}
+            <aside className="draftCommentRail">
+            {pendingAnnotation && (
+              <div
+                className="draftCommentComposerInline"
+                style={{ top: `${pendingTop || 0}px` }}
+              >
+                <div className="composerExcerptLine">
+                  {pendingAnnotation.excerpt}
+                </div>
+                {pendingAnnotation.type === "comment" ? (
+                  <>
+                    <textarea
+                      value={commentDraft}
+                      onChange={(event) =>
+                        onCommentDraftChange(event.target.value)
+                      }
+                      placeholder="Add a margin comment..."
+                      disabled={!roleCanEdit(currentRole)}
+                    />
+                    <div className="pendingAnnotationActions">
+                      <Button
+                        type="button"
+                        className="commentInlineSecondaryBtn"
+                        onClick={onClearPendingAnnotation}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        className="commentInlineActionBtn"
+                        onClick={onAddPendingComment}
+                        disabled={
+                          !roleCanEdit(currentRole) || !commentDraft.trim()
+                        }
+                      >
+                        Add comment
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="reactionPickerRow">
+                    {["👍", "✅", "⚠️", "💡"].map((emoji) => (
+                      <Button
+                        key={emoji}
+                        type="button"
+                        onClick={() => onAddReaction(emoji)}
+                      >
+                        {emoji}
+                      </Button>
+                    ))}
+                    <Button
+                      type="button"
+                      className="commentInlineSecondaryBtn"
+                      onClick={onClearPendingAnnotation}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="commentInlineList">
+              {critiqueState && critiqueState.status !== "idle" ? (
+                <article
+                  className={`inlineCommentCard critiqueStatusCard ${critiqueState.status}`}
+                >
+                  <div className="inlineCommentHeader">
+                    <strong>AI generated comment</strong>
+                  </div>
+                  <p>{critiqueState.message}</p>
+                  <div className="draftMetaBadgeRow">
+                    <span className="draftMetaBadge">
+                      {critiqueState.commentCount} comment
+                      {critiqueState.commentCount === 1 ? "" : "s"}
+                    </span>
+                    <span className="draftMetaBadge">
+                      {critiqueState.status === "running"
+                        ? "Critique is reviewing"
+                        : critiqueState.status === "ready"
+                          ? "Review complete"
+                          : "Review issue"}
+                    </span>
+                  </div>
+                </article>
+              ) : null}
+              {sortedComments.map((comment) => (
+                <article
+                  key={comment.id}
+                  className={`inlineCommentCard ${comment.status} ${comment.type} ${
+                    comment.id === activeAnnotationId ? "active" : ""
+                  }`}
+                  onClick={() => {
+                    onSelectAnnotation(comment.id);
+                  }}
+                >
+                  <div className="inlineCommentHeader">
+                    <div className="inlineCommentTitleBlock">
+                      <strong>{comment.author}</strong>
+                      {comment.sectionTitle ? (
+                        <span className="inlineCommentSectionTag">
+                          {comment.sectionTitle}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="commentOverflowWrap">
+                      <Button
+                        type="button"
+                        className="commentOverflowBtn"
+                        aria-label="Comment options"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenCommentMenuId((current) =>
+                            current === comment.id ? null : comment.id,
+                          );
+                        }}
+                      >
+                        ...
+                      </Button>
+                      {openCommentMenuId === comment.id && (
+                        <div className="commentOverflowMenu">
+                          <Button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setEditingCommentId(comment.id);
+                              setEditingDraft(comment.note);
+                              setExpandedCommentId(comment.id);
+                              setOpenCommentMenuId(null);
+                            }}
+                          >
+                            Edit comment
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDeleteComment(comment.id);
+                              setOpenCommentMenuId(null);
+                            }}
+                          >
+                            Delete comment
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="draftMetaBadgeRow">
+                    {comment.classification ? (
+                      <span className="draftMetaBadge">
+                        {comment.classification}
+                      </span>
+                    ) : null}
+                    {comment.severity ? (
+                      <span className="draftMetaBadge">{comment.severity}</span>
+                    ) : null}
+                    <span className="draftMetaBadge">{comment.status}</span>
+                  </div>
+                  <blockquote className="inlineCommentPreviewExcerpt">
+                    {comment.excerpt}
+                  </blockquote>
+                  <p className="inlineCommentPreviewNote">{comment.note}</p>
+                  <div
+                    className="inlineCommentActions inlineCommentCardActions"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        onSelectAnnotation(comment.id);
+                        setExpandedCommentId(comment.id);
+                      }}
+                    >
+                      Open
+                    </Button>
+                    <Button type="button" onClick={() => onRejectComment(comment.id)}>
+                      Reject
+                    </Button>
+                    {comment.isAskAiSuggestion && comment.status === "accepted" ? (
+                      <Button type="button" onClick={() => onRevertComment?.(comment.id)}>
+                        Revert
+                      </Button>
+                    ) : null}
+                    <Button type="button" onClick={() => onAcceptComment(comment.id)}>
+                      Accept
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            </aside>
           </aside>
 
           <div
@@ -1076,7 +1287,10 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
               {(["left", "center", "right"] as const).map((slot) => (
                 <input
                   key={`footer-${slot}`}
-                  value={renderPageNumberText(headerFooter.footer[slot] || "", 1)}
+                  value={renderPageNumberText(
+                    headerFooter.footer[slot] || "",
+                    1,
+                  )}
                   onChange={(event) =>
                     updateHeaderFooterSlot("footer", slot, event.target.value)
                   }
@@ -1088,7 +1302,10 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
             </div>
 
             {selectionMenuTop !== null && (
-              <div className="draftSelectionBubble" style={{ top: `${selectionMenuTop}px` }}>
+              <div
+                className="draftSelectionBubble"
+                style={{ top: `${selectionMenuTop}px` }}
+              >
                 <Button
                   type="button"
                   onClick={() => startAnnotation(editor, "comment")}
@@ -1152,13 +1369,24 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
                   </label>
                 </div>
                 <div className="draftFindActions">
-                  <Button type="button" onClick={() => moveToMatch(activeFindIndex + 1)}>
+                  <Button
+                    type="button"
+                    onClick={() => moveToMatch(activeFindIndex + 1)}
+                  >
                     Find next
                   </Button>
-                  <Button type="button" onClick={replaceCurrentMatch} disabled={!findMatches.length}>
+                  <Button
+                    type="button"
+                    onClick={replaceCurrentMatch}
+                    disabled={!findMatches.length}
+                  >
                     Replace
                   </Button>
-                  <Button type="button" onClick={replaceAllMatches} disabled={!findMatches.length}>
+                  <Button
+                    type="button"
+                    onClick={replaceAllMatches}
+                    disabled={!findMatches.length}
+                  >
                     Replace all
                   </Button>
                 </div>
@@ -1170,300 +1398,194 @@ const DraftingDocument = forwardRef<DraftingEditorHandle, DraftingDocumentProps>
               </div>
             )}
           </div>
-
-          <aside className="draftCommentRail">
-            <div className="draftSelectionHint">
-              Select a line to see from where it is cited. If your selection spans multiple cited blocks, all relevant citations, warnings, and authority notes will appear here.
-            </div>
+        </main>
+        {expandedComment ? (
+          <div
+            className="commentDetailBackdrop"
+            onClick={() => {
+              setExpandedCommentId(null);
+              setOpenCommentMenuId(null);
+              setEditingCommentId(null);
+              setEditingDraft("");
+            }}
+          >
             <div
-              className={`draftInsightStack ${selectedBlockIds.length > 0 ? "hasSelection" : ""}`}
-              style={selectedBlockIds.length > 0 ? { top: `${selectionInsightTop}px` } : undefined}
+              className="commentDetailModal"
+              onClick={(event) => event.stopPropagation()}
             >
-              <div className="draftInsightCard draftInsightDrawerCard">
-                <p className="draftTemplateEyebrow">Source Drawer</p>
-                {selectedBlockIds.length > 0 ? (
-                  <div className="draftSourceDrawerBody">
-                    <div className="draftSourceDrawerHeader">
-                      <strong>
-                        {selectedBlockIds.length === 1
-                          ? selectedBlockMeta?.sectionTitle || "Selected citation block"
-                          : `${selectedBlockIds.length} cited blocks selected`}
-                      </strong>
-                      <div className="draftSourceBadgeRow">
-                        <span className="draftMetaBadge">
-                          {selectedInsights.blockCount} block{selectedInsights.blockCount === 1 ? "" : "s"}
-                        </span>
-                        <span className="draftMetaBadge">
-                          {selectedInsights.sourceRefs.length} source{selectedInsights.sourceRefs.length === 1 ? "" : "s"}
-                        </span>
-                        <span className="draftMetaBadge">
-                          {selectedInsights.legalSourceRefs.length} authority
-                        </span>
-                        <span className="draftMetaBadge">Confidence {formatConfidence(selectedInsights.confidence)}</span>
-                      </div>
-                    </div>
-                    <p className="draftSourceDrawerExcerpt">
-                      {selectedBlockIds.length === 1
-                        ? selectedBlockMeta?.text ||
-                          (Array.isArray(selectedBlockMeta?.items)
-                            ? selectedBlockMeta.items.join(" ")
-                            : "Selection is mapped to one cited block.")
-                        : "Your selection spans multiple cited blocks. Hover this drawer to inspect all supporting citations, provision mappings, and review notes."}
-                    </p>
-                    <div className="draftSourceDrawerHoverPanel">
-                    {Array.isArray(selectedInsights.referencedProvisions) &&
-                      selectedInsights.referencedProvisions.length > 0 && (
-                        <div className="draftInsightGroup">
-                          <h4>Referenced Provisions</h4>
-                          <div className="draftProvisionList">
-                            {selectedInsights.referencedProvisions.map((item, index) => (
-                              <div
-                                key={`${item.reference_id || item.label || "provision"}-${index}`}
-                                className="draftProvisionItem"
-                              >
-                                <strong>{item.label || item.reference_id || "Provision"}</strong>
-                                {item.described_as && <span>{item.described_as}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    <div className="draftInsightGroup">
-                      <h4>Document Sources</h4>
-                      {selectedInsights.sourceRefs.length > 0 ? (
-                        <div className="draftSourceRefList">
-                          {selectedInsights.sourceRefs.map(renderSourceRef)}
-                        </div>
-                      ) : (
-                        <p className="draftInsightEmpty">
-                          This block is guarded or analytical and does not yet carry verified document citations.
-                        </p>
-                      )}
-                    </div>
-                    <div className="draftInsightGroup">
-                      <h4>Legal Authority</h4>
-                      {selectedInsights.legalSourceRefs.length > 0 ? (
-                        <div className="draftSourceRefList">
-                          {selectedInsights.legalSourceRefs.map(renderLegalSourceRef)}
-                        </div>
-                      ) : (
-                        <p className="draftInsightEmpty">
-                          No structured legal authority is attached to this block.
-                        </p>
-                      )}
-                    </div>
-                    {(selectedInsights.warnings.length || selectedInsights.placeholders.length || selectedAiNotes.length) ? (
-                      <div className="draftInsightGroup">
-                        <h4>Open Issues</h4>
-                        <ul className="draftOpenIssueList">
-                          {selectedInsights.warnings.map((warning, index) => (
-                          <li key={`warning-${index}`}>{warning}</li>
-                          ))}
-                          {selectedInsights.placeholders.map((item, index) => (
-                            <li key={`placeholder-${index}`}>Open item: {item}</li>
-                          ))}
-                          {selectedAiNotes.map((note, index) => (
-                            <li key={`ai-note-${index}`}>{note.note}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="draftInsightEmpty">
-                    Select highlighted text in the draft to load citations, warnings, and authority support into this drawer.
+              <div className="commentDetailHeader">
+                <div>
+                  <p className="draftTemplateEyebrow">
+                    {expandedComment.author}
                   </p>
-                )}
-              </div>
-
-            </div>
-
-            {pendingAnnotation && (
-              <div
-                className="draftCommentComposerInline"
-                style={{ top: `${pendingTop || 0}px` }}
-              >
-                <div className="composerExcerptLine">{pendingAnnotation.excerpt}</div>
-                {pendingAnnotation.type === "comment" ? (
-                  <>
-                    <textarea
-                      value={commentDraft}
-                      onChange={(event) => onCommentDraftChange(event.target.value)}
-                      placeholder="Add a margin comment..."
-                      disabled={!roleCanEdit(currentRole)}
-                    />
-                    <div className="pendingAnnotationActions">
-                      <Button
-                        type="button"
-                        className="commentInlineSecondaryBtn"
-                        onClick={onClearPendingAnnotation}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        className="commentInlineActionBtn"
-                        onClick={onAddPendingComment}
-                        disabled={!roleCanEdit(currentRole) || !commentDraft.trim()}
-                      >
-                        Add comment
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="reactionPickerRow">
-                    {["👍", "✅", "⚠️", "💡"].map((emoji) => (
-                      <Button key={emoji} type="button" onClick={() => onAddReaction(emoji)}>
-                        {emoji}
-                      </Button>
-                    ))}
-                    <Button
-                      type="button"
-                      className="commentInlineSecondaryBtn"
-                      onClick={onClearPendingAnnotation}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="commentInlineList">
-              {sortedComments.map((comment) => (
-                <article
-                  key={comment.id}
-                  className={`inlineCommentCard ${comment.status} ${comment.type} ${
-                    comment.id === activeAnnotationId ? "active" : ""
-                  }`}
-                  style={{ top: `${commentLayout[comment.id] || 0}px` }}
-                  onClick={() => onSelectAnnotation(comment.id)}
+                  <h3>{expandedComment.sectionTitle || "Draft critique"}</h3>
+                </div>
+                <Button
+                  type="button"
+                  className="commentDetailClose"
+                  onClick={() => {
+                    setExpandedCommentId(null);
+                    setOpenCommentMenuId(null);
+                    setEditingCommentId(null);
+                    setEditingDraft("");
+                  }}
                 >
-                  <div className="inlineCommentHeader">
-                    <strong>{comment.author}</strong>
-                    <div className="commentOverflowWrap">
-                      <Button
-                        type="button"
-                        className="commentOverflowBtn"
-                        aria-label="Comment options"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenCommentMenuId((current) =>
-                            current === comment.id ? null : comment.id,
-                          );
-                        }}
-                      >
-                        ...
-                      </Button>
-                      {openCommentMenuId === comment.id && (
-                        <div className="commentOverflowMenu">
-                          <Button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setEditingCommentId(comment.id);
-                              setEditingDraft(comment.note);
-                              setOpenCommentMenuId(null);
-                            }}
-                          >
-                            Edit comment
-                          </Button>
-                          <Button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onDeleteComment(comment.id);
-                              setOpenCommentMenuId(null);
-                            }}
-                          >
-                            Delete comment
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <blockquote>{comment.excerpt}</blockquote>
-                  {editingCommentId === comment.id ? (
-                    <div className="inlineCommentEdit">
-                      <textarea
-                        value={editingDraft}
-                        onChange={(event) => setEditingDraft(event.target.value)}
-                        onClick={(event) => event.stopPropagation()}
-                      />
-                      <div className="inlineCommentActions">
-                        <Button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setEditingCommentId(null);
-                            setEditingDraft("");
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            if (!editingDraft.trim()) return;
-                            onUpdateComment(comment.id, editingDraft.trim());
-                            setEditingCommentId(null);
-                            setEditingDraft("");
-                          }}
-                        >
-                          Save
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p>{comment.note}</p>
-                  )}
-                  {comment.replies.length > 0 && (
-                    <div className="commentReplyList">
-                      {comment.replies.map((reply) => (
-                        <p key={reply.id}>
-                          <strong>{reply.author}</strong> {reply.note}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  <div className="commentReplyBox" onClick={(event) => event.stopPropagation()}>
-                    <textarea
-                      value={replyDrafts[comment.id] || ""}
-                      onChange={(event) =>
-                        setReplyDrafts((current) => ({
-                          ...current,
-                          [comment.id]: event.target.value,
-                        }))
-                      }
-                      placeholder="Reply..."
-                    />
+                  Close
+                </Button>
+              </div>
+              <div className="draftMetaBadgeRow">
+                {expandedComment.classification ? (
+                  <span className="draftMetaBadge">
+                    {expandedComment.classification}
+                  </span>
+                ) : null}
+                {expandedComment.severity ? (
+                  <span className="draftMetaBadge">
+                    {expandedComment.severity}
+                  </span>
+                ) : null}
+                <span className="draftMetaBadge">{expandedComment.status}</span>
+              </div>
+              {editingCommentId === expandedComment.id ? (
+                <div className="inlineCommentEdit">
+                  <textarea
+                    value={editingDraft}
+                    onChange={(event) => setEditingDraft(event.target.value)}
+                  />
+                  <div className="inlineCommentActions">
                     <Button
                       type="button"
                       onClick={() => {
-                        const reply = (replyDrafts[comment.id] || "").trim();
-                        if (!reply) return;
-                        onAddReply(comment.id, reply);
-                        setReplyDrafts((current) => ({ ...current, [comment.id]: "" }));
+                        setEditingCommentId(null);
+                        setEditingDraft("");
                       }}
                     >
-                      Reply
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (!editingDraft.trim()) return;
+                        onUpdateComment(
+                          expandedComment.id,
+                          editingDraft.trim(),
+                        );
+                        setEditingCommentId(null);
+                        setEditingDraft("");
+                      }}
+                    >
+                      Save
                     </Button>
                   </div>
-                  <div className="inlineCommentActions">
-                    <Button type="button" onClick={() => onAcceptComment(comment.id)}>
-                      Accept
+                </div>
+              ) : (
+                <div className="commentDetailBody">
+                  <p>{expandedComment.note}</p>
+                </div>
+              )}
+              <div className="commentDiffGrid">
+                <section className="commentDiffCard before">
+                  <span>Before</span>
+                  <pre>
+                    {expandedComment.originalText ||
+                      expandedComment.excerpt ||
+                      "No original excerpt available."}
+                  </pre>
+                </section>
+                <section className="commentDiffCard after">
+                  <span>After</span>
+                  <pre>
+                    {expandedComment.appliedText ||
+                      expandedComment.suggestedText ||
+                      expandedComment.note ||
+                      "No replacement text suggested."}
+                  </pre>
+                </section>
+              </div>
+              {expandedComment.replies.length > 0 && (
+                <div className="commentReplyList">
+                  {expandedComment.replies.map((reply) => (
+                    <p key={reply.id}>
+                      <strong>{reply.author}</strong> {reply.note}
+                    </p>
+                  ))}
+                </div>
+              )}
+              <div className="commentReplyBox">
+                <textarea
+                  value={replyDrafts[expandedComment.id] || ""}
+                  onChange={(event) =>
+                    setReplyDrafts((current) => ({
+                      ...current,
+                      [expandedComment.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="Reply..."
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const reply = (
+                      replyDrafts[expandedComment.id] || ""
+                    ).trim();
+                    if (!reply) return;
+                    onAddReply(expandedComment.id, reply);
+                    setReplyDrafts((current) => ({
+                      ...current,
+                      [expandedComment.id]: "",
+                    }));
+                  }}
+                >
+                  Reply
+                </Button>
+              </div>
+              <div className="commentDetailFooter">
+                <div className="inlineCommentActions">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setEditingCommentId(expandedComment.id);
+                      setEditingDraft(expandedComment.note);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      onDeleteComment(expandedComment.id);
+                      setExpandedCommentId(null);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </div>
+                <div className="inlineCommentActions">
+                  <Button
+                    type="button"
+                    onClick={() => onRejectComment(expandedComment.id)}
+                  >
+                    Reject
+                  </Button>
+                  {expandedComment.isAskAiSuggestion && expandedComment.status === "accepted" ? (
+                    <Button
+                      type="button"
+                      onClick={() => onRevertComment?.(expandedComment.id)}
+                    >
+                      Revert
                     </Button>
-                    <Button type="button" onClick={() => onRejectComment(comment.id)}>
-                      Reject
-                    </Button>
-                  </div>
-                </article>
-              ))}
+                  ) : null}
+                  <Button
+                    type="button"
+                    onClick={() => onAcceptComment(expandedComment.id)}
+                  >
+                    Accept
+                  </Button>
+                </div>
+              </div>
             </div>
-          </aside>
-        </main>
+          </div>
+        ) : null}
       </section>
     );
   },

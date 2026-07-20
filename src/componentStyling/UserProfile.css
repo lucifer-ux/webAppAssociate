@@ -1,101 +1,227 @@
+@import url("https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Nunito+Sans:ital,opsz,wght@0,6..12,200..1000;1,6..12,200..1000&display=swap");
+
 .userProfileOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(21, 15, 12, 0.45);
+  z-index: 160;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  z-index: 160;
+  padding: 16px;
+  background: rgba(46, 50, 48, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .userProfileModal {
-  width: min(460px, calc(100vw - 32px));
-  max-height: min(85vh, 720px);
+  width: min(448px, calc(100vw - 32px));
+  max-height: min(88vh, 820px);
   overflow-y: auto;
-  border: 1px solid #dfbfbc;
-  background: #fbf9f4;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16);
-  padding: 16px;
+  border: 1px solid rgba(196, 200, 188, 0.3);
+  border-radius: 24px;
+  background: #faf6f0;
+  box-shadow: 0 4px 20px rgba(46, 50, 48, 0.06);
+  color: #2e3230;
 }
 
 .userProfileHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #eadfd8;
-  padding-bottom: 10px;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.3);
+  background: #ffffff;
 }
 
 .userProfileHead strong {
-  font-family: "Newsreader", serif;
-  font-size: 24px;
-  color: #2f2422;
+  color: #2e3230;
+  font-family: "Literata", serif;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
 .userProfileCloseBtn {
-  width: 30px;
-  height: 30px;
-  border: 1px solid #e0c8c5;
-  background: #fff;
-  color: #6f625a;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #4a4e4a;
+  box-shadow: none;
 }
 
 .userProfileCloseBtn:hover {
-  border-color: #cda9a4;
-  color: #700d0d;
+  background: #e4e0d8;
+  color: #2e3230;
 }
 
 .userProfilePlanChip {
-  margin-top: 12px;
   display: inline-flex;
-  border: 1px solid #cfb2ae;
-  background: #f7f2ec;
-  color: #700d0d;
-  padding: 4px 8px;
-  font-family: "Work Sans", sans-serif;
+  align-items: center;
+  margin: 24px 24px 0;
+  padding: 6px 12px;
+  border: 1px solid rgba(74, 124, 89, 0.2);
+  border-radius: 999px;
+  background: rgba(74, 124, 89, 0.1);
+  color: #4a7c59;
+  font-family: "Nunito Sans", sans-serif;
   font-size: 11px;
-  letter-spacing: 0.06em;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
 .userProfileSection {
-  margin-top: 14px;
+  padding: 0 24px;
+  margin-top: 28px;
 }
 
 .userProfileSection h4 {
-  margin: 0 0 6px;
-  font-family: "Work Sans", sans-serif;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  margin: 0 0 10px;
+  color: #705c30;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
   text-transform: uppercase;
-  color: #6f625a;
 }
 
 .userProfileSection p {
-  margin: 0 0 5px;
-  font-family: "Work Sans", sans-serif;
-  font-size: 13px;
-  color: #3d3431;
+  margin: 0;
+  color: #4a4e4a;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.userProfileIdentityName {
+  color: #2e3230 !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+
+.userProfileIdentityEmail {
+  margin-top: 2px !important;
+  color: #4a4e4a !important;
+  font-size: 14px !important;
+}
+
+.userProfileMetricSection {
+  display: grid;
+  gap: 0;
+}
+
+.userProfileMetricRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.1);
+  color: #2e3230;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.userProfileMetricRow:last-child {
+  border-bottom: 0;
+}
+
+.userProfileMetricRow span {
+  color: #2e3230;
+}
+
+.userProfileMetricRow strong {
+  color: #4a7c59;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.userProfileInlineMeta {
+  color: #4a4e4a !important;
+}
+
+.userProfileInlineMeta + .userProfileInlineMeta {
+  margin-top: 6px !important;
+}
+
+.userProfileInlineMeta span {
+  color: #2e3230;
+  font-weight: 700;
+}
+
+.userProfileInlineMeta .isMuted {
+  font-style: italic;
+  font-weight: 600;
+}
+
+.userProfileStatusCard {
+  padding: 12px 14px;
+  border: 1px solid rgba(196, 200, 188, 0.2);
+  border-radius: 16px;
+  background: #f5f1ea;
+  color: #4a4e4a !important;
+}
+
+.userProfileFooter {
+  margin-top: 28px;
+  padding: 24px;
+  border-top: 1px solid rgba(196, 200, 188, 0.3);
+  background: #ffffff;
 }
 
 .userProfileUpgradeBtn {
   width: 100%;
-  margin-top: 14px;
-  border: 1px solid #4c0003;
-  background: #700d0d;
-  color: #fff;
-  min-height: 38px;
-  font-family: "Work Sans", sans-serif;
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  min-height: 48px;
+  border: 0;
+  border-radius: 12px;
+  background: #4a7c59;
+  color: #ffffff;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  cursor: pointer;
+  box-shadow: none;
 }
 
 .userProfileUpgradeBtn:hover {
-  background: #4c0003;
+  background: #78a886;
+  color: #d8f0de;
+}
+
+@media (max-width: 640px) {
+  .userProfileOverlay {
+    padding: 12px;
+    align-items: flex-start;
+  }
+
+  .userProfileModal {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+
+  .userProfileHead,
+  .userProfileFooter {
+    padding-inline: 20px;
+  }
+
+  .userProfilePlanChip,
+  .userProfileSection {
+    margin-left: 20px;
+    margin-right: 20px;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .userProfileHead strong {
+    font-size: 24px;
+  }
 }

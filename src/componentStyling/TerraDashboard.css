@@ -1,0 +1,703 @@
+@import url("https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400..900&family=Nunito+Sans:opsz,wght@6..12,300..800&display=swap");
+
+.terraDashboardPage {
+  --terra-tertiary-container: #c4a66a;
+  --terra-surface-container-lowest: #ffffff;
+  --terra-primary: #4a7c59;
+  --terra-error: #b83230;
+  --terra-on-surface-variant: #4a4e4a;
+  --terra-tertiary: #705c30;
+  --terra-primary-container: #78a886;
+  --terra-outline-variant: #c4c8bc;
+  --terra-surface-container: #f0ece4;
+  --terra-background: #faf6f0;
+  --terra-on-background: #2e3230;
+  --terra-outline: #74796e;
+  --terra-surface: #faf6f0;
+  --terra-surface-dim: #dbd7cf;
+  --terra-surface-container-highest: #e4e0d8;
+  --terra-secondary: #6b6358;
+  --terra-on-primary-fixed-variant: #2a6038;
+  --terra-surface-container-low: #f5f1ea;
+  --terra-surface-variant: #e4e0d8;
+  --terra-surface-container-high: #eae6de;
+  --terra-on-surface: #2e3230;
+  min-height: 100vh;
+  background: var(--terra-background);
+  color: var(--terra-on-background);
+  font-family: "Nunito Sans", "Work Sans", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.terraDashboardPage :where(h1, h2, h3, h4, h5, h6, .terraBrand) {
+  font-family: "Literata", "Newsreader", Georgia, serif;
+}
+
+.terraDashboardPage :where(button, input, textarea) {
+  font-family: "Nunito Sans", "Work Sans", Arial, sans-serif;
+}
+
+.terraTopNav {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 50;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 32px;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.85);
+  background: rgba(245, 241, 234, 0.86);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 1px 5px rgba(46, 50, 48, 0.05);
+}
+
+.terraTopLeft,
+.terraTopRight,
+.terraUserCluster {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.terraTopLeft {
+  gap: 16px;
+}
+
+.terraBrand {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--terra-primary);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  padding: 0;
+}
+
+.terraRouteNav {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.terraRouteNav button,
+.terraNavButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--terra-on-surface-variant);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 4px 0;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.terraRouteNav button:hover,
+.terraRouteNav button.isActive,
+.terraNavButton:hover {
+  color: var(--terra-primary);
+}
+
+.terraRouteNav button.isActive {
+  border-bottom: 2px solid var(--terra-primary);
+}
+
+.terraTopRight {
+  gap: 22px;
+  margin-left: auto;
+}
+
+.terraIconButton {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--terra-on-surface-variant);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.terraIconButton:hover,
+.terraNavButton:hover {
+  background: rgba(240, 232, 219, 0.58);
+}
+
+.terraCreditsChip {
+  color: var(--terra-primary);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.terraUserCluster {
+  gap: 12px;
+  border: 0;
+  padding-left: 16px;
+  border-left: 1px solid rgba(196, 200, 188, 0.6);
+  background: transparent;
+  cursor: pointer;
+}
+
+.terraAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--terra-primary-container);
+  color: #d8f0de;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.terraUserName {
+  color: var(--terra-on-surface);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.terraDashboardShell {
+  display: flex;
+  min-height: 100vh;
+  padding-top: 64px;
+}
+
+.terraSidebar {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  bottom: 0;
+  width: 288px;
+  border-right: 1px solid rgba(196, 200, 188, 0.5);
+  background: var(--terra-surface);
+  overflow-y: auto;
+  display: block;
+}
+
+.terraSidebarInner {
+  padding: 24px;
+}
+
+.terraNewMatterButton {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 16px;
+  border: 1px solid var(--terra-primary);
+  background: transparent;
+  color: var(--terra-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  margin-bottom: 32px;
+  transition: background 160ms ease;
+}
+
+.terraNewMatterButton:hover {
+  background: rgba(74, 124, 89, 0.06);
+}
+
+.terraSidebarTitle {
+  margin: 0 0 16px;
+  color: var(--terra-on-surface-variant);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.terraActivityList {
+  display: grid;
+  gap: 16px;
+}
+
+.terraActivityCard,
+.terraSystemAlert {
+  border-radius: 16px;
+  border: 1px solid transparent;
+  background: var(--terra-surface-container-low);
+  padding: 16px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.terraActivityCard:hover {
+  border-color: rgba(196, 200, 188, 0.34);
+  background: var(--terra-surface-container);
+}
+
+.terraActivityMeta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.terraActivityIndex {
+  color: var(--terra-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.terraActivityTime {
+  color: var(--terra-on-surface-variant);
+  font-size: 12px;
+}
+
+.terraActivityCard h4,
+.terraSystemAlert h4 {
+  margin: 0 0 4px;
+  color: var(--terra-on-surface);
+  font-family: "Nunito Sans", "Work Sans", Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.terraActivityCard p,
+.terraSystemAlert p {
+  margin: 0;
+  color: var(--terra-on-surface-variant);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.terraSystemAlert {
+  margin-top: 32px;
+  border-color: rgba(196, 200, 188, 0.3);
+  background: var(--terra-surface);
+  cursor: default;
+}
+
+.terraDashboardMain {
+  flex: 1;
+  margin-left: 288px;
+  padding: 48px 48px 128px;
+  overflow-y: auto;
+}
+
+.terraHero {
+  margin-bottom: 48px;
+}
+
+.terraHero h1 {
+  margin: 0 0 8px;
+  color: var(--terra-on-background);
+  font-size: clamp(34px, 4vw, 48px);
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.terraHero input {
+  width: min(360px, 38vw);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: 0;
+  padding: 0;
+}
+
+.terraHero p {
+  margin: 0;
+  color: var(--terra-on-surface-variant);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.terraSection {
+  margin-bottom: 48px;
+}
+
+.terraSection h2 {
+  margin: 0 0 24px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.4);
+  color: var(--terra-on-surface);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.terraWorkQueue {
+  overflow: hidden;
+  border: 1px solid rgba(196, 200, 188, 0.2);
+  border-radius: 16px;
+  background: var(--terra-surface-container-lowest);
+  box-shadow: 0 4px 20px rgba(46, 50, 48, 0.06);
+}
+
+.terraWorkHeader,
+.terraWorkRow {
+  display: grid;
+  grid-template-columns: 1.2fr 1.3fr 0.75fr 1.45fr;
+  gap: 16px;
+  align-items: center;
+}
+
+.terraWorkHeader {
+  padding: 16px;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.24);
+  background: var(--terra-surface-container-low);
+  color: var(--terra-on-surface-variant);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.terraWorkRows {
+  display: grid;
+}
+
+.terraWorkRow {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.2);
+  background: transparent;
+  padding: 16px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.terraWorkRow:last-child {
+  border-bottom: 0;
+}
+
+.terraWorkRow:hover {
+  background: rgba(240, 236, 228, 0.34);
+}
+
+.terraWorkMatter {
+  color: var(--terra-on-surface);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.terraWorkTask,
+.terraWorkContext {
+  color: var(--terra-on-surface-variant);
+  font-size: 14px;
+}
+
+.terraStatusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--terra-surface-variant);
+  color: var(--terra-on-surface-variant);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.terraStatusPill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--terra-outline);
+}
+
+.terraStatusPill.is-ready {
+  background: rgba(120, 168, 134, 0.3);
+  color: var(--terra-primary);
+}
+
+.terraStatusPill.is-ready::before {
+  background: var(--terra-primary);
+}
+
+.terraWorkAction {
+  justify-self: end;
+  min-height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--terra-outline);
+  background: transparent;
+  color: var(--terra-on-surface);
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.terraMatterGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.terraMatterCard {
+  min-height: 244px;
+  border-radius: 16px;
+  border: 1px solid rgba(196, 200, 188, 0.2);
+  background: var(--terra-surface-container-lowest);
+  box-shadow: 0 4px 20px rgba(46, 50, 48, 0.06);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.terraMatterCard:hover {
+  background: #fff;
+  border-color: rgba(196, 200, 188, 0.48);
+  box-shadow: 0 14px 32px rgba(46, 50, 48, 0.12);
+  transform: translateY(-4px);
+}
+
+.terraMatterCard h3 {
+  margin: 0 0 4px;
+  color: var(--terra-on-surface);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  display: -webkit-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.terraMatterCardMeta {
+  margin: 0;
+  color: var(--terra-on-surface-variant);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.terraMatterCardBody {
+  flex: 1;
+  margin-top: 24px;
+}
+
+.terraResearchCardSummary {
+  margin: 20px 0 0;
+  color: var(--terra-on-surface-variant);
+  font-size: 14px;
+  line-height: 1.55;
+  display: -webkit-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+}
+
+.terraMatterRisk {
+  margin: 12px 0 0;
+  color: var(--terra-error);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.terraMatterRisk.is-low {
+  color: var(--terra-tertiary);
+}
+
+.terraOpenMatter,
+.terraUploadButton {
+  width: 100%;
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--terra-outline);
+  background: transparent;
+  color: var(--terra-on-surface);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.terraOpenMatter:hover {
+  background: var(--terra-surface-container);
+}
+
+.terraStartMatterCard {
+  background: var(--terra-surface-container-low);
+  border-color: rgba(196, 200, 188, 0.3);
+  cursor: default;
+  justify-content: center;
+}
+
+.terraStartMatterCard p {
+  margin: 0 0 24px;
+  color: var(--terra-on-surface-variant);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.terraUploadButton {
+  border-color: var(--terra-primary);
+  background: var(--terra-primary);
+  color: #fff;
+}
+
+.terraUploadButton:hover {
+  background: rgba(74, 124, 89, 0.9);
+}
+
+.terraDashboardPage .chatDockWrap {
+  position: fixed;
+  left: 50%;
+  right: auto;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: min(768px, calc(100vw - 32px));
+  padding: 0;
+}
+
+.terraDashboardPage .chatDock {
+  width: 100%;
+  min-height: 64px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 200, 188, 0.3);
+  background: var(--terra-surface-container-lowest);
+  box-shadow: 0 8px 30px rgba(46, 50, 48, 0.12);
+  padding: 6px;
+  gap: 8px;
+}
+
+.terraDashboardPage .chatSparkle {
+  display: none;
+}
+
+.terraDashboardPage .chatModeSwitch {
+  border: 0;
+  border-radius: 999px;
+  background: var(--terra-surface-container-low);
+  padding: 4px;
+  gap: 0;
+}
+
+.terraDashboardPage .chatModeOption {
+  border-radius: 999px;
+  color: var(--terra-on-surface-variant);
+  padding: 7px 16px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.terraDashboardPage .chatModeOption.is-active {
+  background: var(--terra-surface-container-lowest);
+  color: var(--terra-primary);
+  box-shadow: 0 1px 4px rgba(46, 50, 48, 0.12);
+}
+
+.terraDashboardPage .chatDock textarea {
+  color: var(--terra-on-surface);
+  font-family: "Nunito Sans", "Work Sans", Arial, sans-serif;
+  font-size: 14px;
+  min-height: 42px;
+  padding: 10px 46px 8px 4px;
+}
+
+.terraDashboardPage .chatDock textarea::placeholder {
+  color: rgba(74, 78, 74, 0.65);
+  font-style: normal;
+}
+
+.terraDashboardPage .chatSendBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--terra-primary);
+  color: #fff;
+}
+
+.terraDashboardPage .chatSendBtn:not(:disabled):hover {
+  background: rgba(74, 124, 89, 0.9);
+  color: #fff;
+}
+
+@media (max-width: 1100px) {
+  .terraRouteNav {
+    gap: 18px;
+  }
+
+  .terraMatterGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .terraWorkHeader,
+  .terraWorkRow {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .terraWorkHeader span:nth-child(n + 3),
+  .terraWorkRow > span:nth-child(n + 3),
+  .terraWorkAction {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 860px) {
+  .terraTopNav {
+    height: auto;
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 14px 18px;
+  }
+
+  .terraDashboardShell {
+    padding-top: 64px;
+  }
+
+  .terraSidebar {
+    display: none;
+  }
+
+  .terraDashboardMain {
+    margin-left: 0;
+    padding: 32px 18px 128px;
+  }
+
+  .terraTopLeft,
+  .terraTopRight {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .terraRouteNav {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+}

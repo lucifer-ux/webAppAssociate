@@ -14,6 +14,18 @@ type InviteRecord = {
   acceptedAt?: string;
 };
 
+type CreditTopUpResponse = {
+  success?: boolean;
+  error?: string;
+  registeredUser?: boolean;
+  credits?: {
+    email?: string;
+    balance?: number;
+    available?: number;
+    expiresAt?: string;
+  };
+};
+
 const formatDate = (value?: string) => {
   if (!value) return "";
   const date = new Date(value);
@@ -41,6 +53,9 @@ const AdministrationPage = () => {
   const [singleNote, setSingleNote] = useState("");
   const [bulkEmails, setBulkEmails] = useState("");
   const [bulkNote, setBulkNote] = useState("");
+  const [topUpEmail, setTopUpEmail] = useState("");
+  const [topUpCredits, setTopUpCredits] = useState("");
+  const [topUpReason, setTopUpReason] = useState("");
   const [generatedCode, setGeneratedCode] = useState("");
   const [latestInvites, setLatestInvites] = useState<InviteRecord[]>([]);
   const [inviteRows, setInviteRows] = useState<InviteRecord[]>([]);
@@ -225,6 +240,51 @@ const AdministrationPage = () => {
     }
   };
 
+  const topUpUserCredits = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatus("");
+    setIsSubmitting(true);
+    try {
+      const credits = Number(topUpCredits);
+      if (!topUpEmail.trim()) {
+        throw new Error("User email is required.");
+      }
+      if (!Number.isFinite(credits) || credits <= 0) {
+        throw new Error("Credit amount must be greater than zero.");
+      }
+      const response = await fetch(buildApiUrl("/api/admin/credits/topup"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: topUpEmail.trim(),
+          credits,
+          reason: topUpReason,
+        }),
+      });
+      const payload = (await response.json()) as CreditTopUpResponse;
+      if (!response.ok || payload.success === false || !payload.credits) {
+        throw new Error(payload.error || "Credits could not be added.");
+      }
+      const available = Number(payload.credits.available ?? payload.credits.balance ?? 0);
+      const targetEmail = payload.credits.email || topUpEmail;
+      const grantScope = payload.registeredUser
+        ? "registered account"
+        : "pending email account";
+      setStatus(
+        `Added ${credits.toLocaleString("en-IN")} credits to ${targetEmail} (${grantScope}). Available balance: ${Math.floor(available).toLocaleString("en-IN")} credits.`,
+      );
+      setTopUpEmail("");
+      setTopUpCredits("");
+      setTopUpReason("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Credits could not be added.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const onBulkFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -394,6 +454,61 @@ const AdministrationPage = () => {
                 disabled={isSubmitting}
               >
                 Create bulk invites
+              </Button>
+            </form>
+
+            <form className="adminPanel adminPanelWide" onSubmit={topUpUserCredits}>
+              <div className="adminPanelHeader">
+                <div>
+                  <p className="adminEyebrow">Credits</p>
+                  <h2>Top up user credits</h2>
+                  <p className="adminPanelNote">
+                    Adds custom credits to any email. If the user has not signed in yet, the grant is held for that email and attaches when the account is created.
+                  </p>
+                </div>
+              </div>
+
+              <div className="adminInlineFields">
+                <div>
+                  <label htmlFor="topUpEmail">User email</label>
+                  <input
+                    id="topUpEmail"
+                    type="email"
+                    value={topUpEmail}
+                    onChange={(event) => setTopUpEmail(event.target.value)}
+                    placeholder="user@example.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="topUpCredits">Credits to add</label>
+                  <input
+                    id="topUpCredits"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={topUpCredits}
+                    onChange={(event) => setTopUpCredits(event.target.value)}
+                    placeholder="1500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <label htmlFor="topUpReason">Reason</label>
+              <input
+                id="topUpReason"
+                value={topUpReason}
+                onChange={(event) => setTopUpReason(event.target.value)}
+                placeholder="Optional audit note"
+              />
+
+              <Button
+                className="adminPrimaryButton"
+                type="submit"
+                disabled={isSubmitting}
+              >
+                Add credits
               </Button>
             </form>
 

@@ -13,6 +13,31 @@
   border-bottom: 1px solid rgba(223, 191, 188, 0.35);
 }
 
+.productTopBar:not(.draftingChromeBar) {
+  height: 64px;
+  padding: 0 24px;
+  border-bottom: 1px solid #c4c8bc;
+  background: #faf6f0;
+  color: #2e3230;
+  box-shadow: none;
+  backdrop-filter: blur(18px);
+}
+
+.productTopBar:not(.draftingChromeBar) .topBarLeft::after {
+  content: "Associate";
+  margin-left: 2px;
+  color: #4a7c59;
+  font-family: "Literata", "Newsreader", Georgia, serif;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.productTopBar:not(.draftingChromeBar) .topBarRight {
+  gap: 22px;
+}
+
 .topBarLeft,
 .topBarRight,
 .draftChromePrimaryRow,
@@ -66,6 +91,7 @@
 .topBarRight,
 .draftingTopRight {
   gap: 10px;
+  min-height: 34px;
 }
 
 .sectionRouteNav {
@@ -73,6 +99,17 @@
   align-items: center;
   gap: 6px;
   margin-right: 4px;
+  justify-content: flex-end;
+}
+
+.homeDashTopBar:not(.draftingChromeBar) .sectionRouteNav {
+  min-width: 384px;
+}
+
+.productTopBar:not(.draftingChromeBar) .sectionRouteNav {
+  gap: 22px;
+  min-width: 460px;
+  margin-right: 0;
 }
 
 .sectionRouteBtn {
@@ -98,6 +135,59 @@
   border-color: #cfb2ae;
   background: #f7f2ec;
   color: #700d0d;
+}
+
+.productTopBar:not(.draftingChromeBar) .sectionRouteBtn {
+  height: 64px;
+  min-height: 64px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #4a4e4a;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.productTopBar:not(.draftingChromeBar) .sectionRouteBtn:hover,
+.productTopBar:not(.draftingChromeBar) .sectionRouteBtn.active {
+  border-bottom-color: #6b6358;
+  background: transparent;
+  color: #4a7c59;
+}
+
+.creditBalanceChip {
+  border: 0;
+  background: transparent;
+  color: #7a6a5f;
+  min-height: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  min-width: 72px;
+  justify-content: flex-end;
+}
+
+.productTopBar:not(.draftingChromeBar) .creditBalanceChip {
+  min-width: 96px;
+  padding: 0;
+  color: #6b6358;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .topBarLogo {
@@ -135,6 +225,25 @@
   background: #f1ece5;
 }
 
+.productTopBar:not(.draftingChromeBar) .iconBtn,
+.productTopBar:not(.draftingChromeBar) .sidebarToggleBtn,
+.productTopBar:not(.draftingChromeBar) .topBarHomeBtn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: #f0e8db;
+  color: #5e5548;
+  box-shadow: none;
+}
+
+.productTopBar:not(.draftingChromeBar) .iconBtn:hover,
+.productTopBar:not(.draftingChromeBar) .sidebarToggleBtn:hover,
+.productTopBar:not(.draftingChromeBar) .topBarHomeBtn:hover {
+  background: #4a7c59;
+  color: #ffffff;
+}
+
 .toolbarIconBtn[data-active="true"],
 .toolbarColorBtn[data-active="true"] {
   background: #ede2dc;
@@ -160,6 +269,279 @@
 
 .avatarBtn {
   background: #fbf9f4;
+}
+
+.productHeaderUserCluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border: 0;
+  border-left: 1px solid rgba(196, 200, 188, 0.6);
+  background: transparent;
+  padding: 0 0 0 16px;
+  color: #2e3230;
+  cursor: pointer;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+}
+
+.productTopBar:not(.draftingChromeBar) .productHeaderUserCluster {
+  border-left: 1px solid rgba(196, 200, 188, 0.6);
+}
+
+.productHeaderUserCluster:hover {
+  color: #4a7c59;
+}
+
+.productHeaderAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #6fa67a;
+  color: #eef8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.productTopBar:not(.draftingChromeBar) .productHeaderAvatar {
+  background: #78a886;
+  color: #d8f0de;
+}
+
+.productTopBar:not(.draftingChromeBar) .productHeaderUserCluster:hover .productHeaderAvatar {
+  background: #4a7c59;
+  color: #ffffff;
+}
+
+.productHeaderUserName {
+  max-width: 112px;
+  overflow: hidden;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipelineJobCenterWrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pipelineJobCenterButton {
+  min-height: 32px;
+  border: 1px solid #c4c8bc;
+  border-radius: 999px;
+  background: #f0e8db;
+  color: #4a4e4a;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pipelineJobCenterButton:hover {
+  border-color: #4a7c59;
+  background: #e6ecdf;
+  color: #2a6038;
+}
+
+.pipelineJobCenterButton strong {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #4a7c59;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.pipelineJobCenterDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #78a886;
+  box-shadow: 0 0 0 3px rgba(120, 168, 134, 0.18);
+}
+
+.pipelineJobCenterPanel {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 90;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid #c4c8bc;
+  border-radius: 12px;
+  background: #fffdfa;
+  box-shadow: 0 18px 46px rgba(46, 50, 48, 0.18);
+  padding: 12px;
+}
+
+.pipelineJobCenterHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e4e0d8;
+}
+
+.pipelineJobCenterHead strong {
+  color: #2e3230;
+  font-size: 14px;
+}
+
+.pipelineJobCenterHead button,
+.pipelineJobDismiss,
+.pipelineToastDismiss {
+  border: 0;
+  background: transparent;
+  color: #6b6358;
+  cursor: pointer;
+}
+
+.pipelineJobList {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.pipelineJobItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  border: 1px solid #e4e0d8;
+  border-radius: 10px;
+  background: #faf6f0;
+  padding: 8px;
+}
+
+.pipelineJobItem > button:first-child {
+  border: 0;
+  background: transparent;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pipelineJobItem span,
+.pipelineJobItem small {
+  color: #6b6358;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pipelineJobItem strong {
+  overflow: hidden;
+  color: #2e3230;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipelineJobProgress {
+  height: 5px;
+  border-radius: 999px;
+  background: #e4e0d8;
+  overflow: hidden;
+}
+
+.pipelineJobProgress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #4a7c59;
+}
+
+.pipelineJobItem.is-failed .pipelineJobProgress i {
+  background: #b83230;
+}
+
+.pipelineJobEmpty {
+  margin: 12px 0 0;
+  color: #6b6358;
+  font-size: 13px;
+}
+
+.pipelineToastStack {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 220;
+  display: grid;
+  gap: 10px;
+  width: min(380px, calc(100vw - 40px));
+}
+
+.pipelineToast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  border: 1px solid #c4c8bc;
+  border-left: 4px solid #4a7c59;
+  border-radius: 12px;
+  background: #fffdfa;
+  box-shadow: 0 16px 42px rgba(46, 50, 48, 0.18);
+  padding: 12px;
+}
+
+.pipelineToast.is-failed {
+  border-left-color: #b83230;
+}
+
+.pipelineToast > button:first-child {
+  border: 0;
+  background: transparent;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pipelineToast strong {
+  color: #2e3230;
+  font-size: 13px;
+}
+
+.pipelineToast span,
+.pipelineToast small {
+  overflow: hidden;
+  color: #6b6358;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.productPageLoaderSurface {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 104px 24px 40px;
+  background: #faf6f0;
+}
+
+.productPageLoaderSurface .matterUploadLoaderInline {
+  width: min(1080px, 100%);
 }
 
 .profileMenuWrap {
@@ -257,9 +639,16 @@
 .draftChromePrimaryRow {
   justify-content: space-between;
   gap: 16px;
+  min-width: 0;
   padding-top: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(223, 191, 188, 0.4);
+}
+
+.draftChromePrimaryLeft,
+.draftChromePrimaryCenter,
+.draftingTopRight {
+  min-width: 0;
 }
 
 .draftChromeTitleBlock {

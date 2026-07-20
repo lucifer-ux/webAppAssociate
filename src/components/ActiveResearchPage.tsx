@@ -1,13 +1,15 @@
 import "../componentStyling/HomeDashboardStyling.css";
 import Button from "./Button";
-import { useMemo, useState } from "react";
-import { BookOpen, MessagesSquare, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BookOpen, ShieldCheck } from "lucide-react";
 import ProductNavbar from "./ProductNavbar";
 import SideBar from "./SideBar";
 import ActiveResearch from "./ActiveResearch";
 import type { SavedResearchApiItem } from "./ActiveResearch";
 import usePersistedSidebarState from "../hooks/usePersistedSidebarState";
 import { useLocation } from "react-router-dom";
+import "../componentStyling/TerraMatterWorkspace.css";
+import "../componentStyling/TerraResearch.css";
 
 export type RecentResearchItem = {
   id: string;
@@ -17,6 +19,10 @@ export type RecentResearchItem = {
 
 const ActiveResearchPage = () => {
   const location = useLocation();
+  const queryResearchId = useMemo(
+    () => new URLSearchParams(location.search).get("research"),
+    [location.search],
+  );
   const { isSideBarCollapsed, setIsSideBarCollapsed } =
     usePersistedSidebarState();
   const navState = useMemo(
@@ -50,17 +56,25 @@ const ActiveResearchPage = () => {
     () =>
       navState?.startFreshResearch
         ? null
-        : navState?.initialActiveResearchId || navState?.preloadedResearches?.[0]?.id || null,
+        : queryResearchId ||
+          navState?.initialActiveResearchId ||
+          navState?.preloadedResearches?.[0]?.id ||
+          null,
   );
   const [isStartingFreshResearch, setIsStartingFreshResearch] = useState(
     () => Boolean(navState?.startFreshResearch),
   );
-  const [conversationOpenRequest, setConversationOpenRequest] = useState(0);
 
-  const handleSelectResearch = (id: string | null) => {
+  useEffect(() => {
+    if (!queryResearchId) return;
+    setIsStartingFreshResearch(false);
+    setActiveResearchId(queryResearchId);
+  }, [queryResearchId]);
+
+  const handleSelectResearch = useCallback((id: string | null) => {
     setIsStartingFreshResearch(false);
     setActiveResearchId(id);
-  };
+  }, []);
 
   const handleStartResearch = () => {
     setIsStartingFreshResearch(true);
@@ -68,7 +82,7 @@ const ActiveResearchPage = () => {
   };
 
   return (
-    <div className="homeDashPage">
+    <div className="homeDashPage terraMatterPage terraResearchPage">
       <ProductNavbar
         isSideBarCollapsed={isSideBarCollapsed}
         onToggleSidebar={() => setIsSideBarCollapsed((prev) => !prev)}
@@ -88,16 +102,6 @@ const ActiveResearchPage = () => {
           <BookOpen size={18} />
           <span>Files</span>
         </Button>
-        <Button
-          className="toolRailItem"
-          type="button"
-          onClick={() =>
-            setConversationOpenRequest((request) => request + 1)
-          }
-        >
-          <MessagesSquare size={18} />
-          <span>Conversation</span>
-        </Button>
         <Button className="toolRailItem" type="button">
           <ShieldCheck size={18} />
           <span>Compliance</span>
@@ -105,7 +109,7 @@ const ActiveResearchPage = () => {
       </nav>
 
       <main
-        className={`homeDashMain ${isSideBarCollapsed ? "sidebarCollapsed" : ""}`}
+        className={`homeDashMain terraMatterMain terraResearchMain ${isSideBarCollapsed ? "sidebarCollapsed" : ""}`}
       >
         <ActiveResearch
           activeSection="activeResearch"
@@ -115,7 +119,6 @@ const ActiveResearchPage = () => {
           onActiveResearchChange={handleSelectResearch}
           initialResearches={(navState?.preloadedResearches || []) as SavedResearchApiItem[]}
           isStartingFreshResearch={isStartingFreshResearch}
-          conversationOpenRequest={conversationOpenRequest}
         />
       </main>
     </div>

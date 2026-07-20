@@ -2,9 +2,12 @@
   align-items: center;
   min-height: 56px;
   border-radius: 28px;
+  border: 1px solid rgba(185, 151, 91, 0.24);
+  background: rgba(17, 19, 24, 0.92);
   box-shadow:
-    0 10px 32px rgba(43, 26, 22, 0.16),
-    0 2px 8px rgba(43, 26, 22, 0.08);
+    0 18px 54px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(231, 193, 129, 0.08);
+  backdrop-filter: blur(18px);
 }
 
 .chatModeSwitch {
@@ -12,9 +15,9 @@
   align-items: center;
   gap: 4px;
   padding: 4px;
-  border: 1px solid #ddd2c6;
+  border: 1px solid rgba(154, 143, 129, 0.28);
   border-radius: 999px;
-  background: #f6efe7;
+  background: rgba(12, 14, 19, 0.72);
   flex: 0 0 auto;
 }
 
@@ -22,9 +25,9 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: #6b6057;
+  color: #d1c5b5;
   padding: 8px 11px;
-  font-family: "Work Sans", sans-serif;
+  font-family: "IBM Plex Sans", "Work Sans", sans-serif;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -36,9 +39,11 @@
 }
 
 .chatModeOption.is-active {
-  background: #ffffff;
-  color: #5c3128;
-  box-shadow: 0 1px 4px rgba(54, 34, 23, 0.1);
+  background: #b9975b;
+  color: #111318;
+  box-shadow:
+    0 10px 24px rgba(185, 151, 91, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .chatModeOption:disabled {
@@ -53,8 +58,8 @@
   flex: 1;
   display: block;
   font-size: 16px;
-  color: var(--ink);
-  font-family: "Newsreader", serif;
+  color: #f4efe6;
+  font-family: "IBM Plex Sans", "Work Sans", sans-serif;
   resize: none;
   min-height: 24px;
   max-height: 176px;
@@ -65,7 +70,7 @@
   overflow-wrap: break-word;
   word-break: break-word;
   scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-color: rgba(185, 151, 91, 0.5) transparent;
   padding: 6px 0;
 }
 
@@ -83,7 +88,7 @@
 }
 
 .chatDock textarea::placeholder {
-  color: #8e857d;
+  color: #9a8f81;
   font-style: italic;
 }
 
@@ -106,7 +111,8 @@
 }
 
 .chatSendBtn:not(:disabled):hover {
-  background: var(--brand-soft);
+  background: #e7c181;
+  color: #111318;
 }
 
 @media (max-width: 720px) {

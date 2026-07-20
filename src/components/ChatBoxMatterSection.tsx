@@ -1,6 +1,6 @@
 import "../componentStyling/ChatBoxMatterSection.css";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, Bot, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, Bot, Sparkles, User, X } from "lucide-react";
 import Button from "./Button";
 import SearchBar, { type SearchBarMode } from "./SearchBar";
 
@@ -56,8 +56,29 @@ const SUGGESTED_PROMPTS = [
 
 const ASSISTANT_SKIP_MESSAGE =
   "Sure, I will think about the brief with the data that I have.";
-const TYPEWRITER_DELAY_MS = 28;
-const TYPEWRITER_CLOSE_DELAY_MS = 420;
+const TYPEWRITER_DELAY_MS = 8;
+const TYPEWRITER_CHUNK_SIZE = 4;
+const TYPEWRITER_CLOSE_DELAY_MS = 180;
+
+const stripMarkdownFormatting = (value: string) =>
+  String(value || "")
+    .replace(/^```[a-zA-Z0-9_-]*\n?/gm, "")
+    .replace(/```$/gm, "")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/_([^_\n]+)_/g, "$1")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
 const ChatBoxMatterSection = ({
   open,
@@ -115,7 +136,13 @@ const ChatBoxMatterSection = ({
         role: "assistant",
         text: openingMessage,
       },
-      ...messages,
+      ...messages.map((message) => ({
+        ...message,
+        text:
+          message.role === "assistant"
+            ? stripMarkdownFormatting(message.text)
+            : message.text,
+      })),
     ],
     [messages, openingMessage],
   );
@@ -152,7 +179,11 @@ const ChatBoxMatterSection = ({
 
     const skipPromise = Promise.resolve(onSkipClarification?.());
 
-    for (let index = 1; index <= ASSISTANT_SKIP_MESSAGE.length; index += 1) {
+    for (
+      let index = TYPEWRITER_CHUNK_SIZE;
+      index <= ASSISTANT_SKIP_MESSAGE.length + TYPEWRITER_CHUNK_SIZE;
+      index += TYPEWRITER_CHUNK_SIZE
+    ) {
       setTypingMessage(ASSISTANT_SKIP_MESSAGE.slice(0, index));
       await new Promise((resolve) =>
         window.setTimeout(resolve, TYPEWRITER_DELAY_MS),
@@ -198,7 +229,11 @@ const ChatBoxMatterSection = ({
                 <span className="matterChatAvatar">
                   <Bot size={15} />
                 </span>
-              ) : null}
+              ) : (
+                <span className="matterChatAvatar matterChatUserAvatar">
+                  <User size={15} />
+                </span>
+              )}
               <div className="matterChatMessageBody">
                 <p>{message.text}</p>
                 {message.sources?.length ? (
@@ -261,7 +296,7 @@ const ChatBoxMatterSection = ({
         </div>
 
         {!hasClarificationQuestions ? (
-          <div className="matterChatSuggestions">
+          <div className="matterChatSuggestions" aria-label="Suggested prompts">
             {SUGGESTED_PROMPTS.map((prompt) => (
               <Button
                 type="button"

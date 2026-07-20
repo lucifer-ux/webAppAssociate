@@ -39,7 +39,7 @@ declare module "@tiptap/core" {
 }
 
 const BLANK_FIELD_REGEX =
-  /(?:_{3,}|\.{4,}|\[[A-Z][A-Z\s/-]{1,}\]|\([ _]{3,}\))/g;
+  /(?:_{3,}|\.{4,}|\[[^\]\n]*(?:●|•|_{2,}|\.{3,}|TBD|TODO|INSERT|PLACEHOLDER|DATE|DAY|MONTH|YEAR|NAME|ADDRESS|EMAIL|PHONE|AMOUNT|SUM|CLAUSE|SECTION|COURT|FORUM|PARTY|SIGNATURE|DETAILS?|REGISTERED\s+OFFICE|REFERENCE)[^\]\n]*\]|\([ _]{3,}\))/gi;
 
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -564,7 +564,10 @@ export const buildDraftingExtensions = (options: {
   onSaveShortcut?: () => void;
   onOpenFindShortcut?: () => void;
 }) => [
-  StarterKit,
+  StarterKit.configure({
+    link: false,
+    underline: false,
+  }),
   TextStyle,
   Underline,
   TextAlign.configure({

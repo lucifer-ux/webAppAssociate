@@ -1,4 +1,19 @@
-import { Layers3, RotateCcw, ShieldAlert, TimerOff, Lock } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  BrainCircuit,
+  ClipboardCheck,
+  FilePenLine,
+  FileText,
+  FolderKanban,
+  Gavel,
+  Landmark,
+  Lock,
+  PlayCircle,
+  ScrollText,
+  SearchCheck,
+  UploadCloud,
+} from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PricingModal from "./components/PricingModal";
@@ -12,12 +27,7 @@ import wadiyaChandiLogo from "./assets/WadiyaChandi.jpeg";
 import firstPageVideo from "./assets/firstPage.mp4";
 import secondPageVideo from "./assets/secondPage.mp4";
 import thirdRecordingVideo from "./assets/thirdrecording.mp4";
-
-type ProblemCard = {
-  title: string;
-  body: string;
-  icon: typeof Layers3;
-};
+import backgroundVideo from "./assets/backgroundVideo.mp4";
 
 type ActStep = {
   title: string;
@@ -33,30 +43,42 @@ type LogoItem = {
   src: string;
 };
 
-const problemCards: ProblemCard[] = [
+type FloatingHeroItem = {
+  text: string;
+  icon: typeof FolderKanban;
+  variant?: "pulse" | "tertiary";
+};
+
+const infrastructureSteps = [
   {
-    title: "Context Fragmentation",
-    body:
-      "The lawyer doing the actual work in India today switches between eight to twelve tools to close a single matter. They become the memory layer holding everything together.",
-    icon: Layers3,
+    title: "1. Upload",
+    body: "Contracts, notices, emails",
+    icon: UploadCloud,
   },
   {
-    title: "Session By Session AI",
-    body:
-      "Most AI tools help with one document at a time. The next session starts from zero, so the lawyer rebuilds context from memory, every single time.",
-    icon: RotateCcw,
+    title: "2. Understand",
+    body: "Parties, clauses, dates",
+    icon: BrainCircuit,
   },
   {
-    title: "Verification Burden",
-    body:
-      "When AI cites a case, you still open the judgment yourself. It may use the right case for the wrong proposition or miss that a ruling was overturned.",
-    icon: ShieldAlert,
+    title: "3. Research",
+    body: "Statutes, case law",
+    icon: ScrollText,
   },
   {
-    title: "False Time Savings",
-    body:
-      "The tool that should save one hour can cost ninety minutes of verification. The problem is not whether AI can help Indian lawyers. It's whether a lawyer can trust it.",
-    icon: TimerOff,
+    title: "4. Draft",
+    body: "Notices, memos, replies",
+    icon: FilePenLine,
+  },
+  {
+    title: "5. Verify",
+    body: "Source refs, clause checks",
+    icon: ClipboardCheck,
+  },
+  {
+    title: "6. Review",
+    body: "Lawyer approval",
+    icon: Gavel,
   },
 ];
 
@@ -100,12 +122,46 @@ const logoPills: LogoItem[] = [
 ];
 const scrollingLogos = [...logoPills, ...logoPills];
 
+const floatingHeroItems: FloatingHeroItem[] = [
+  {
+    text: "Matter Atlas: Party A v. Party B - Ready",
+    icon: FolderKanban,
+  },
+  {
+    text: "Evidence Registry: 12 verified facts, 4 open gaps",
+    icon: ClipboardCheck,
+    variant: "pulse",
+  },
+  {
+    text: "Draft Queue: Section 21 Notice, Appointment Note",
+    icon: FilePenLine,
+  },
+  {
+    text: "Matter Law Vault: 8 pinned authorities",
+    icon: Landmark,
+  },
+  {
+    text: "Source Trace: Clause 8.3 MSA - 97% Verified",
+    icon: SearchCheck,
+    variant: "tertiary",
+  },
+];
+
 const Home = () => {
   const navigate = useNavigate();
   const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const showHowAssociateWorks = false;
 
-  const handleLogin = () => {
-    navigate("/login");
+  const handleSignIn = () => {
+    navigate("/login?mode=login");
+  };
+
+  const handleSignUp = () => {
+    navigate("/login?mode=signup");
+  };
+
+  const handleWalkthroughClick = () => {
+    document.getElementById("demos")?.scrollIntoView({ behavior: "smooth" });
   };
 
   return (
@@ -118,49 +174,252 @@ const Home = () => {
           </button>
 
           <nav className="landingNavLinks" aria-label="Primary">
-            <a href="#blogs">Blogs</a>
-            <a href="#demos">Demos</a>
+            <a href="#blogs">Problem</a>
+            {showHowAssociateWorks && <a href="#demos">Demos</a>}
             <a href="#security">Security</a>
             <button type="button" onClick={() => setIsPricingOpen(true)}>
               Pricing
             </button>
           </nav>
 
-          <button type="button" className="landingSignupButton" onClick={handleLogin}>
-            Sign Up
-          </button>
+          <div className="landingAuthActions">
+            <button type="button" className="landingSigninButton" onClick={handleSignIn}>
+              Sign In
+            </button>
+            <button type="button" className="landingSignupButton" onClick={handleSignUp}>
+              Sign Up
+            </button>
+          </div>
         </header>
 
         <main className="landingMain">
-          <section className="landingHero">
-            <h1>The AI workspace for Indian lawyers</h1>
-            <p>The associate you couldn't afford. Now you can.</p>
-            <button type="button" className="landingCtaButton" onClick={handleLogin}>
-              Try Associate
-            </button>
-            <span>Built in India. For India's 1.7 million advocates. From day one.</span>
+          <section className="landingHero" aria-labelledby="landing-hero-title">
+            <div className="landingHeroBackdrop" aria-hidden="true">
+              <video
+                className="landingHeroVideo"
+                src={backgroundVideo}
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+              />
+              <div className="landingHeroShader" />
+            </div>
+
+            <div className="landingHeroInner">
+              <div className="landingHeroCopy">
+                <div className="landingHeroEyebrow">
+                  <span />
+                  <strong>AI Legal Workbench For Lawyers</strong>
+                </div>
+                <h1 id="landing-hero-title">
+                  The associate every lawyer wishes they had.
+                </h1>
+                <p className="landingHeroLead">
+                  Built for research, drafting, matter review, and source-grounded legal work.
+                </p>
+                <p className="landingHeroBody">
+                  Upload contracts, notices, pleadings, emails, PDFs, and case files. Associate organizes the matter, researches the law, extracts what matters, and helps draft with source-grounded precision.
+                </p>
+
+                <div className="landingHeroActions">
+                  <button type="button" className="landingHeroPrimary" onClick={handleSignUp}>
+                    Request Demo
+                    <ArrowRight size={18} strokeWidth={1.8} />
+                  </button>
+                  {showHowAssociateWorks && (
+                    <button type="button" className="landingHeroSecondary" onClick={handleWalkthroughClick}>
+                      View Product Walkthrough
+                      <PlayCircle size={18} strokeWidth={1.8} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="landingHeroTrust" aria-label="Product capabilities">
+                  <span>Matter intelligence</span>
+                  <i>·</i>
+                  <span>Legal research</span>
+                  <i>·</i>
+                  <span>Draft support</span>
+                  <i>·</i>
+                  <span>Evidence trace</span>
+                  <i>·</i>
+                  <span>Lawyer review</span>
+                </div>
+              </div>
+
+              <div className="landingHeroVisual" aria-hidden="true">
+                <div className="landingHeroFloatLayer">
+                  {floatingHeroItems.map((item, index) => {
+                    const Icon = item.icon;
+                    return (
+                      <div
+                        key={item.text}
+                        className={`landingHeroFloat landingHeroFloat${index + 1} ${
+                          item.variant === "pulse" ? "pulse" : ""
+                        } ${item.variant === "tertiary" ? "tertiary" : ""}`}
+                      >
+                        <span className="landingHeroFloatIcon">
+                          <Icon size={17} strokeWidth={1.7} />
+                        </span>
+                        <span>{item.text}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <aside className="landingHeroBrief">
+                  <div className="landingHeroBriefHeader">
+                    <BarChart3 size={22} strokeWidth={1.7} />
+                    <h2>Today's Matter Brief</h2>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Active Matters</dt>
+                      <dd>04</dd>
+                    </div>
+                    <div>
+                      <dt>Documents Digested</dt>
+                      <dd>1,204</dd>
+                    </div>
+                    <div>
+                      <dt>Drafts Pending Review</dt>
+                      <dd className="live"><span />02</dd>
+                    </div>
+                  </dl>
+                </aside>
+              </div>
+            </div>
           </section>
 
           <section id="blogs" className="landingSection landingProblemSection">
-            <p className="landingEyebrow">The Problem</p>
-            <h2>Every legal AI tool generates. Nobody verifies.</h2>
-            <p className="landingSectionLead">
-              AI can help Indian lawyers. But until verification is native, context is persistent, and uncertainty is explicit, trust stays on the lawyer and not the tool.
-            </p>
+            <div className="institutionalTexture" aria-hidden="true" />
+            <div className="institutionalShell">
+              <div className="institutionalGrid">
+                <div className="institutionalIntro">
+                  <p className="institutionalKicker">The Problem</p>
+                  <h2>Legal AI that builds the matter before it writes the draft.</h2>
+                  <p>
+                    Upload contracts, notices, emails, PDFs, pleadings, and case files. Associate turns them into matter intelligence, legal research, verified evidence, and source-grounded drafts.
+                  </p>
+                  <div className="institutionalActions">
+                    <button type="button" onClick={handleSignUp}>
+                      Request Demo
+                    </button>
+                    {showHowAssociateWorks && (
+                      <button type="button" onClick={handleWalkthroughClick}>
+                        <PlayCircle size={18} strokeWidth={1.7} />
+                        View Product Walkthrough
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-            <div className="landingProblemGrid">
-              {problemCards.map((card) => {
-                const Icon = card.icon;
-                return (
-                  <article key={card.title} className="landingProblemCard">
-                    <div className="landingProblemHeader">
-                      <Icon size={28} strokeWidth={1.6} />
-                      <h3>{card.title}</h3>
+                <div className="institutionalMockup" aria-label="Matter intelligence preview">
+                  <div className="institutionalMockupGlow" aria-hidden="true" />
+                  <div className="institutionalMatterBar">
+                    <div>
+                      <span>Matter</span>
+                      <strong>Party A v. Party B</strong>
                     </div>
-                    <p>{card.body}</p>
-                  </article>
-                );
-              })}
+                    <div className="institutionalStatus">
+                      <i />
+                      Pre-Arbitration / Section 21 Readiness
+                    </div>
+                  </div>
+
+                  <div className="institutionalMatterGrid">
+                    <div className="institutionalMatterColumn">
+                      <article className="institutionalPanel">
+                        <h3>
+                          <ClipboardCheck size={18} strokeWidth={1.7} />
+                          Verified Clauses
+                        </h3>
+                        <div className="institutionalClauseList">
+                          <span>6.1</span>
+                          <span>8.1</span>
+                          <span>8.2</span>
+                          <span>8.3</span>
+                          <span>10.1</span>
+                        </div>
+                      </article>
+
+                      <article className="institutionalPanel danger">
+                        <h3>
+                          <SearchCheck size={18} strokeWidth={1.7} />
+                          Open Gaps
+                        </h3>
+                        <ul>
+                          <li>Proof of Service</li>
+                          <li>Negotiation Completion</li>
+                          <li>Arbitrator Strategy</li>
+                        </ul>
+                      </article>
+                    </div>
+
+                    <div className="institutionalMatterColumn">
+                      <article className="institutionalPanel evidence">
+                        <div className="institutionalEvidenceHeader">
+                          <span>Evidence Trace</span>
+                          <strong>97% Conf</strong>
+                        </div>
+                        <p>MSA dated 12 Jan 2024</p>
+                        <div className="institutionalDocumentRef">
+                          <FileText size={14} strokeWidth={1.7} />
+                          01_MSA_PartyA_PartyB.md
+                          <span>•</span>
+                          Clause 8.3
+                        </div>
+                      </article>
+
+                      <article className="institutionalPanel queue">
+                        <h3>
+                          <FilePenLine size={18} strokeWidth={1.7} />
+                          Draft Queue
+                        </h3>
+                        <div className="institutionalDraftList">
+                          <div>
+                            <span>Section 21 Notice</span>
+                            <strong>97% Conf</strong>
+                          </div>
+                          <div className="pending">
+                            <span>Appointment Note</span>
+                            <strong>Pending gaps</strong>
+                          </div>
+                          <div className="pending">
+                            <span>Claim Chronology</span>
+                            <strong>Pending gaps</strong>
+                          </div>
+                        </div>
+                      </article>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="institutionalPipeline">
+                <div className="institutionalPipelineHeader">
+                  <h2>From document dump to review-ready legal work.</h2>
+                  <span />
+                </div>
+
+                <div className="institutionalStepGrid">
+                  {infrastructureSteps.map((step, index) => {
+                    const Icon = step.icon;
+                    return (
+                      <article key={step.title} className="institutionalStep">
+                        <div className="institutionalStepIcon">
+                          <Icon size={22} strokeWidth={1.7} />
+                        </div>
+                        <h3>{step.title}</h3>
+                        <p>{step.body}</p>
+                        {index < infrastructureSteps.length - 1 && <i aria-hidden="true" />}
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </section>
 
@@ -183,49 +442,56 @@ const Home = () => {
             </div>
           </section>
 
-          <section id="demos" className="landingSection landingHowSection">
-            <h2>How Associate Works</h2>
-            <p className="landingHowLead">The brief, the build, the work.</p>
+          {showHowAssociateWorks && (
+            <section id="demos" className="landingSection landingHowSection">
+              <h2>How Associate Works</h2>
+              <p className="landingHowLead">The brief, the build, the work.</p>
 
-            <div className="landingActs">
-              {actSteps.map((step, index) => (
-                <article
-                  key={step.title}
-                  className={`landingAct ${index % 2 === 1 ? "reverse" : ""}`}
-                >
-                  <div className="landingActCopy">
-                    <h3>{step.title}</h3>
-                    <strong>{step.headline}</strong>
-                    <p>{step.body}</p>
-                  </div>
-
-                  <div className="landingActMediaWrap">
-                    <div className={`landingActMedia ${step.mediaType}`}>
-                      <video
-                        className="landingActVideo"
-                        src={step.mediaSrc}
-                        aria-label={step.mediaAlt}
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                        controls
-                      />
+              <div className="landingActs">
+                {actSteps.map((step, index) => (
+                  <article
+                    key={step.title}
+                    className={`landingAct ${index % 2 === 1 ? "reverse" : ""}`}
+                  >
+                    <div className="landingActCopy">
+                      <h3>{step.title}</h3>
+                      <strong>{step.headline}</strong>
+                      <p>{step.body}</p>
                     </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
 
-          <section id="security" className="landingSection">
+                    <div className="landingActMediaWrap">
+                      <div className={`landingActMedia ${step.mediaType}`}>
+                        <video
+                          className="landingActVideo"
+                          src={step.mediaSrc}
+                          aria-label={step.mediaAlt}
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          controls
+                        />
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section id="security" className="landingSection landingSecuritySection">
             <div className="landingSecurityCard">
-              <Lock size={22} strokeWidth={1.6} />
-              <h2>Uncompromising Security.</h2>
-              <p>
-                Associate employs bank-grade encryption and stringent data privacy protocols to ensure confidentiality is never breached.
-              </p>
-              <div className="landingSecurityBadges">
+              <div className="landingSecurityHeader">
+                <span className="landingSecurityIcon">
+                  <Lock size={22} strokeWidth={1.6} />
+                </span>
+                <p className="landingEyebrow">Security</p>
+                <h2>Uncompromising Security.</h2>
+                <p>
+                  Associate employs bank-grade encryption and stringent data privacy protocols to ensure confidentiality is never breached.
+                </p>
+              </div>
+              <div className="landingSecurityBadges" aria-label="Security standards">
                 <span>SOC 2 TYPE II CERTIFIED</span>
                 <span>END-TO-END ENCRYPTION</span>
                 <span>GDPR COMPLIANT</span>
@@ -234,13 +500,14 @@ const Home = () => {
             </div>
           </section>
 
-          <section className="landingSection">
+          <section className="landingSection landingValueSection">
             <div className="landingClosingCard">
+              <p className="landingEyebrow">Value</p>
               <h2>One Lawyer with Associate should feel like Ten.</h2>
               <p>
                 We're building this for the advocate in Bengaluru with forty active matters and no support staff, not just the firms that already have both.
               </p>
-              <button type="button" className="landingCtaButton" onClick={handleLogin}>
+              <button type="button" className="landingCtaButton" onClick={handleSignUp}>
                 Try Associate
               </button>
             </div>

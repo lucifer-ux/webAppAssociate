@@ -24,10 +24,14 @@ const LoginSignUpPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInviteStep, setIsInviteStep] = useState(false);
   const query = new URLSearchParams(location.search);
+  const [pendingInviteToken, setPendingInviteToken] = useState(
+    () => query.get("pendingInviteToken") || "",
+  );
   const authError = query.get("googleAuth") === "error"
     ? query.get("reason") || "Google sign in failed."
     : "";
   const inviteStatus = query.get("invite") || "";
+  const requestedMode = query.get("mode");
   const inviteMessage =
     inviteStatus === "required" || inviteStatus === "missing"
       ? "This email is not invited to Associate."
@@ -40,9 +44,19 @@ const LoginSignUpPage = () => {
   useEffect(() => {
     if (inviteStatus === "pending") {
       setIsInviteStep(true);
+      setPendingInviteToken(query.get("pendingInviteToken") || "");
       void refreshPendingInvite();
     }
-  }, [inviteStatus, refreshPendingInvite]);
+  }, [inviteStatus, location.search, refreshPendingInvite]);
+
+  useEffect(() => {
+    if (requestedMode === "signup" || requestedMode === "login") {
+      setMode(requestedMode);
+      setFormError("");
+      setInviteCode("");
+      setIsInviteStep(false);
+    }
+  }, [requestedMode]);
 
   const submitPasswordForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -59,6 +73,9 @@ const LoginSignUpPage = () => {
       const inviteError = error as Error & { requiresInvite?: boolean };
       if (inviteError.requiresInvite) {
         setIsInviteStep(true);
+        setPendingInviteToken(
+          String((inviteError as Error & { pendingInviteToken?: string }).pendingInviteToken || ""),
+        );
       }
       setFormError(error instanceof Error ? error.message : "Authentication failed.");
     } finally {
@@ -71,7 +88,7 @@ const LoginSignUpPage = () => {
     setFormError("");
     setIsSubmitting(true);
     try {
-      await verifyInviteCode(inviteCode);
+      await verifyInviteCode(inviteCode, pendingInviteToken);
       navigate("/dashboard", { replace: true });
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Invite verification failed.");
@@ -81,9 +98,11 @@ const LoginSignUpPage = () => {
   };
 
   const toggleMode = () => {
-    setMode((current) => (current === "login" ? "signup" : "login"));
+    const nextMode = mode === "login" ? "signup" : "login";
+    setMode(nextMode);
     setFormError("");
     setInviteCode("");
+    navigate(`/login?mode=${nextMode}`, { replace: true });
   };
 
   return (
@@ -131,6 +150,7 @@ const LoginSignUpPage = () => {
                     setIsInviteStep(false);
                     setFormError("");
                     setInviteCode("");
+                    setPendingInviteToken("");
                   }}
                 >
                   Back to sign in

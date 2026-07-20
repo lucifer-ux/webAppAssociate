@@ -1,15 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "./Button";
 import { ArrowUpRight, Trash2 } from "lucide-react";
 import "../componentStyling/ActiveResearch.css";
 import SearchBar, { type SearchBarMode } from "./SearchBar";
-import ChatBoxMatterSection, {
-  type ChatSource,
-  type MatterChatMessage,
-} from "./ChatBoxMatterSection";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { RecentResearchItem } from "./ActiveResearchPage";
 import { buildApiUrl } from "../lib/apiBase";
+import { usePipelines } from "../context/PipelineContext";
 
 type Agent1Output = {
   query_meta: {
@@ -170,12 +167,45 @@ type DeepResearchResponse = {
   };
 };
 
+type DirectResearchAnswer = {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  model?: string;
+  sources?: Array<{
+    title: string;
+    url?: string;
+    detail?: string;
+  }>;
+};
+
+const DIRECT_RESEARCH_STORAGE_KEY = "associate.directResearchConversation.v1";
+const MAX_DIRECT_RESEARCH_MESSAGES = 10;
+const MAX_DIRECT_RESEARCH_CHARS = 8000;
+
+const readDirectResearchConversation = (): DirectResearchAnswer[] => {
+  try {
+    const parsed = JSON.parse(
+      window.sessionStorage.getItem(DIRECT_RESEARCH_STORAGE_KEY) || "[]",
+    );
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (item): item is DirectResearchAnswer =>
+          (item?.role === "user" || item?.role === "assistant") &&
+          typeof item?.content === "string",
+      )
+      .slice(-MAX_DIRECT_RESEARCH_MESSAGES);
+  } catch {
+    return [];
+  }
+};
+
 type ResearchRecord = RecentResearchItem & {
   intakePayload: IntakeResponse | null;
   finalPayload: DeepResearchResponse | null;
   selectedLaneId: string | null;
   clarificationAnswer: string | null;
-  chatMessages?: MatterChatMessage[];
 };
 
 export type SavedResearchApiItem = {
@@ -196,7 +226,6 @@ type ActiveResearchProps = {
   onActiveResearchChange: (id: string | null) => void;
   initialResearches?: SavedResearchApiItem[];
   isStartingFreshResearch?: boolean;
-  conversationOpenRequest?: number;
 };
 
 const THINKING_MESSAGES = {
@@ -211,6 +240,29 @@ const THINKING_MESSAGES = {
     "Synthesizing the answer and formatting authority reasons for display.",
   ],
 } as const;
+
+const RESEARCH_JOB_STAGES = [
+  { key: "queued", label: "Queueing research" },
+  { key: "intake", label: "Classifying the legal question" },
+  { key: "deep_research", label: "Researching authorities" },
+  { key: "saving", label: "Saving the research record" },
+] as const;
+
+const getResearchJobThinking = (stageKey: string | undefined) => {
+  switch (stageKey) {
+    case "deep_research":
+      return THINKING_MESSAGES.deep;
+    case "saving":
+      return [
+        "Packaging the research trail and source list.",
+        "Saving the complete artifact for this account.",
+      ];
+    case "queued":
+      return ["Setting up the research workflow."];
+    default:
+      return THINKING_MESSAGES.intake;
+  }
+};
 
 const formatStrength = (value: string) =>
   value.replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
@@ -252,10 +304,10 @@ const ActiveResearch = ({
   onActiveResearchChange,
   initialResearches = [],
   isStartingFreshResearch = false,
-  conversationOpenRequest = 0,
 }: ActiveResearchProps) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { jobs, startDeepResearchJob } = usePipelines();
   const [researchRuns, setResearchRuns] = useState<ResearchRecord[]>(() =>
     (initialResearches || []).map((item) => ({
       id: String(item.id),
@@ -268,6 +320,12 @@ const ActiveResearch = ({
     })),
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [researchMode, setResearchMode] = useState<SearchBarMode>("deep");
+  const [isNormalResearchLoading, setIsNormalResearchLoading] = useState(false);
+  const [normalResearchMessages, setNormalResearchMessages] = useState<
+    DirectResearchAnswer[]
+  >(readDirectResearchConversation);
+  const [normalResearchError, setNormalResearchError] = useState("");
   const [loadingPhase, setLoadingPhase] = useState<"intake" | "deep" | null>(
     null,
   );
@@ -277,20 +335,55 @@ const ActiveResearch = ({
   const [isSavingResearch, setIsSavingResearch] = useState(false);
   const [isDeletingResearch, setIsDeletingResearch] = useState(false);
   const [runningStepIndex, setRunningStepIndex] = useState(0);
-  const [chatMode, setChatMode] = useState<SearchBarMode>("normal");
-  const [isResearchChatOpen, setIsResearchChatOpen] = useState(false);
+  const [trackedResearchJobId, setTrackedResearchJobId] = useState<string | null>(null);
+  const hasLocalResearchMutation = useRef(false);
+  const hydratedResearchIds = useRef(new Set<string>());
 
-  useEffect(() => {
-    if (conversationOpenRequest > 0) {
-      setIsResearchChatOpen(true);
+  const activeResearchJobs = useMemo(
+    () =>
+      jobs
+        .filter((job) => job.source === "research-deep" && job.status === "running")
+        .sort(
+          (left, right) =>
+            new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+        ),
+    [jobs],
+  );
+  const activeResearchJob = useMemo(() => {
+    if (trackedResearchJobId) {
+      const tracked = jobs.find((job) => job.id === trackedResearchJobId);
+      if (tracked?.source === "research-deep" && tracked.status === "running") {
+        return tracked;
+      }
     }
-  }, [conversationOpenRequest]);
+    const activeQuery = String(
+      researchRuns.find((item) => item.id === activeResearchId)?.query || "",
+    ).trim();
+    return (
+      activeResearchJobs.find((job) => job.title === activeQuery) ||
+      activeResearchJobs[0] ||
+      null
+    );
+  }, [activeResearchId, activeResearchJobs, jobs, researchRuns, trackedResearchJobId]);
+  const isBackgroundResearchRunning = Boolean(activeResearchJob);
+  const isResearchRunning =
+    isLoading || isBackgroundResearchRunning || isNormalResearchLoading;
+  const directResearchCharCount = normalResearchMessages.reduce(
+    (total, message) => total + message.content.length,
+    0,
+  );
+  const directResearchRetentionExceeded =
+    normalResearchMessages.length >= MAX_DIRECT_RESEARCH_MESSAGES ||
+    directResearchCharCount >= MAX_DIRECT_RESEARCH_CHARS;
 
-  const thinkingMessages =
-    loadingPhase === "deep" ? THINKING_MESSAGES.deep : THINKING_MESSAGES.intake;
+  const thinkingMessages = isBackgroundResearchRunning
+    ? getResearchJobThinking(activeResearchJob?.stageKey)
+    : loadingPhase === "deep"
+      ? THINKING_MESSAGES.deep
+      : THINKING_MESSAGES.intake;
 
   useEffect(() => {
-    if (!isLoading) return;
+    if (!isResearchRunning) return;
     let timer = 0;
     const rotate = () => {
       setRunningStepIndex((prev) => (prev + 1) % thinkingMessages.length);
@@ -298,16 +391,97 @@ const ActiveResearch = ({
     };
     timer = window.setTimeout(rotate, 2000 + Math.random() * 2000);
     return () => window.clearTimeout(timer);
-  }, [isLoading, thinkingMessages.length]);
+  }, [isResearchRunning, thinkingMessages.length]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      DIRECT_RESEARCH_STORAGE_KEY,
+      JSON.stringify(normalResearchMessages),
+    );
+  }, [normalResearchMessages]);
+
+  useEffect(() => {
+    if (!isStartingFreshResearch) return;
+    setNormalResearchMessages([]);
+    setNormalResearchError("");
+    setError("");
+    setSaveError("");
+    setSaveSuccess("");
+    setTrackedResearchJobId(null);
+    window.sessionStorage.removeItem(DIRECT_RESEARCH_STORAGE_KEY);
+  }, [isStartingFreshResearch]);
+
+  const hydrateResearchById = async (researchId: string) => {
+    const normalizedId = String(researchId || "").trim();
+    if (!normalizedId || hydratedResearchIds.current.has(normalizedId)) return;
+    try {
+      const response = await fetch(
+        buildApiUrl(`/api/researches/${encodeURIComponent(normalizedId)}`),
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        research?: SavedResearchApiItem;
+      };
+      if (!response.ok || !payload.success || !payload.research) return;
+
+      hydratedResearchIds.current.add(normalizedId);
+      const item = payload.research;
+      const record: ResearchRecord = {
+        id: String(item.id),
+        query: String(item.query || ""),
+        createdAt: String(item.createdAt || new Date().toISOString()),
+        intakePayload: item.intakePayload || null,
+        finalPayload: item.finalPayload || null,
+        selectedLaneId: item.selectedLaneId || null,
+        clarificationAnswer: item.clarificationAnswer || null,
+      };
+      setResearchRuns((current) => {
+        const next = [record, ...current.filter((existing) => existing.id !== record.id)];
+        onRecentResearchesChange(
+          next.map((existing) => ({
+            id: existing.id,
+            query: existing.query,
+            createdAt: existing.createdAt,
+          })),
+        );
+        return next;
+      });
+      onActiveResearchChange(record.id);
+    } catch {
+      // The background job remains available for retry through the jobs panel.
+    }
+  };
+
+  useEffect(() => {
+    if (!activeResearchId || researchRuns.some((item) => item.id === activeResearchId)) {
+      return;
+    }
+    void hydrateResearchById(activeResearchId);
+  }, [activeResearchId, researchRuns]);
+
+  useEffect(() => {
+    if (!trackedResearchJobId) return;
+    const job = jobs.find((item) => item.id === trackedResearchJobId);
+    if (!job || job.status === "failed") {
+      setTrackedResearchJobId(null);
+      return;
+    }
+    if (job.status === "succeeded") {
+      setTrackedResearchJobId(null);
+      if (job.resultId) void hydrateResearchById(job.resultId);
+    }
+  }, [jobs, trackedResearchJobId]);
 
   useEffect(() => {
     const navState = location.state as { autoResearchQuery?: string } | null;
     const autoResearchQuery = navState?.autoResearchQuery?.trim();
     if (!autoResearchQuery || isLoading) return;
 
-    void runIntake(autoResearchQuery);
+    void startDeepResearchJob(autoResearchQuery).then((jobId) => {
+      setTrackedResearchJobId(jobId);
+    });
     navigate(location.pathname, { replace: true, state: null });
-  }, [location.pathname, location.state, isLoading]);
+  }, [location.pathname, location.state, isLoading, navigate, startDeepResearchJob]);
 
   useEffect(() => {
     if (initialResearches.length) return;
@@ -324,7 +498,7 @@ const ActiveResearch = ({
         if (!response.ok || !payload?.success || !Array.isArray(payload.researches)) {
           return;
         }
-        if (cancelled) return;
+        if (cancelled || hasLocalResearchMutation.current) return;
         const nextRuns: ResearchRecord[] = payload.researches.map((item) => ({
           id: String(item.id),
           query: String(item.query || ""),
@@ -333,7 +507,6 @@ const ActiveResearch = ({
           finalPayload: item.finalPayload || null,
           selectedLaneId: item.selectedLaneId || null,
           clarificationAnswer: item.clarificationAnswer || null,
-          chatMessages: [],
         }));
         setResearchRuns(nextRuns);
         const nextRecent = nextRuns.map((item) => ({
@@ -354,9 +527,7 @@ const ActiveResearch = ({
       cancelled = true;
     };
   }, [
-    activeResearchId,
     initialResearches,
-    isStartingFreshResearch,
     onActiveResearchChange,
     onRecentResearchesChange,
   ]);
@@ -374,9 +545,6 @@ const ActiveResearch = ({
       prev.map((item) => (item.id === id ? updater(item) : item)),
     );
   };
-
-  const createChatMessageId = () =>
-    `research_chat_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 
   const removeResearchRecord = (id: string) => {
     setResearchRuns((prev) => {
@@ -449,6 +617,7 @@ const ActiveResearch = ({
     recordId?: string,
     clarificationAnswer?: string,
   ) {
+    hasLocalResearchMutation.current = true;
     setError("");
     setLoadingPhase("intake");
     setRunningStepIndex(0);
@@ -502,7 +671,6 @@ const ActiveResearch = ({
           finalPayload: null,
           selectedLaneId: nextSelectedLaneId,
           clarificationAnswer: clarificationAnswer || null,
-          chatMessages: [],
         };
 
         setResearchRuns((prev) => [item, ...prev]);
@@ -521,110 +689,82 @@ const ActiveResearch = ({
     }
   }
 
-  const handleNormalChat = async (query: string) => {
-    const trimmedQuery = query.trim();
-    if (!trimmedQuery) return;
-
-    let targetId = activeResearch?.id || null;
-    if (!targetId) {
-      const record: ResearchRecord = {
-        id: crypto.randomUUID(),
-        query: trimmedQuery,
-        createdAt: new Date().toISOString(),
-        intakePayload: null,
-        finalPayload: null,
-        selectedLaneId: null,
-        clarificationAnswer: null,
-        chatMessages: [],
-      };
-      targetId = record.id;
-      setResearchRuns((prev) => [record, ...prev]);
-      onRecentResearchesChange([
-        { id: record.id, query: record.query, createdAt: record.createdAt },
-        ...recentResearches,
-      ]);
-      onActiveResearchChange(record.id);
+  const handleSubmitQuery = async (query: string, mode: SearchBarMode) => {
+    if (mode === "deep") {
+      setNormalResearchError("");
+      onActiveResearchChange(null);
+      const jobId = await startDeepResearchJob(query);
+      setTrackedResearchJobId(jobId);
+      return;
     }
 
-    const userMessage = {
-      id: createChatMessageId(),
-      role: "user" as const,
-      text: trimmedQuery,
+    if (directResearchRetentionExceeded) return;
+    setNormalResearchError("");
+    onActiveResearchChange(null);
+    const userMessage: DirectResearchAnswer = {
+      role: "user",
+      content: query,
+      createdAt: new Date().toISOString(),
     };
-    const baseRecord =
-      researchRuns.find((item) => item.id === targetId) || activeResearch || null;
-    const existingMessages = Array.isArray(baseRecord?.chatMessages)
-      ? baseRecord.chatMessages
-      : [];
-
-    setError("");
-    setIsResearchChatOpen(true);
-    setIsLoading(true);
-    setLoadingPhase(null);
-    updateResearchRecord(targetId, (item) => ({
-      ...item,
-      query: item.query || trimmedQuery,
-      chatMessages: [...(item.chatMessages || []), userMessage],
+    const history = normalResearchMessages.map((message) => ({
+      role: message.role,
+      content: message.content,
     }));
-
+    setNormalResearchMessages((current) => [...current, userMessage]);
+    setIsNormalResearchLoading(true);
     try {
       const response = await fetch(buildApiUrl("/api/agent/research-chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: trimmedQuery,
-          history: existingMessages.map((message) => ({
-            role: message.role,
-            content: message.text,
-          })),
-          researchContext: {
-            query: baseRecord?.query || trimmedQuery,
-            intakePayload: baseRecord?.intakePayload || null,
-            finalPayload: baseRecord?.finalPayload || null,
-            selectedLaneId: baseRecord?.selectedLaneId || null,
-          },
+          message: query,
+          history,
+          researchContext: activeResearch
+            ? {
+                query: activeResearch.query,
+                intake: activeResearch.intakePayload,
+                finalResearch: activeResearch.finalPayload,
+              }
+            : null,
         }),
       });
-
       const payload = (await response.json()) as {
         success?: boolean;
         answer?: string;
-        sources?: ChatSource[];
+        model?: string;
+        sources?: DirectResearchAnswer["sources"];
         error?: string;
       };
-
-      if (!response.ok || !payload?.success || !payload.answer) {
-        throw new Error(payload?.error || "Normal chat failed.");
+      if (!response.ok || !payload.success || !payload.answer) {
+        throw new Error(payload.error || "Normal research failed.");
       }
-
-      updateResearchRecord(targetId, (item) => ({
-        ...item,
-        chatMessages: [
-          ...(item.chatMessages || []),
-          {
-            id: createChatMessageId(),
-            role: "assistant",
-            text: payload.answer || "",
-            sources: Array.isArray(payload.sources) ? payload.sources : [],
-          },
-        ],
-      }));
-    } catch (chatError) {
-      setError(
-        chatError instanceof Error ? chatError.message : "Normal chat failed.",
+      const answer = payload.answer;
+      setNormalResearchMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: answer,
+          createdAt: new Date().toISOString(),
+          model: payload.model || "deepseek/deepseek-v4-pro",
+          sources: Array.isArray(payload.sources) ? payload.sources : [],
+        },
+      ]);
+    } catch (normalError) {
+      setNormalResearchError(
+        normalError instanceof Error ? normalError.message : "Normal research failed.",
       );
     } finally {
-      setIsLoading(false);
+      setIsNormalResearchLoading(false);
     }
   };
 
-  const handleSubmitQuery = async (query: string, mode: SearchBarMode) => {
-    setChatMode(mode);
-    if (mode === "deep") {
-      await runIntake(query);
-      return;
-    }
-    await handleNormalChat(query);
+  const handleStartNewNormalResearch = () => {
+    setNormalResearchMessages([]);
+    setNormalResearchError("");
+    setTrackedResearchJobId(null);
+    onActiveResearchChange(null);
+    navigate(location.pathname, { replace: true, state: null });
+    window.sessionStorage.removeItem(DIRECT_RESEARCH_STORAGE_KEY);
   };
 
   const handleSelectLane = (laneId: string) => {
@@ -728,7 +868,6 @@ const ActiveResearch = ({
   const agent1 = intake?.agent_1_output;
   const agent2 = intake?.agent_2_output;
   const finalResponse = activeResearch?.finalPayload?.final_response || null;
-  const researchChatMessages = activeResearch?.chatMessages || [];
   const visibleDiscoveryCases = (agent1?.search_results.case_law || []).filter(
     (item) => !isIndianKanoonUrl(item.source_url),
   );
@@ -739,15 +878,24 @@ const ActiveResearch = ({
     (agent2?.lanes || []).find(
       (lane) => lane.lane_id === activeResearch?.selectedLaneId,
     ) || null;
-  const canShowContinueResearchButton = Boolean(activeResearch && !isLoading);
-  const workspaceTitle = getResearchWorkspaceTitle(activeResearch?.query || "");
+  const canShowContinueResearchButton = Boolean(activeResearch && !isResearchRunning);
+  const workspaceTitle =
+    isStartingFreshResearch && !activeResearchJob && !activeResearch
+      ? "New research"
+      : getResearchWorkspaceTitle(activeResearchJob?.title || activeResearch?.query || "");
+  const activeJobStageIndex = Math.max(
+    0,
+    RESEARCH_JOB_STAGES.findIndex((stage) => stage.key === activeResearchJob?.stageKey),
+  );
 
   return (
     <>
       <section className="researchWorkspace enhancedResearchWorkspace searchOnlyWorkspace">
         <div className="researchHead">
-          <h1 title={activeResearch?.query || workspaceTitle}>{workspaceTitle}</h1>
-          <p>Discovery, Pathway Selection, and Targeted Research</p>
+          <div className="researchTitleBlock">
+            <p>Discovery, Pathway Selection, and Targeted Research</p>
+            <h1 title={activeResearch?.query || workspaceTitle}>{workspaceTitle}</h1>
+          </div>
           <div className="researchSaveRow">
             <Button
               type="button"
@@ -780,7 +928,94 @@ const ActiveResearch = ({
         </div>
 
         <div className="researchOutputPanel chatOnlyPanel">
-          {isLoading && (
+          {normalResearchMessages.length > 0 && (
+            <article className="researchResultCard researchDirectConversation">
+              {normalResearchMessages.map((message) => (
+                <section
+                  className={`chatMessage ${
+                    message.role === "user" ? "userMessage" : "llmMessage"
+                  }`}
+                  key={`${message.createdAt}-${message.role}`}
+                >
+                  <h4>{message.role === "user" ? "User" : "Associate"}</h4>
+                  <p>{message.content}</p>
+                  {message.role === "assistant" && message.sources?.length ? (
+                      <ul className="perplexityStyleSources researchDirectSources">
+                        {message.sources.map((source, index) => (
+                          <li key={`${source.url || source.title}-${index}`}>
+                            {source.url ? (
+                              <a href={source.url} target="_blank" rel="noreferrer">
+                                <ArrowUpRight size={16} />
+                                <span>{source.title}</span>
+                                {source.detail ? <small>{source.detail}</small> : null}
+                              </a>
+                            ) : (
+                              <span>{source.title}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                  ) : null}
+                </section>
+              ))}
+              {isNormalResearchLoading && (
+                <section className="chatMessage llmMessage">
+                  <h4>Associate</h4>
+                  <p>Checking approved Indian legal sources and preparing a direct answer.</p>
+                </section>
+              )}
+            </article>
+          )}
+
+          {researchMode === "normal" && directResearchRetentionExceeded && (
+            <section className="researchRetentionCard" aria-live="polite">
+              <p>
+                This research conversation has reached its context limit. Start a new
+                research thread to continue with a clean legal record.
+              </p>
+              <Button type="button" onClick={handleStartNewNormalResearch}>
+                Start new research
+              </Button>
+            </section>
+          )}
+
+          {activeResearchJob && (
+            <article className="researchLiveConversation" aria-live="polite">
+              <section className="chatMessage userMessage">
+                <h4>User</h4>
+                <p>{activeResearchJob.title}</p>
+              </section>
+              <section className="chatMessage llmMessage researchLiveStatus">
+                <div className="researchLiveStatusHeader">
+                  <span className="researchLiveIndicator" aria-hidden="true" />
+                  <h4>Associate is researching</h4>
+                  <span>{Math.round(activeResearchJob.progress)}%</span>
+                </div>
+                <p>{activeResearchJob.statusMessage || activeResearchJob.stage}</p>
+                <ol className="thinkingSteps researchJobSteps">
+                  {RESEARCH_JOB_STAGES.map((stage, index) => (
+                    <li
+                      key={stage.key}
+                      className={
+                        index < activeJobStageIndex
+                          ? "done"
+                          : index === activeJobStageIndex
+                            ? "running"
+                            : "pending"
+                      }
+                    >
+                      {stage.label}
+                    </li>
+                  ))}
+                </ol>
+                <p className="researchLiveThought">
+                  {thinkingMessages[runningStepIndex % thinkingMessages.length]}
+                </p>
+              </section>
+            </article>
+          )}
+
+          {isLoading && !activeResearchJob && (
             <div className="thinkingCard" aria-live="polite">
               <h3>
                 {loadingPhase === "deep"
@@ -791,35 +1026,22 @@ const ActiveResearch = ({
             </div>
           )}
 
-          {!isLoading && !error && !activeResearch && (
+          {!isResearchRunning && !error && !activeResearch && (
             <div className="emptyWorkspaceCard chatOnlyEmpty">
               <p>
-                Ask a legal question, or switch to Deep Research to run
-                discovery, choose a lane, and continue into full research.
+                Ask a legal question to run deep research, choose a lane, and
+                continue into full research.
               </p>
             </div>
           )}
 
-          {!isLoading && error && <p className="researchErrorState">{error}</p>}
+          {!isResearchRunning && error && <p className="researchErrorState">{error}</p>}
+          {!isResearchRunning && normalResearchError && (
+            <p className="researchErrorState">{normalResearchError}</p>
+          )}
 
           {!isLoading && !error && activeResearch && (
             <article className="researchResultCard">
-              {researchChatMessages.length ? (
-                <section className="chatMessage llmMessage">
-                  <h4>Conversation</h4>
-                  <div className="researchConversation">
-                    {researchChatMessages.map((message) => (
-                      <article
-                        className={`researchConversationMessage is-${message.role}`}
-                        key={message.id}
-                      >
-                        <p>{message.text}</p>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-
               <section className="chatMessage userMessage">
                 <h4>User</h4>
                 <p>{activeResearch.query}</p>
@@ -945,7 +1167,7 @@ const ActiveResearch = ({
                     onClick={() => {
                       void handleContinueResearch();
                     }}
-                    disabled={!activeResearch?.selectedLaneId || isLoading}
+                    disabled={!activeResearch?.selectedLaneId || isResearchRunning}
                   >
                     Continue research
                   </Button>
@@ -1038,26 +1260,18 @@ const ActiveResearch = ({
       <SearchBar
         activeSection={activeSection}
         onSubmitQuery={handleSubmitQuery}
-        isSubmitting={isLoading}
-        mode={chatMode}
-        onModeChange={setChatMode}
-        placeholderOverride="Ask a legal question or switch to Deep Research..."
-      />
-      <ChatBoxMatterSection
-        open={isResearchChatOpen}
-        matterTitle={workspaceTitle}
-        messages={researchChatMessages}
-        chatMode="normal"
-        isSubmittingChat={isLoading && chatMode === "normal"}
-        chatError={chatMode === "normal" ? error : ""}
-        onClose={() => setIsResearchChatOpen(false)}
-        onSubmitChat={(message) => handleNormalChat(message)}
-        onModeChange={(mode) => {
-          setChatMode(mode);
-          if (mode === "deep") {
-            setIsResearchChatOpen(false);
-          }
-        }}
+        isSubmitting={isResearchRunning}
+        isSubmissionBlocked={
+          researchMode === "normal" && directResearchRetentionExceeded
+        }
+        mode={researchMode}
+        onModeChange={setResearchMode}
+        showModeSelector
+        placeholderOverride={
+          researchMode === "deep"
+            ? "Start deep legal research..."
+            : "Ask a question about Indian law..."
+        }
       />
     </>
   );

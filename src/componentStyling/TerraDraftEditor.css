@@ -1,0 +1,715 @@
+.terraDraftingPage {
+  min-height: 100vh;
+  background: #faf6f0;
+  color: #2e3230;
+}
+
+.terraDraftingPage::before {
+  display: none;
+}
+
+.terraDraftingPage,
+.terraDraftingPage button,
+.terraDraftingPage input,
+.terraDraftingPage select,
+.terraDraftingPage textarea {
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+}
+
+.terraDraftingPage h1,
+.terraDraftingPage h2,
+.terraDraftingPage h3,
+.terraDraftingPage .draftChromeBrand,
+.terraDraftingPage .draftChromeTitleInput,
+.terraDraftingPage .draftPaperEditor,
+.terraDraftingPage .draftPaperEditor h1,
+.terraDraftingPage .draftPaperEditor h2,
+.terraDraftingPage .draftPaperEditor blockquote,
+.terraDraftingPage .draftTemplateHero h1,
+.terraDraftingPage .draftTemplateCard strong,
+.terraDraftingPage .draftMatterContextPanel h2 {
+  font-family: "Literata", "Newsreader", Georgia, serif;
+}
+
+.terraDraftingPage .homeDashTopBar,
+.terraDraftingPage .draftingChromeBar,
+.terraDraftingPage .draftChromePrimaryRow,
+.terraDraftingPage .draftChromeMenuRow,
+.terraDraftingPage .draftChromeToolbar {
+  background: #faf6f0;
+}
+
+.terraDraftingPage .draftingChromeBar {
+  border-bottom: 1px solid #c4c8bc;
+  box-shadow: 0 4px 20px rgba(46, 50, 48, 0.02);
+}
+
+.terraDraftingPage .draftChromePrimaryRow,
+.terraDraftingPage .draftChromeMenuRow,
+.terraDraftingPage .draftChromeToolbar {
+  width: 100%;
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.terraDraftingPage .draftChromePrimaryRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.95fr) minmax(360px, 1fr) minmax(
+      260px,
+      1.05fr
+    );
+  align-items: center;
+  gap: 16px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #c4c8bc;
+}
+
+.terraDraftingPage .draftChromePrimaryLeft {
+  gap: 14px;
+  overflow: hidden;
+}
+
+.terraDraftingPage .sidebarToggleBtn,
+.terraDraftingPage .topBarHomeBtn,
+.terraDraftingPage .draftChromeActionIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: #f0ece4;
+  color: #6b6358;
+}
+
+.terraDraftingPage .sidebarToggleBtn:hover,
+.terraDraftingPage .topBarHomeBtn:hover,
+.terraDraftingPage .draftChromeActionIcon:hover {
+  background: #eae6de;
+  color: #4a7c59;
+}
+
+.terraDraftingPage .draftChromeAvatarBtn {
+  gap: 8px;
+  border-left: 0;
+  padding-left: 0;
+}
+
+.terraDraftingPage .draftChromeAvatarBtn .productHeaderAvatar {
+  width: 36px;
+  height: 36px;
+  background: #f0ece4;
+  color: #6b6358;
+}
+
+.terraDraftingPage .draftChromeAvatarBtn:hover .productHeaderAvatar {
+  background: #eae6de;
+  color: #4a7c59;
+}
+
+.terraDraftingPage .draftChromeAvatarBtn .productHeaderUserName {
+  display: none;
+}
+
+.terraDraftingPage .draftChromeTitleBlock {
+  gap: 2px;
+}
+
+.terraDraftingPage .draftChromeTitleInput {
+  min-width: 0;
+  max-width: min(34vw, 460px);
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #2e3230;
+  line-height: 1.25;
+}
+
+.terraDraftingPage .draftChromeSaved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b6358;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.terraDraftingPage .draftChromeSaved::before {
+  content: "";
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: #78a886;
+  box-shadow: 0 0 0 3px rgba(120, 168, 134, 0.18);
+}
+
+.terraDraftingPage .draftChromePrimaryCenter {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.terraDraftingPage .draftChromeBrand {
+  border: 0;
+  background: transparent;
+  color: #4a7c59;
+  font-size: 1.95rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  cursor: pointer;
+}
+
+.terraDraftingPage .draftChromeSectionRouteNav {
+  gap: 16px;
+  margin-right: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.terraDraftingPage .draftChromeSectionRouteNav .sectionRouteBtn {
+  min-height: auto;
+  padding: 0 0 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: #6b6358;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.terraDraftingPage .draftChromeSectionRouteNav .sectionRouteBtn:hover {
+  background: transparent;
+  border-color: transparent;
+  color: #4a7c59;
+}
+
+.terraDraftingPage .draftChromeSectionRouteNav .sectionRouteBtn.active {
+  background: transparent;
+  border-color: #4a7c59;
+  color: #4a7c59;
+}
+
+.terraDraftingPage .draftingTopRight {
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.terraDraftingPage .draftChromeStatusCluster {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  margin-right: 2px;
+  min-width: 88px;
+}
+
+.terraDraftingPage .draftRoleChip,
+.terraDraftingPage .creditBalanceChip {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.terraDraftingPage .draftRoleChip {
+  color: #2e3230;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+}
+
+.terraDraftingPage .creditBalanceChip {
+  color: #6b6358;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+.terraDraftingPage .draftChromeDividerBefore {
+  position: relative;
+  margin-left: 10px;
+}
+
+.terraDraftingPage .draftChromeDividerBefore::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 1px;
+  height: 24px;
+  background: #c4c8bc;
+  transform: translateY(-50%);
+}
+
+.terraDraftingPage .draftingShareBtn,
+.terraDraftingPage .draftRequestEditBtn,
+.terraDraftingPage .draftGenerateFormatBtn {
+  min-height: 38px;
+  border-radius: 0.625rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+@media (max-width: 1500px) {
+  .terraDraftingPage .draftChromePrimaryRow {
+    grid-template-columns: minmax(210px, 0.9fr) minmax(300px, 0.8fr) minmax(
+        320px,
+        1.2fr
+      );
+  }
+
+  .terraDraftingPage .draftChromeBrand {
+    font-size: 1.75rem;
+  }
+
+  .terraDraftingPage .draftChromeSectionRouteNav {
+    display: none;
+  }
+
+  .terraDraftingPage .draftGenerateFormatBtn,
+  .terraDraftingPage .draftRequestEditBtn {
+    display: none;
+  }
+}
+
+.terraDraftingPage .draftingShareBtn,
+.terraDraftingPage .draftRequestEditBtn {
+  border-color: #4a7c59;
+  background: #4a7c59;
+  color: #fff;
+}
+
+.terraDraftingPage .draftGenerateFormatBtn {
+  border-color: #c4a66a;
+  background: #c4a66a;
+  color: #221a05;
+}
+
+.terraDraftingPage .draftChromeMenuRow {
+  gap: 18px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.terraDraftingPage .draftingMenuBtn {
+  padding: 4px 0;
+  color: #4a4e4a;
+  font-size: 0.92rem;
+}
+
+.terraDraftingPage .draftingMenuBtn:hover {
+  background: transparent;
+  color: #4a7c59;
+}
+
+.terraDraftingPage .draftChromeToolbar {
+  gap: 12px;
+  padding-top: 10px;
+  padding-bottom: 12px;
+  border-top: 1px solid #e4e0d8;
+}
+
+.terraDraftingPage .draftingToolbarGroup {
+  gap: 6px;
+  border-right-color: #c4c8bc;
+}
+
+.terraDraftingPage .toolbarIconBtn {
+  border-radius: 0.5rem;
+  color: #6b6358;
+}
+
+.terraDraftingPage .toolbarIconBtn:hover {
+  background: #eae6de;
+  color: #2e3230;
+}
+
+.terraDraftingPage .toolbarIconBtn[data-active="true"],
+.terraDraftingPage .toolbarColorBtn[data-active="true"] {
+  background: #e4e0d8;
+  box-shadow: inset 0 0 0 1px #78a886;
+  color: #2e3230;
+}
+
+.terraDraftingPage .toolbarSelectWrap select,
+.terraDraftingPage .toolbarSizeControl {
+  border-color: #c4c8bc;
+  background: #fff;
+  color: #2e3230;
+  border-radius: 0.5rem;
+}
+
+.terraDraftingPage .toolbarSizeControl input {
+  color: #2e3230;
+}
+
+.terraDraftingPage .toolbarColorBtn {
+  width: 18px;
+  height: 18px;
+  border-color: rgba(116, 121, 110, 0.35);
+}
+
+.terraDraftingPage .terraDraftingMain.draftingMain {
+  padding-top: 174px;
+  padding-right: 0;
+  background: #f0ece4;
+}
+
+.terraDraftingPage .terraDraftingMain.draftingTemplateMain {
+  background: #faf6f0;
+}
+
+.terraDraftingPage .draftingCanvasShell {
+  min-height: calc(100vh - 174px);
+}
+
+.terraDraftingPage .draftingCanvasArea.soloCanvas {
+  display: grid;
+  grid-template-columns: minmax(23rem, 29rem) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+}
+
+.terraDraftingPage .draftNavigatorRail {
+  width: 100%;
+  min-width: 23rem;
+  flex: 0 0 23rem;
+  position: relative;
+  top: auto;
+  align-self: stretch;
+  min-height: calc(100vh - 174px);
+  max-height: none;
+  gap: 0;
+  padding: 38px 18px 40px;
+  background: #f5f1ea;
+  border-right: 1px solid #c4c8bc;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.terraDraftingPage .draftNavigatorCard {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.terraDraftingPage .draftNavigatorCard + .draftNavigatorCard {
+  margin-top: 28px;
+}
+
+.terraDraftingPage .draftTemplateEyebrow,
+.terraDraftingPage .draftNavigatorCard .draftTemplateEyebrow {
+  margin-bottom: 12px;
+  color: #705c30;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+}
+
+.terraDraftingPage .draftNavigatorList {
+  max-height: none;
+  gap: 4px;
+  overflow: visible;
+}
+
+.terraDraftingPage .draftNavigatorItem.buttonStyle,
+.terraDraftingPage .draftNavigatorItem {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 0.625rem;
+  color: #4a4e4a;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.terraDraftingPage .draftNavigatorItem:hover {
+  background: #f0ece4;
+  color: #2e3230;
+}
+
+.terraDraftingPage .draftCommentRail {
+  width: 100%;
+  min-width: 0;
+  padding-top: 26px;
+}
+
+.terraDraftingPage .draftCommentComposerInline,
+.terraDraftingPage .commentInlineList {
+  width: 100%;
+  min-width: 0;
+  gap: 14px;
+}
+
+.terraDraftingPage .inlineCommentCard,
+.terraDraftingPage .draftCommentComposerInline textarea,
+.terraDraftingPage .composerExcerptLine,
+.terraDraftingPage .draftInsightCard,
+.terraDraftingPage .draftFindPanel,
+.terraDraftingPage .draftFormatProposal,
+.terraDraftingPage .draftAskAiPanel,
+.terraDraftingPage .singleDraftFormattingPopup {
+  border: 1px solid #c4c8bc;
+  background: rgba(250, 246, 240, 0.96);
+  box-shadow: 0 12px 28px rgba(46, 50, 48, 0.08);
+}
+
+.terraDraftingPage .inlineCommentCard.active {
+  border-color: #78a886;
+  background: #fff;
+  box-shadow: 0 16px 32px rgba(74, 124, 89, 0.12);
+}
+
+.terraDraftingPage .draftMetaBadge {
+  border-color: #d4ccbf;
+  background: #f0e8db;
+  color: #5e5548;
+}
+
+.terraDraftingPage .commentInlineActionBtn,
+.terraDraftingPage .draftFormatProposalActions button.isPrimary {
+  border-color: #4a7c59;
+  background: #4a7c59;
+  color: #fff;
+}
+
+.terraDraftingPage .commentInlineSecondaryBtn,
+.terraDraftingPage .draftFormatProposalActions button {
+  border-color: #c4c8bc;
+  background: #fff;
+  color: #4a4e4a;
+}
+
+.terraDraftingPage .draftPaperSheet.compact {
+  width: min(850px, calc(100% - 64px));
+  max-width: none;
+  min-height: 1100px;
+  margin: 48px auto 64px 40px;
+  border: 0;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgba(196, 200, 188, 0.2),
+    0 4px 24px rgba(46, 50, 48, 0.06);
+}
+
+.terraDraftingPage .draftHeaderZone,
+.terraDraftingPage .draftFooterZone {
+  left: 80px;
+  right: 80px;
+  border-color: #e4e0d8;
+}
+
+.terraDraftingPage .draftHeaderZone {
+  top: 54px;
+}
+
+.terraDraftingPage .draftFooterZone {
+  bottom: 44px;
+}
+
+.terraDraftingPage .draftHeaderZone input,
+.terraDraftingPage .draftFooterZone input {
+  color: #6b6358;
+}
+
+.terraDraftingPage .draftPaperEditor {
+  min-height: 1100px;
+  padding: 144px 80px 120px;
+  color: #4a4e4a;
+  font-size: 1.125rem;
+  line-height: 1.7;
+}
+
+.terraDraftingPage .draftPaperEditor h1,
+.terraDraftingPage .draftTitleNode {
+  margin-bottom: 2rem;
+  color: #2e3230;
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.terraDraftingPage .draftPaperEditor h2 {
+  color: #2e3230;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.terraDraftingPage .draftPaperEditor p,
+.terraDraftingPage .draftPaperEditor li,
+.terraDraftingPage .draftPaperEditor blockquote {
+  font-size: 1.125rem;
+  color: #4a4e4a;
+}
+
+.terraDraftingPage .draftPaperEditor blockquote,
+.terraDraftingPage .draftPaperEditor .draftAttribution {
+  border-left-color: #4a7c59;
+  background: #f5f1ea;
+}
+
+.terraDraftingPage .draftPaperEditor th {
+  background: #f0ece4;
+}
+
+.terraDraftingPage .draftPaperEditor .draftPlaceholder,
+.terraDraftingPage .draftPaperEditor .draftBlankField {
+  background: #f8e0a8;
+  color: #554020;
+}
+
+.terraDraftingPage .draftSelectionBubble {
+  right: -30px;
+  border-color: #c4c8bc;
+  background: rgba(250, 246, 240, 0.98);
+}
+
+.terraDraftingPage .draftSelectionBubble button {
+  color: #4a7c59;
+}
+
+.terraDraftingPage .draftSelectionBubble button:hover {
+  background: #eae6de;
+}
+
+.terraDraftingPage .draftFindPanelHeader strong,
+.terraDraftingPage .draftInsightGroup h4,
+.terraDraftingPage .inlineCommentCard strong {
+  color: #5e5548;
+}
+
+.terraDraftingPage .draftAcceptedChangesBar {
+  top: 184px;
+  border-color: #dcc48e;
+  background: #f8e0a8;
+  color: #554020;
+  box-shadow: 0 10px 30px rgba(112, 92, 48, 0.12);
+}
+
+.terraDraftingPage .draftAskAiDock {
+  right: 32px;
+  bottom: 32px;
+}
+
+.terraDraftingPage .draftAskAiButton {
+  min-width: 160px;
+  min-height: 56px;
+  border: 0;
+  border-radius: 0.875rem;
+  background: #4a7c59;
+  color: #fff;
+  box-shadow: 0 8px 30px rgba(74, 124, 89, 0.3);
+  font-weight: 800;
+}
+
+.terraDraftingPage .draftAskAiButton:hover {
+  background: #2a6038;
+  transform: translateY(-1px);
+}
+
+.terraDraftingPage .draftAskAiHeader h2,
+.terraDraftingPage .singleDraftFormattingCopy h2,
+.terraDraftingPage .draftFormatProposal h2 {
+  color: #2e3230;
+  font-family: "Literata", "Newsreader", Georgia, serif;
+}
+
+.terraDraftingPage .draftAskAiPanel textarea,
+.terraDraftingPage .draftFormatQuestionInput,
+.terraDraftingPage .draftFindPanel input {
+  border-color: #c4c8bc;
+  background: #fff;
+  color: #2e3230;
+}
+
+.terraDraftingPage .draftFormatProposalReveal,
+.terraDraftingPage .draftFormatProposalClose {
+  border-color: #c4c8bc;
+  background: #faf6f0;
+  color: #6b6358;
+}
+
+.terraDraftingPage .commentDetailModal {
+  border-color: #c4c8bc;
+  background: #faf6f0;
+}
+
+@media (max-width: 1180px) {
+  .terraDraftingPage .draftChromePrimaryRow {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
+  }
+
+  .terraDraftingPage .draftChromePrimaryCenter {
+    order: 3;
+  }
+
+  .terraDraftingPage .draftingTopRight {
+    flex-wrap: wrap;
+  }
+
+  .terraDraftingPage .terraDraftingMain.draftingMain {
+    padding-top: 228px;
+  }
+
+  .terraDraftingPage .draftingCanvasShell {
+    min-height: calc(100vh - 228px);
+  }
+
+  .terraDraftingPage .draftNavigatorRail {
+    top: 228px;
+    max-height: calc(100vh - 228px);
+  }
+}
+
+@media (max-width: 960px) {
+  .terraDraftingPage .draftChromeSectionRouteNav {
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .terraDraftingPage .draftingCanvasArea.soloCanvas {
+    display: block;
+  }
+
+  .terraDraftingPage .draftNavigatorRail {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid #c4c8bc;
+  }
+
+  .terraDraftingPage .draftPaperSheet.compact {
+    max-width: calc(100vw - 32px);
+    width: calc(100vw - 32px);
+    margin: 24px auto 40px;
+  }
+
+  .terraDraftingPage .draftPaperEditor {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  .terraDraftingPage .draftHeaderZone,
+  .terraDraftingPage .draftFooterZone {
+    left: 32px;
+    right: 32px;
+  }
+}

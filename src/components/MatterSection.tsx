@@ -1,4 +1,5 @@
 import "../componentStyling/MatterSection.css";
+import "../componentStyling/TerraMatterWorkspace.css";
 import Button from "./Button";
 import { UiButton, UiInput } from "./ui/Primitives";
 import {
@@ -25,7 +26,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  type AtlasBaseRecognitionCandidate,
   type AtlasBaseRecognitionResult,
   type AtlasCaseResearchResult,
   type AtlasDeciderResearchResult,
@@ -39,15 +39,19 @@ import {
   type ClarificationCheckpoint,
   type ClauseItem,
   type ContextCoreMatterState,
+  type EvidenceReference,
   type FrontendBriefArtifact,
   type MatterDraftRecommendation,
   type MatterDraftRecommendations,
+  type MatterUnderstandingV2,
   type MatterProcessedResult,
+  type MatterRecord,
   type MatterSignalSourceRef,
   type ObligationMapResult,
   type PageAwareBlock,
   type SectionRiskMapResult,
 } from "../context/MatterStoreContext";
+import { usePipelines } from "../context/PipelineContext";
 import Loader from "./Loader";
 import UploadPopUp, { type UploadPopupValidationItem } from "./UploadPopUp";
 import { type SearchBarMode } from "./SearchBar";
@@ -56,18 +60,22 @@ import ChatBoxMatterSection, {
   type MatterChatMessage,
 } from "./ChatBoxMatterSection";
 import {
-  cancelMatterDraftGeneration,
-  continueMatterDraftGeneration,
   getDraftRecommendations,
+  listDrafts,
   refreshDraftRecommendations,
-  startDraftRecommendation,
-  type DraftGenerationCheckpoint,
+  type DraftSummary,
 } from "./draftingApi";
 import { buildApiUrl } from "../lib/apiBase";
+import {
+  fetchCreditBalance,
+  getCachedCreditBalance,
+  setCachedCreditBalance,
+} from "../lib/creditCache";
 import {
   createMockMatterScenario,
   deleteMockMatterResult,
   isMockMatterId,
+  loadMockMatterResults,
   loadMockModeEnabled,
   saveMockModeEnabled,
   upsertMockMatterResult,
@@ -98,6 +106,20 @@ type AnalysisProgressMessage = {
   tone: "done" | "current" | "waiting";
   text: string;
   rotationMessages: string[];
+};
+
+type AtlasLiveEvent = {
+  id: string;
+  type: string;
+  matterId: string;
+  createdAt: string;
+  payload?: {
+    message?: string;
+    stage?: string;
+    progress?: AtlasCaseResearchResult["progress"] | null;
+    rankedCandidates?: AtlasCaseResearchResult["rankedCandidates"];
+    [key: string]: unknown;
+  };
 };
 
 type UploadPopupMode = "create" | "append";
@@ -140,6 +162,7 @@ const MATTER_UPLOAD_MAX_PAGES = 20;
 const GROUND_ANALYSIS_INITIAL_FACT_COUNT = 3;
 const MATTER_JOB_POLL_INTERVAL_MS = 5000;
 const GROUND_ANALYSIS_POLL_INTERVAL_MS = 5000;
+const ATLAS_STATE_POLL_INTERVAL_MS = 10000;
 const CLASSIFICATION_CONTINUATION_POLL_ATTEMPTS = 36;
 
 const clipText = (value: string, limit = 180) => {
@@ -150,23 +173,329 @@ const clipText = (value: string, limit = 180) => {
   return `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 };
 
-const getDraftCheckpointEyebrow = (
-  checkpoint: DraftGenerationCheckpoint | null,
-) => {
-  const status = String(checkpoint?.status || checkpoint?.readinessStatus || "").trim();
-  if (status === "review_ready_with_optional_inputs" || status === "review_ready") {
-    return "Review draft available";
-  }
-  if (status === "blocked") {
-    return "Draft blocked";
-  }
-  return "Input required";
-};
-
 const normalizeInline = (value: string) =>
   String(value || "")
     .replace(/\s+/g, " ")
     .trim();
+
+type MatterUnderstandingStreamEvent = {
+  event: string;
+  data: Record<string, unknown>;
+};
+
+type MatterLiveFeedEntry = {
+  id: string;
+  title: string;
+  message: string;
+  tone: "done" | "current" | "attention";
+  progress: number;
+};
+
+const MATTER_UNDERSTANDING_STAGE_FEED: Record<
+  string,
+  { title: string; message: string; progress: number }
+> = {
+  matter_understanding: {
+    title: "Opening matter record",
+    message: "Preparing the uploaded record and matter context for analysis.",
+    progress: 5,
+  },
+  signal_extraction: {
+    title: "Reading legal signals",
+    message:
+      "Identifying parties, dates, statutes, monetary figures, demands, and dispute triggers.",
+    progress: 12,
+  },
+  answer_planning: {
+    title: "Planning answer scope",
+    message:
+      "Converting the user prompt into specific legal questions the brief must answer.",
+    progress: 22,
+  },
+  legal_primitive_extraction: {
+    title: "Extracting operative provisions",
+    message:
+      "Pulling clauses, obligations, rights, risks, notices, deadlines, and factual admissions from the record.",
+    progress: 36,
+  },
+  timeline_building: {
+    title: "Building chronology",
+    message:
+      "Sequencing legally significant events and linking them to source documents.",
+    progress: 48,
+  },
+  matter_state_building: {
+    title: "Assessing matter posture",
+    message:
+      "Determining party posture, procedural maturity, readiness, and premature actions.",
+    progress: 58,
+  },
+  classification: {
+    title: "Classifying legal workflow",
+    message:
+      "Identifying matter category, governing statutes, forum, jurisdiction, and dispute posture.",
+    progress: 68,
+  },
+  legal_grounding: {
+    title: "Searching public legal sources",
+    message:
+      "Looking for Indian legal authorities and procedural guidance relevant to the matter.",
+    progress: 76,
+  },
+  orchestration: {
+    title: "Drafting matter brief",
+    message:
+      "Synthesizing facts, clauses, timeline, classification, and sources into the final legal understanding.",
+    progress: 86,
+  },
+  verification: {
+    title: "Checking support",
+    message:
+      "Verifying conclusions against uploaded documents and legal-source grounding.",
+    progress: 94,
+  },
+  coverage_verification: {
+    title: "Checking answer coverage",
+    message:
+      "Confirming the final brief addresses the user’s questions and flags remaining gaps.",
+    progress: 98,
+  },
+};
+
+const MATTER_UNDERSTANDING_SECTION_FEED: Record<
+  string,
+  { title: string; message: string; progress: number }
+> = {
+  signals: {
+    title: "Signals extracted",
+    message:
+      "Core parties, dates, statutes, demands, and clauses have been identified.",
+    progress: 18,
+  },
+  answer_plan: {
+    title: "Question plan ready",
+    message:
+      "The analysis plan is set and the system is moving into document-grounded extraction.",
+    progress: 28,
+  },
+  legal_analysis: {
+    title: "Legal primitives extracted",
+    message:
+      "Issue buckets and source-backed legal primitives are ready for synthesis.",
+    progress: 42,
+  },
+  clause_matrix: {
+    title: "Clause matrix assembled",
+    message:
+      "Important contractual provisions have been organized for final analysis.",
+    progress: 44,
+  },
+  timeline: {
+    title: "Chronology ready",
+    message:
+      "Key events have been ordered with legal effect and document support.",
+    progress: 52,
+  },
+  matter_state: {
+    title: "Matter state mapped",
+    message:
+      "Current posture, readiness, and next-action constraints are identified.",
+    progress: 62,
+  },
+  classification: {
+    title: "Workflow classified",
+    message:
+      "Matter type, forum, statutes, and procedural stage are set for grounding.",
+    progress: 70,
+  },
+  research_sources: {
+    title: "Public sources found",
+    message:
+      "Legal-source grounding has been collected for procedure and standard practice.",
+    progress: 82,
+  },
+  verification: {
+    title: "Verification complete",
+    message:
+      "The draft understanding has been checked against the record and source grounding.",
+    progress: 96,
+  },
+  coverage_verification: {
+    title: "Coverage checked",
+    message:
+      "The system has checked whether the final answer covers the requested questions.",
+    progress: 99,
+  },
+};
+
+const MATTER_UNDERSTANDING_AGENT_STAGE: Record<string, string> = {
+  signal_extractor: "signal_extraction",
+  answer_planner: "answer_planning",
+  legal_primitive_extractor: "legal_primitive_extraction",
+  timeline_builder: "timeline_building",
+  matter_state_builder: "matter_state_building",
+  classifier: "classification",
+  orchestrator: "orchestration",
+  verifier: "verification",
+  coverage_verifier: "coverage_verification",
+};
+
+const matterAgentTitle = (agent: string) => {
+  const normalized = normalizeInline(agent).replace(/_/g, " ");
+  if (!normalized) return "Running analysis";
+  return normalized
+    .split(" ")
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+};
+
+const buildMatterUnderstandingLiveFeed = (
+  events: MatterUnderstandingStreamEvent[],
+  running: boolean,
+) => {
+  const entries: MatterLiveFeedEntry[] = [];
+  let progress = running ? 4 : 0;
+
+  events.forEach((item, index) => {
+    const event = String(item.event || "");
+    const data = item.data || {};
+    if (event === "stage_started" || event === "stage_complete") {
+      const stage = String(data.stage || "");
+      const copy = MATTER_UNDERSTANDING_STAGE_FEED[stage];
+      if (!copy) return;
+      const nextProgress =
+        event === "stage_complete"
+          ? Math.min(99, copy.progress + 4)
+          : copy.progress;
+      progress = Math.max(progress, nextProgress);
+      entries.push({
+        id: `understanding_${event}_${stage}_${index}`,
+        title:
+          event === "stage_complete" ? `${copy.title} complete` : copy.title,
+        message:
+          event === "stage_complete"
+            ? `${copy.message} Complete.`
+            : copy.message,
+        tone: event === "stage_complete" ? "done" : "current",
+        progress: nextProgress,
+      });
+    }
+    if (event === "agent_started" || event === "agent_done") {
+      const agent = String(data.agent || "");
+      if (!agent) return;
+      const elapsedMs = Number(data.elapsedMs || 0);
+      const elapsedText = elapsedMs
+        ? ` Completed in ${Math.round(elapsedMs / 1000)}s.`
+        : "";
+      const title = matterAgentTitle(agent);
+      const stageCopy =
+        MATTER_UNDERSTANDING_STAGE_FEED[
+          MATTER_UNDERSTANDING_AGENT_STAGE[agent] || agent
+        ];
+      const nextProgress = stageCopy?.progress || progress;
+      progress = Math.max(
+        progress,
+        event === "agent_done" ? nextProgress + 3 : nextProgress,
+      );
+      entries.push({
+        id: `understanding_${event}_${agent}_${index}`,
+        title: event === "agent_done" ? `${title} complete` : title,
+        message:
+          event === "agent_done"
+            ? `Checkpoint complete.${elapsedText}`
+            : stageCopy?.message ||
+              "Processing the next checkpoint in the matter analysis.",
+        tone: event === "agent_done" ? "done" : "current",
+        progress,
+      });
+    }
+    if (event === "section_complete") {
+      const section = String(data.section || "");
+      const copy = MATTER_UNDERSTANDING_SECTION_FEED[section];
+      if (!copy) return;
+      progress = Math.max(progress, copy.progress);
+      entries.push({
+        id: `understanding_section_${section}_${index}`,
+        title: copy.title,
+        message: copy.message,
+        tone: "done",
+        progress: copy.progress,
+      });
+    }
+    if (event === "tool_call") {
+      const tool = String(data.tool || "");
+      const query = normalizeInline(String(data.query || ""));
+      const isSkipped = tool === "exa_search_skipped";
+      progress = Math.max(progress, 78);
+      entries.push({
+        id: `understanding_tool_${tool}_${index}`,
+        title: isSkipped ? "Public search skipped" : "Searching public filings",
+        message: isSkipped
+          ? "The record appears document-first, so external grounding is being skipped for this pass."
+          : query
+            ? `Searching public sources for ${clipText(query, 88)}`
+            : "Searching public sources for relevant Indian legal guidance.",
+        tone: isSkipped ? "done" : "current",
+        progress,
+      });
+    }
+    if (event === "user_question" || event === "run_paused") {
+      progress = Math.max(progress, 64);
+      entries.push({
+        id: `understanding_pause_${event}_${index}`,
+        title: "Input needed",
+        message: String(
+          data.question ||
+            data.reason ||
+            "The system needs one clarification before continuing.",
+        ),
+        tone: "attention",
+        progress,
+      });
+    }
+    if (event === "final" || event === "done") {
+      progress = 100;
+      entries.push({
+        id: `understanding_${event}_${index}`,
+        title: "Brief ready",
+        message:
+          "Matter analysis is complete and the structured brief is ready.",
+        tone: "done",
+        progress,
+      });
+    }
+    if (event === "error") {
+      entries.push({
+        id: `understanding_error_${index}`,
+        title: "Analysis interrupted",
+        message: String(data.error || "The matter analysis could not finish."),
+        tone: "attention",
+        progress,
+      });
+    }
+  });
+
+  if (!entries.length && running) {
+    entries.push({
+      id: "understanding_boot",
+      title: "Opening matter record",
+      message:
+        "Preparing the uploaded documents and starting the matter-analysis stream.",
+      tone: "current",
+      progress,
+    });
+  }
+
+  const visibleEntries = entries.slice(-3).map((entry, index, source) => ({
+    ...entry,
+    visibleAge: source.length - index - 1,
+  }));
+
+  return {
+    entries: visibleEntries,
+    progress: Math.max(0, Math.min(100, progress)),
+  };
+};
 
 const formatUnknownLabel = (value: unknown) => {
   if (typeof value === "string") return normalizeInline(value);
@@ -220,6 +549,82 @@ const formatSummaryTypeLabel = (value: string) => {
   if (normalized === "needs_review") return "Needs Review";
   if (normalized === "processing") return "Processing";
   return "Processing";
+};
+
+const dedupeEvidenceItems = (
+  items: EvidenceReference["evidenceItems"],
+): EvidenceReference["evidenceItems"] => {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = [
+      String(item.documentName || "")
+        .trim()
+        .toLowerCase(),
+      item.pageNumber == null ? "" : String(item.pageNumber),
+      String(item.section || "")
+        .trim()
+        .toLowerCase(),
+      normalizeInline(item.excerpt).toLowerCase(),
+      String(item.slot || "")
+        .trim()
+        .toLowerCase(),
+    ].join("::");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const buildEvidenceReferenceFromSourceRefs = (
+  refs: Array<{
+    documentName: string;
+    pageNumber: number | null;
+    section: string | null;
+    excerpt: string;
+    slot: string;
+    confidence: "high" | "medium" | "low";
+    evidenceAnswerId?: string;
+    sourceUrl?: string | null;
+  }>,
+): EvidenceReference | null => {
+  const evidenceItems = dedupeEvidenceItems(
+    refs
+      .map((ref, index) => ({
+        id: `derived_evidence_${index}`,
+        evidenceAnswerId:
+          String(ref.evidenceAnswerId || "").trim() ||
+          `derived_evidence_${index}`,
+        documentName: String(ref.documentName || "").trim(),
+        pageNumber:
+          typeof ref.pageNumber === "number" && Number.isFinite(ref.pageNumber)
+            ? ref.pageNumber
+            : null,
+        section: String(ref.section || "").trim() || null,
+        excerpt: normalizeInline(ref.excerpt),
+        slot: String(ref.slot || "record excerpt").trim() || "record excerpt",
+        confidence: ref.confidence,
+        sourceUrl: String(ref.sourceUrl || "").trim() || null,
+      }))
+      .filter((item) => item.documentName && item.excerpt),
+  );
+  if (!evidenceItems.length) return null;
+  const grouped = new Map<string, string[]>();
+  for (const item of evidenceItems) {
+    const title = item.documentName;
+    const existing = grouped.get(title) || [];
+    existing.push(item.id);
+    grouped.set(title, existing);
+  }
+  return {
+    evidenceItems,
+    citationGroups: Array.from(grouped.entries()).map(
+      ([title, evidenceIds]) => ({
+        id: `citation_group_${title.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+        title,
+        evidenceIds,
+      }),
+    ),
+  };
 };
 
 const formatAtlasLabel = (value: string) =>
@@ -281,11 +686,13 @@ const useTypewriterText = (
     enabled?: boolean;
     speed?: number;
     startDelayMs?: number;
+    chunkSize?: number;
   },
 ) => {
   const enabled = options?.enabled !== false;
   const speed = options?.speed ?? 12;
   const startDelayMs = options?.startDelayMs ?? 0;
+  const chunkSize = Math.max(1, Math.floor(options?.chunkSize ?? 3));
   const [visibleLength, setVisibleLength] = useState(
     enabled ? 0 : String(text || "").length,
   );
@@ -308,7 +715,7 @@ const useTypewriterText = (
             window.clearInterval(intervalId);
             return current;
           }
-          const next = Math.min(normalizedText.length, current + 1);
+          const next = Math.min(normalizedText.length, current + chunkSize);
           if (next >= normalizedText.length) {
             window.clearInterval(intervalId);
           }
@@ -326,7 +733,7 @@ const useTypewriterText = (
       window.clearTimeout(timeoutId);
       window.clearInterval(intervalId);
     };
-  }, [enabled, normalizedText, speed, startDelayMs]);
+  }, [chunkSize, enabled, normalizedText, speed, startDelayMs]);
 
   return normalizedText.slice(0, visibleLength);
 };
@@ -337,11 +744,13 @@ const useTypewriterList = (
     enabled?: boolean;
     speed?: number;
     startDelayMs?: number;
+    chunkSize?: number;
   },
 ) => {
   const enabled = options?.enabled !== false;
   const speed = options?.speed ?? 10;
   const startDelayMs = options?.startDelayMs ?? 0;
+  const chunkSize = Math.max(1, Math.floor(options?.chunkSize ?? 3));
   const normalizedItems = useMemo(
     () => items.map((item) => String(item || "")),
     [items],
@@ -373,7 +782,7 @@ const useTypewriterList = (
             window.clearInterval(intervalId);
             return current;
           }
-          const next = Math.min(totalLength, current + 1);
+          const next = Math.min(totalLength, current + chunkSize);
           if (next >= totalLength) {
             window.clearInterval(intervalId);
           }
@@ -391,7 +800,7 @@ const useTypewriterList = (
       window.clearTimeout(timeoutId);
       window.clearInterval(intervalId);
     };
-  }, [enabled, speed, startDelayMs, totalLength]);
+  }, [chunkSize, enabled, speed, startDelayMs, totalLength]);
 
   return useMemo(() => {
     if (!enabled) return normalizedItems;
@@ -852,6 +1261,7 @@ const MatterSection = ({
   conversationOpenRequest = 0,
 }: MatterSectionProps) => {
   const navigate = useNavigate();
+  const { jobs, trackMatterJob } = usePipelines();
   const {
     matters,
     activeMatter,
@@ -859,6 +1269,7 @@ const MatterSection = ({
     addPersonToMatter,
     removePersonFromMatter,
     updateMatter,
+    mergeMatterAtlasLatest,
     getObligationMap,
     setObligationMap,
     clearObligationMap,
@@ -931,6 +1342,29 @@ const MatterSection = ({
       progress: 5,
       history: ["Queued additional matter files"],
     });
+  const ensureCreditsAvailable = async (requiredCredits: number) => {
+    const exhaustedMessage =
+      "Your Associate Credits are exhausted. Upgrade or ask an administrator to top up credits before continuing.";
+    const cachedCredits = getCachedCreditBalance();
+    if (cachedCredits !== null && cachedCredits >= requiredCredits) {
+      setCachedCreditBalance(cachedCredits - requiredCredits);
+      return true;
+    }
+    try {
+      const available = await fetchCreditBalance();
+      if (available === null || available < requiredCredits) {
+        throw new Error(exhaustedMessage);
+      }
+      setCachedCreditBalance(available - requiredCredits);
+      return true;
+    } catch (error) {
+      setUploadPopupError(
+        error instanceof Error ? error.message : exhaustedMessage,
+      );
+      setIsUploadPopupOpen(true);
+      return false;
+    }
+  };
   const [briefAnswerText, setBriefAnswerText] = useState("");
   const [isSubmittingBriefAnswers, setIsSubmittingBriefAnswers] =
     useState(false);
@@ -978,6 +1412,7 @@ const MatterSection = ({
     useState<Record<string, "post-confirm" | "post-clarification">>({});
   const [activeProgressVariantIndex, setActiveProgressVariantIndex] =
     useState(0);
+  const [atlasLiveTypewriterCount, setAtlasLiveTypewriterCount] = useState(0);
 
   useEffect(() => {
     if (conversationOpenRequest > 0) {
@@ -994,12 +1429,61 @@ const MatterSection = ({
   const [matterSearchError, setMatterSearchError] = useState("");
   const [matterSearchInfo, setMatterSearchInfo] = useState("");
   const autoStartedAtlasMatterIdsRef = useRef<Set<string>>(new Set());
+  const atlasRunRequestsRef = useRef<Partial<Record<string, Promise<void>>>>(
+    {},
+  );
+  const atlasEventSourceRefs = useRef<Partial<Record<string, EventSource>>>({});
+  const matterUnderstandingAbortRefs = useRef<
+    Partial<Record<string, AbortController>>
+  >({});
+  const autoStartedMatterUnderstandingRef = useRef<Set<string>>(new Set());
+  const [matterUnderstandingByMatterId, setMatterUnderstandingByMatterId] =
+    useState<Record<string, MatterUnderstandingV2 | null>>({});
+  const [
+    matterUnderstandingEventsByMatterId,
+    setMatterUnderstandingEventsByMatterId,
+  ] = useState<
+    Record<string, Array<{ event: string; data: Record<string, unknown> }>>
+  >({});
+  const [
+    matterUnderstandingRunningByMatterId,
+    setMatterUnderstandingRunningByMatterId,
+  ] = useState<Record<string, boolean>>({});
+  const [
+    matterUnderstandingErrorByMatterId,
+    setMatterUnderstandingErrorByMatterId,
+  ] = useState<Record<string, string>>({});
+  const [
+    matterUnderstandingPendingQuestionByMatterId,
+    setMatterUnderstandingPendingQuestionByMatterId,
+  ] = useState<
+    Record<
+      string,
+      {
+        runId: string;
+        questionId: string;
+        question: string;
+        options: string[];
+        reason?: string;
+      } | null
+    >
+  >({});
+  const atlasFullRefreshRequestsRef = useRef<
+    Partial<Record<string, Promise<void>>>
+  >({});
+  const atlasAvailabilityChecksRef = useRef<
+    Partial<Record<string, Promise<boolean>>>
+  >({});
   const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(
     null,
   );
+  const [atlasLiveEventsByMatterId, setAtlasLiveEventsByMatterId] = useState<
+    Record<string, AtlasLiveEvent[]>
+  >({});
   const [caseViewer, setCaseViewer] = useState<CaseViewerState | null>(null);
   const [draftRecommendations, setDraftRecommendations] =
     useState<MatterDraftRecommendations | null>(null);
+  const [savedDrafts, setSavedDrafts] = useState<DraftSummary[]>([]);
   const [isLoadingDraftRecommendations, setIsLoadingDraftRecommendations] =
     useState(false);
   const [draftRecommendationError, setDraftRecommendationError] = useState("");
@@ -1052,14 +1536,6 @@ const MatterSection = ({
   const [isSubmittingClarification, setIsSubmittingClarification] =
     useState(false);
   const [clarificationSubmitError, setClarificationSubmitError] = useState("");
-  const [draftGenerationCheckpoint, setDraftGenerationCheckpoint] =
-    useState<(DraftGenerationCheckpoint & { threadId: string }) | null>(null);
-  const [draftGenerationAnswers, setDraftGenerationAnswers] = useState<
-    Record<string, string>
-  >({});
-  const [isSubmittingDraftGeneration, setIsSubmittingDraftGeneration] =
-    useState(false);
-  const [draftGenerationError, setDraftGenerationError] = useState("");
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const lastMatterJobPollAtRef = useRef<Record<string, number>>({});
@@ -1116,8 +1592,6 @@ const MatterSection = ({
   const activeBriefArtifact = activeLegalBriefArtifact;
   const activeOverview = activeLegalBriefArtifact?.overview || null;
   const activeDetailedBrief = activeLegalBriefArtifact?.detailedBrief || null;
-  const activeEvidenceReference =
-    activeLegalBriefArtifact?.evidenceReference || null;
   const activeClarificationCheckpoint =
     ((activeMatter?.clarificationCheckpoint ||
       activeMatter?.analysis_state?.pendingClarification ||
@@ -1164,11 +1638,13 @@ const MatterSection = ({
     ? atlasTransitionStateByMatterId[activeMatter.id] || null
     : null;
   const isAddFilesDisabled =
-    !activeMatter ||
-    isAppendingMatterFiles ||
     isUploadingMatter ||
-    appendRemainingSlots <= 0 ||
-    isActiveMockMatter;
+    isValidatingUploadFiles ||
+    (activeMatter
+      ? isAppendingMatterFiles ||
+        appendRemainingSlots <= 0 ||
+        isActiveMockMatter
+      : false);
   const matterHeading = useMemo(() => {
     const extractedPartyNames = Array.isArray(
       activeMatter?.extractedFields?.parties,
@@ -1616,6 +2092,209 @@ const MatterSection = ({
       }))
       .filter((card) => card.id && card.title && card.factText);
   }, [groundAnalysis?.cards, secondaryAnalysis?.extracted_facts]);
+  const activeEvidenceReference = useMemo<EvidenceReference | null>(() => {
+    if (activeLegalBriefArtifact?.evidenceReference?.evidenceItems?.length) {
+      return activeLegalBriefArtifact.evidenceReference;
+    }
+
+    const derivedRefs: Array<{
+      documentName: string;
+      pageNumber: number | null;
+      section: string | null;
+      excerpt: string;
+      slot: string;
+      confidence: "high" | "medium" | "low";
+      evidenceAnswerId?: string;
+      sourceUrl?: string | null;
+    }> = [];
+
+    for (const point of briefPoints) {
+      for (const sourceRef of point.sourceRefs) {
+        derivedRefs.push({
+          documentName: String(
+            sourceRef.fileName || point.sourceDocument || "Matter record",
+          ).trim(),
+          pageNumber: sourceRef.pageStart,
+          section: null,
+          excerpt:
+            String(sourceRef.verbatimBasis || "").trim() ||
+            String(point.detail || "").trim(),
+          slot: String(point.heading || "Brief point").trim() || "Brief point",
+          confidence:
+            point.certainty === "high" || point.certainty === "low"
+              ? point.certainty
+              : "medium",
+          evidenceAnswerId: point.id,
+        });
+      }
+    }
+
+    if (Array.isArray(secondaryAnalysis?.extracted_facts)) {
+      secondaryAnalysis.extracted_facts.forEach((fact, index) => {
+        const factRecord = fact as {
+          fact_id?: string;
+          assertion?: string;
+          source_refs?: MatterSignalSourceRef[];
+        };
+        const sourceRefs = Array.isArray(factRecord.source_refs)
+          ? factRecord.source_refs
+          : [];
+        sourceRefs.forEach((sourceRef) => {
+          derivedRefs.push({
+            documentName: String(sourceRef.file_name || "Matter record").trim(),
+            pageNumber:
+              typeof sourceRef.page === "number" &&
+              Number.isFinite(sourceRef.page)
+                ? sourceRef.page
+                : null,
+            section:
+              String(
+                sourceRef.section_id || sourceRef.clause_id || "",
+              ).trim() || null,
+            excerpt:
+              String(sourceRef.quote || sourceRef.fact || "").trim() ||
+              String(factRecord.assertion || "").trim(),
+            slot: "Extracted fact",
+            confidence: "medium",
+            evidenceAnswerId:
+              String(factRecord.fact_id || "").trim() ||
+              `secondary_fact_${index}`,
+          });
+        });
+      });
+    }
+
+    for (const card of groundAnalysisCards) {
+      for (const sourceRef of card.sourceRefs) {
+        derivedRefs.push({
+          documentName: String(sourceRef.file_name || "Matter record").trim(),
+          pageNumber:
+            typeof sourceRef.page === "number" &&
+            Number.isFinite(sourceRef.page)
+              ? sourceRef.page
+              : null,
+          section:
+            String(sourceRef.section_id || sourceRef.clause_id || "").trim() ||
+            null,
+          excerpt:
+            String(sourceRef.quote || sourceRef.fact || "").trim() ||
+            String(card.factText || "").trim(),
+          slot:
+            String(card.title || "Ground analysis").trim() || "Ground analysis",
+          confidence: "medium",
+          evidenceAnswerId: card.id,
+        });
+      }
+    }
+
+    const signalPayloads = Array.isArray(activeMatter?.documentSignalPayloads)
+      ? activeMatter.documentSignalPayloads
+      : [];
+    signalPayloads.forEach((payload, payloadIndex) => {
+      const groups = [
+        ...(Array.isArray(payload.possible_grounds)
+          ? payload.possible_grounds.map((item) => ({
+              label:
+                String(item.title || "Possible ground").trim() ||
+                "Possible ground",
+              refs: Array.isArray(item.supporting_fact_refs)
+                ? item.supporting_fact_refs
+                : [],
+            }))
+          : []),
+        ...(Array.isArray(payload.open_issues)
+          ? payload.open_issues.map((item) => ({
+              label: String(item.title || "Open issue").trim() || "Open issue",
+              refs: Array.isArray(item.source_refs) ? item.source_refs : [],
+            }))
+          : []),
+        ...(Array.isArray(payload.drafting_implications)
+          ? payload.drafting_implications.map((item) => ({
+              label:
+                String(
+                  item.title ||
+                    item.suggested_action_label ||
+                    "Drafting implication",
+                ).trim() || "Drafting implication",
+              refs: Array.isArray(item.source_refs) ? item.source_refs : [],
+            }))
+          : []),
+      ];
+
+      groups.forEach((group, groupIndex) => {
+        group.refs.forEach((sourceRef) => {
+          derivedRefs.push({
+            documentName: String(
+              sourceRef.file_name || payload.file_name || "Matter record",
+            ).trim(),
+            pageNumber:
+              typeof sourceRef.page === "number" &&
+              Number.isFinite(sourceRef.page)
+                ? sourceRef.page
+                : null,
+            section:
+              String(
+                sourceRef.section_id || sourceRef.clause_id || "",
+              ).trim() || null,
+            excerpt:
+              String(sourceRef.quote || sourceRef.fact || "").trim() ||
+              group.label,
+            slot: group.label,
+            confidence: "medium",
+            evidenceAnswerId: `signal_${payloadIndex}_${groupIndex}`,
+          });
+        });
+      });
+    });
+
+    if (Array.isArray(activeAtlasCaseResearch?.similarCases)) {
+      activeAtlasCaseResearch.similarCases.forEach((item, index) => {
+        const title = String(item?.title || "").trim();
+        const citation = String(item?.officialCitation || "").trim();
+        const sourceCourt = String(item?.sourceCourt || "").trim();
+        const excerpt = normalizeInline(
+          String(
+            item?.relevantExcerpt ||
+              item?.holding ||
+              item?.legalQuestion ||
+              item?.facts ||
+              item?.note ||
+              "",
+          ),
+        );
+        if (!title || !excerpt) return;
+        derivedRefs.push({
+          documentName: title,
+          pageNumber:
+            typeof item?.pageNumber === "number" &&
+            Number.isFinite(item.pageNumber)
+              ? item.pageNumber
+              : null,
+          section: citation || sourceCourt || null,
+          excerpt,
+          slot: "Similar case authority",
+          confidence: "high",
+          evidenceAnswerId: `atlas_case_${index}`,
+          sourceUrl:
+            String(
+              item?.officialViewerUrl ||
+                item?.officialDocumentUrl ||
+                item?.referenceUrl ||
+                "",
+            ).trim() || null,
+        });
+      });
+    }
+
+    return buildEvidenceReferenceFromSourceRefs(derivedRefs);
+  }, [
+    activeAtlasCaseResearch?.similarCases,
+    activeLegalBriefArtifact?.evidenceReference,
+    activeMatter?.documentSignalPayloads,
+    briefPoints,
+    groundAnalysisCards,
+    secondaryAnalysis?.extracted_facts,
+  ]);
   const hasHiddenGroundAnalysisCards =
     groundAnalysisCards.length > GROUND_ANALYSIS_INITIAL_FACT_COUNT;
   const visibleGroundAnalysisCards = isGroundAnalysisExpanded
@@ -1639,6 +2318,23 @@ const MatterSection = ({
   const summaryIssues = Array.isArray(activeDetailedBrief?.issueAnalysis)
     ? activeDetailedBrief.issueAnalysis
     : [];
+  const analysisReferenceCount =
+    summaryIssues.length +
+    (Array.isArray(activeDetailedBrief?.contractualFramework)
+      ? activeDetailedBrief.contractualFramework.length
+      : 0) +
+    (Array.isArray(activeDetailedBrief?.recommendedActions)
+      ? activeDetailedBrief.recommendedActions.length
+      : 0) +
+    briefPoints.length +
+    groundAnalysisCards.length +
+    secondaryVerifiedFactCount +
+    (normalizeInline(String(activeFrontendBrief?.summary || "")).length
+      ? 1
+      : 0) +
+    (normalizeInline(String(activeAtlasMatterBrief?.brief || "")).length
+      ? 1
+      : 0);
   const missingProofItems = useMemo(() => {
     if (activeAtlasMatterBrief?.remainingGaps?.length) {
       return activeAtlasMatterBrief.remainingGaps
@@ -1669,8 +2365,13 @@ const MatterSection = ({
     [activeFrontendBrief?.summary],
   );
   const activeAtlasSummary = useMemo(
-    () => String(activeAtlasMatterBrief?.brief || "").trim(),
-    [activeAtlasMatterBrief?.brief],
+    () =>
+      String(
+        activeAtlasMatterBrief?.summaryBrief ||
+          activeAtlasMatterBrief?.brief ||
+          "",
+      ).trim(),
+    [activeAtlasMatterBrief?.brief, activeAtlasMatterBrief?.summaryBrief],
   );
   const atlasDraftQueue = useMemo(
     () =>
@@ -1679,7 +2380,173 @@ const MatterSection = ({
         : [],
     [activeAtlasNextSteps?.draftQueue],
   );
-  const activePrimarySummary = activeAtlasSummary || activeFrontendSummary;
+  const activeMatterUnderstanding = useMemo(
+    () =>
+      activeMatter?.id
+        ? matterUnderstandingByMatterId[activeMatter.id] ||
+          activeMatter.matterUnderstandingV2 ||
+          null
+        : null,
+    [
+      activeMatter?.id,
+      activeMatter?.matterUnderstandingV2,
+      matterUnderstandingByMatterId,
+    ],
+  );
+  const matterUnderstandingDrafts = useMemo(
+    () =>
+      Array.isArray(activeMatterUnderstanding?.draft_sequence)
+        ? activeMatterUnderstanding.draft_sequence
+        : [],
+    [activeMatterUnderstanding?.draft_sequence],
+  );
+  const normalizeDraftMatchKey = (value: unknown) =>
+    String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ");
+  const activeMatterSavedDrafts = useMemo(
+    () =>
+      activeMatter?.id
+        ? savedDrafts.filter((draft) => draft.matterId === activeMatter.id)
+        : [],
+    [activeMatter?.id, savedDrafts],
+  );
+  const activeMatterRunningDraftJobs = useMemo(
+    () =>
+      activeMatter?.id
+        ? jobs.filter(
+            (job) =>
+              job.source === "draft-job" &&
+              job.matterId === activeMatter.id &&
+              (job.status === "queued" || job.status === "running"),
+          )
+        : [],
+    [activeMatter?.id, jobs],
+  );
+  const resolveDraftGenerationState = (input: {
+    title?: string;
+    draftType?: string;
+    id?: string;
+  }) => {
+    const titleKey = normalizeDraftMatchKey(input.title);
+    const typeKey = normalizeDraftMatchKey(input.draftType || input.id);
+    const runningJob = activeMatterRunningDraftJobs.find((job) => {
+      const jobTitleKey = normalizeDraftMatchKey(job.title);
+      const requestKey = normalizeDraftMatchKey(job.requestKey);
+      return (
+        (titleKey && jobTitleKey.includes(titleKey)) ||
+        (typeKey && (jobTitleKey.includes(typeKey) || requestKey.includes(typeKey)))
+      );
+    });
+    if (runningJob) {
+      return {
+        status: "running" as const,
+        label: "Drafting",
+        draft: null,
+        job: runningJob,
+      };
+    }
+
+    const savedDraft = activeMatterSavedDrafts.find((draft) => {
+      const draftTitleKey = normalizeDraftMatchKey(draft.title);
+      return (
+        (titleKey && draftTitleKey.includes(titleKey)) ||
+        (typeKey && draftTitleKey.includes(typeKey))
+      );
+    });
+    if (savedDraft) {
+      return {
+        status: "done" as const,
+        label: "Draft done",
+        draft: savedDraft,
+        job: null,
+      };
+    }
+
+    return {
+      status: "queued" as const,
+      label: "Draft queued",
+      draft: null,
+      job: null,
+    };
+  };
+  const matterUnderstandingTimeline = useMemo(
+    () =>
+      Array.isArray(activeMatterUnderstanding?.timeline)
+        ? activeMatterUnderstanding.timeline
+        : [],
+    [activeMatterUnderstanding?.timeline],
+  );
+  const matterUnderstandingResearchAuthorities = useMemo(() => {
+    const precedents = Array.isArray(
+      activeMatterUnderstanding?.standard_practice?.relevant_precedents,
+    )
+      ? activeMatterUnderstanding.standard_practice.relevant_precedents.map(
+          (item, index) => ({
+            id: `understanding-precedent-${index}`,
+            title: item.case_name || item.citation || "Relevant precedent",
+            source: item.citation || item.source_url || "",
+            url: item.source_url || "",
+            summary: item.relevance || "",
+            kind: "Precedent",
+          }),
+        )
+      : [];
+    const sources = Array.isArray(activeMatterUnderstanding?.research_sources)
+      ? activeMatterUnderstanding.research_sources.map((item, index) => ({
+          id: `understanding-source-${index}`,
+          title: item.title || item.source_name || "Legal source",
+          source: item.source_name || item.url || "",
+          url: item.url || "",
+          summary: item.legal_proposition || "",
+          kind: "Source",
+        }))
+      : [];
+    const seen = new Set<string>();
+    return [...precedents, ...sources].filter((item) => {
+      const key = `${item.title}::${item.url}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return item.title || item.summary || item.url;
+    });
+  }, [
+    activeMatterUnderstanding?.research_sources,
+    activeMatterUnderstanding?.standard_practice?.relevant_precedents,
+  ]);
+  const activeMatterUnderstandingEvents = useMemo(
+    () =>
+      activeMatter?.id
+        ? matterUnderstandingEventsByMatterId[activeMatter.id] || []
+        : [],
+    [activeMatter?.id, matterUnderstandingEventsByMatterId],
+  );
+  const activeMatterUnderstandingRunning = activeMatter?.id
+    ? matterUnderstandingRunningByMatterId[activeMatter.id] === true
+    : false;
+  const activeMatterUnderstandingError = activeMatter?.id
+    ? matterUnderstandingErrorByMatterId[activeMatter.id] || ""
+    : "";
+  const activeMatterUnderstandingPendingQuestion = activeMatter?.id
+    ? matterUnderstandingPendingQuestionByMatterId[activeMatter.id] || null
+    : null;
+  const isMatterUnderstandingAwaitingInput = Boolean(
+    activeMatterUnderstandingPendingQuestion,
+  );
+  const activeMatterUnderstandingLiveFeed = useMemo(
+    () =>
+      buildMatterUnderstandingLiveFeed(
+        activeMatterUnderstandingEvents,
+        activeMatterUnderstandingRunning,
+      ),
+    [activeMatterUnderstandingEvents, activeMatterUnderstandingRunning],
+  );
+  const activeUnderstandingSummary = useMemo(
+    () => String(activeMatterUnderstanding?.matter_brief?.summary || "").trim(),
+    [activeMatterUnderstanding?.matter_brief?.summary],
+  );
+  const activePrimarySummary =
+    activeUnderstandingSummary || activeAtlasSummary || activeFrontendSummary;
   const activeBriefAnimationSignature = useMemo(() => {
     if (!activeMatter?.id || !activePrimarySummary) return "";
     const latestAtlasMeta =
@@ -1702,7 +2569,11 @@ const MatterSection = ({
         String(latestAtlasMeta?.version || ""),
         String(latestAtlasMeta?.created_at || ""),
         String(activeAtlasMatterBrief.workflowId || ""),
-        String(activeAtlasMatterBrief.brief || ""),
+        String(
+          activeAtlasMatterBrief.summaryBrief ||
+            activeAtlasMatterBrief.brief ||
+            "",
+        ),
       ].join("::");
     }
     if (activeFrontendBrief) {
@@ -1793,16 +2664,18 @@ const MatterSection = ({
   }, [activeBriefAnimationSignature, activeMatter?.id]);
   const typedPrimarySummary = useTypewriterText(activePrimarySummary, {
     enabled: Boolean(activePrimarySummary) && shouldAnimateBriefSections,
-    speed: 10,
-    startDelayMs: 120,
+    speed: 4,
+    startDelayMs: 40,
+    chunkSize: 5,
   });
   const typedMissingProofItems = useTypewriterList(missingProofItems, {
     enabled:
       shouldAnimateBriefSections &&
       briefRevealStage >= 2 &&
       missingProofItems.length > 0,
-    speed: 7,
-    startDelayMs: 320,
+    speed: 4,
+    startDelayMs: 100,
+    chunkSize: 4,
   });
   const typedAtlasCaseTitles = useTypewriterList(
     atlasSimilarCases.map((item) => String(item.title || "")),
@@ -1811,8 +2684,9 @@ const MatterSection = ({
         shouldAnimateBriefSections &&
         briefRevealStage >= 3 &&
         atlasSimilarCases.length > 0,
-      speed: 7,
-      startDelayMs: 520,
+      speed: 4,
+      startDelayMs: 160,
+      chunkSize: 4,
     },
   );
   useEffect(() => {
@@ -1917,12 +2791,13 @@ const MatterSection = ({
     return (
       <div className="matterCaseList">
         {cases.map((item, index) => {
-          const caseId =
+          const caseIdBase =
             item.officialViewerUrl ||
             item.officialDocumentUrl ||
             item.referenceUrl ||
             item.title ||
             `atlas-case-${index}`;
+          const caseId = `${caseIdBase}-${index}`;
           const isExpanded = Boolean(expandedCaseIds[caseId]);
           const summaryText = normalizeInline(
             String(item.relevantExcerpt || item.note || ""),
@@ -1998,13 +2873,403 @@ const MatterSection = ({
       </div>
     );
   };
+  const renderAtlasCaseDebug = () => {
+    if (!activeAtlasCaseResearch) return null;
+    const progress = activeAtlasCaseResearch.progress || null;
+    const rankedCandidates = Array.isArray(
+      activeAtlasCaseResearch.rankedCandidates,
+    )
+      ? activeAtlasCaseResearch.rankedCandidates
+      : [];
+    const debugQueries = Array.isArray(activeAtlasCaseResearch.debugQueries)
+      ? activeAtlasCaseResearch.debugQueries
+      : [];
+    const debugIterations = Array.isArray(
+      activeAtlasCaseResearch.debugIterations,
+    )
+      ? activeAtlasCaseResearch.debugIterations
+      : [];
+    const debugReferences = Array.isArray(
+      activeAtlasCaseResearch.debugReferences,
+    )
+      ? activeAtlasCaseResearch.debugReferences
+      : [];
+    const debugSummary = activeAtlasCaseResearch.debugSummary || null;
+    if (
+      !debugQueries.length &&
+      !rankedCandidates.length &&
+      !debugReferences.length &&
+      !debugSummary &&
+      !debugIterations.length &&
+      !progress
+    ) {
+      return null;
+    }
+    return (
+      <article className="matterAnalysisPanel">
+        <div className="matterAnalysisPanelHead">
+          <div>
+            <p className="matterEyebrow">Case Debug</p>
+            <h3>Why cases did or did not qualify</h3>
+          </div>
+        </div>
+        {progress ? (
+          <p className="matterBodySubtle">
+            {progress.message}
+            {progress.query ? ` Query: ${progress.query}.` : ""}
+          </p>
+        ) : null}
+        {debugSummary ? (
+          <p className="matterBodySubtle">
+            {debugSummary.iterations
+              ? `${debugSummary.iterations} iterations run. `
+              : ""}
+            {debugSummary.candidateCount} candidates found,{" "}
+            {debugSummary.retainedCount} retained, {debugSummary.discardedCount}{" "}
+            discarded.
+          </p>
+        ) : null}
+        {debugQueries.length ? (
+          <div className="matterAnalysisPanel">
+            <div className="matterAnalysisPanelHead">
+              <div>
+                <p className="matterEyebrow">Queries</p>
+                <h4>Searches used</h4>
+              </div>
+            </div>
+            <ul className="matterBulletList">
+              {debugQueries.map((item) => (
+                <li key={`debug-query-${item}`}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {rankedCandidates.length ? (
+          <div className="matterAnalysisPanel">
+            <div className="matterAnalysisPanelHead">
+              <div>
+                <p className="matterEyebrow">Ranking</p>
+                <h4>Scored candidates</h4>
+              </div>
+            </div>
+            <ul className="matterBulletList">
+              {rankedCandidates.map((item, index) => (
+                <li
+                  key={`ranked-case-${item.officialUrl || item.title}-${index}`}
+                >
+                  <strong>{item.title}</strong>
+                  {typeof item.finalScore === "number"
+                    ? ` — score ${item.finalScore}`
+                    : ""}
+                  {item.fetchStatus ? ` (${item.fetchStatus})` : ""}
+                  {item.supportedProposition
+                    ? ` — ${item.supportedProposition}`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {debugIterations.length ? (
+          <div className="matterCaseList">
+            {debugIterations.map((iteration) => (
+              <article
+                className="matterCaseRow"
+                key={`debug-iteration-${iteration.iteration}`}
+              >
+                <div className="matterCaseRowMain">
+                  <div className="matterCaseSummary">
+                    <p>
+                      <strong>Iteration {iteration.iteration}:</strong>{" "}
+                      {iteration.candidateCount} candidates,{" "}
+                      {iteration.retainedCount} retained,{" "}
+                      {iteration.discardedCount} discarded.
+                    </p>
+                    {Array.isArray(iteration.issueFocus) &&
+                    iteration.issueFocus.length ? (
+                      <p>
+                        <strong>Issue focus:</strong>{" "}
+                        {iteration.issueFocus.join("; ")}
+                      </p>
+                    ) : null}
+                    {Array.isArray(iteration.retryFocus) &&
+                    iteration.retryFocus.length ? (
+                      <p>
+                        <strong>Retry focus:</strong>{" "}
+                        {iteration.retryFocus.join("; ")}
+                      </p>
+                    ) : null}
+                    {Array.isArray(iteration.queries) &&
+                    iteration.queries.length ? (
+                      <p>
+                        <strong>Queries:</strong>{" "}
+                        {iteration.queries.join(" | ")}
+                      </p>
+                    ) : null}
+                    {Array.isArray(iteration.retainedCases) &&
+                    iteration.retainedCases.length ? (
+                      <div>
+                        <p>
+                          <strong>Retained:</strong>
+                        </p>
+                        <ul className="matterBulletList">
+                          {iteration.retainedCases.map((item, index) => (
+                            <li
+                              key={`iteration-retained-${iteration.iteration}-${item.officialUrl || item.title}-${index}`}
+                            >
+                              {item.title}
+                              {item.supportedProposition
+                                ? ` — ${item.supportedProposition}`
+                                : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {debugReferences.length ? (
+          <div className="matterCaseList">
+            {debugReferences.map((item, index) => (
+              <article
+                className="matterCaseRow"
+                key={`${item.referenceUrl || item.officialUrl || item.title}-${index}`}
+              >
+                <div className="matterCaseRowMain">
+                  <button
+                    type="button"
+                    className="matterCaseTitleLink"
+                    onClick={() => {
+                      const targetUrl = item.officialUrl || item.referenceUrl;
+                      if (targetUrl) {
+                        window.open(targetUrl, "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                  >
+                    {item.title}
+                  </button>
+                </div>
+                <div className="matterCaseSummary">
+                  {item.note ? (
+                    <p>
+                      <strong>Discard reason:</strong> {item.note}
+                    </p>
+                  ) : null}
+                  {item.supportedProposition ? (
+                    <p>
+                      <strong>Verifier proposition:</strong>{" "}
+                      {item.supportedProposition}
+                    </p>
+                  ) : null}
+                  {item.resolvedProposition ? (
+                    <p>
+                      <strong>Matched proposition:</strong>{" "}
+                      {item.resolvedProposition}
+                      {item.propositionMatchType
+                        ? ` (${item.propositionMatchType})`
+                        : ""}
+                    </p>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </article>
+    );
+  };
+  const renderPendingMatterUnderstandingQuestion = () =>
+    activeMatterUnderstandingPendingQuestion && activeMatter?.id ? (
+      <article className="matterNextStepsPanel matterUnderstandingPanel">
+        <div className="matterNextStepCardHead">
+          <strong>Answer needed to continue matter understanding</strong>
+        </div>
+        <p className="matterNextStepsPreview">
+          {activeMatterUnderstandingPendingQuestion.question}
+        </p>
+        {activeMatterUnderstandingPendingQuestion.reason ? (
+          <small className="matterNextStepDraftType">
+            {activeMatterUnderstandingPendingQuestion.reason}
+          </small>
+        ) : null}
+        <div className="matterChecklistActionButtonWrap">
+          {activeMatterUnderstandingPendingQuestion.options.map((option) => (
+            <Button
+              key={`${activeMatterUnderstandingPendingQuestion.questionId}-${option}`}
+              type="button"
+              className="matterStartDraftingBtn"
+              disabled={activeMatterUnderstandingRunning}
+              onClick={() =>
+                void answerMatterUnderstandingQuestion(
+                  activeMatter.id,
+                  activeMatterUnderstandingPendingQuestion,
+                  option,
+                )
+              }
+            >
+              {option}
+            </Button>
+          ))}
+        </div>
+      </article>
+    ) : null;
+
+  const renderMatterUnderstandingAnalysis = () => {
+    if (!activeMatterUnderstanding) return null;
+    const understanding = activeMatterUnderstanding;
+    const issues = Array.isArray(understanding.issues_and_ambiguities)
+      ? understanding.issues_and_ambiguities
+      : [];
+    const missing = Array.isArray(understanding.missing_information)
+      ? understanding.missing_information
+      : [];
+    const nextSteps = Array.isArray(understanding.next_steps)
+      ? understanding.next_steps
+      : [];
+    if (!issues.length && !missing.length && !nextSteps.length) return null;
+    return (
+      <section className="matterAnalysisPanel">
+        <div className="matterAnalysisPanelHead">
+          <div>
+            <p className="matterEyebrow">Matter Understanding</p>
+            <h3>Issues, ambiguities, and what likely comes next</h3>
+          </div>
+        </div>
+        {issues.length || missing.length ? (
+          <article className="matterNextStepsPanel terraAnalysisIssuesPanel">
+            <div className="matterNextStepCardHead">
+              <strong>Issues and ambiguities</strong>
+            </div>
+            {issues.length ? (
+              <ul className="matterBulletList">
+                {issues.map((item, index) => (
+                  <li key={`understanding-analysis-issue-${index}`}>
+                    <strong>{item.issue}</strong>
+                    {item.why_it_matters ? ` — ${item.why_it_matters}` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {missing.length ? (
+              <div className="matterNextStepsAccordionBody">
+                <ul className="matterBulletList">
+                  {missing.map((item, index) => (
+                    <li key={`understanding-analysis-missing-${index}`}>
+                      <strong>{item.missing_item}</strong>
+                      {item.question ? ` — ${item.question}` : ""}
+                      {Array.isArray(item.options) && item.options.length
+                        ? ` Options: ${item.options.join(", ")}`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </article>
+        ) : null}
+        {nextSteps.length ? (
+          <article className="matterNextStepsPanel terraAnalysisNextPanel">
+            <div className="matterNextStepCardHead">
+              <strong>What likely comes next</strong>
+            </div>
+            <div className="matterNextStepAccordionList">
+              {nextSteps.map((item, index) => (
+                <details
+                  className="matterNextStepDisclosure"
+                  key={`understanding-analysis-next-${index}`}
+                >
+                  <summary>
+                    <span>
+                      <strong>{item.step}</strong>
+                      <small>
+                        {item.urgency?.replace(/_/g, " ") || "advisory"} ·{" "}
+                        {item.owner || "lawyer"}
+                      </small>
+                    </span>
+                    <ChevronRight size={16} />
+                  </summary>
+                  <div className="matterNextStepsAccordionBody">
+                    {item.rationale ? <p>{item.rationale}</p> : null}
+                    {item.depends_on?.length ? (
+                      <ul className="matterBulletList">
+                        {item.depends_on.map((dependency) => (
+                          <li key={`${item.step}-${dependency}`}>
+                            {dependency}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </article>
+        ) : null}
+      </section>
+    );
+  };
+
   const renderAtlasNextSteps = () => {
+    if (activeMatterUnderstanding) {
+      const understanding = activeMatterUnderstanding;
+      return (
+        <div className="matterNextStepsStack">
+          <article className="matterNextStepsPanel matterUnderstandingPanel">
+            <p className="matterNextStepsPreview">
+              {understanding.matter_brief?.summary ||
+                "The new matter-understanding engine returned a structured result."}
+            </p>
+            <div className="matterUnderstandingMetaGrid">
+              <span>
+                <strong>Category</strong>
+                {understanding.classification?.primary_category || "unknown"}
+              </span>
+              <span>
+                <strong>Stage</strong>
+                {understanding.classification?.procedural_stage || "unknown"}
+              </span>
+            </div>
+          </article>
+          {renderPendingMatterUnderstandingQuestion()}
+        </div>
+      );
+    }
+
     if (!activeAtlasNextSteps) {
       return (
-        <p className="matterDebriefEmpty">
-          Next procedural steps and draft suggestions will appear once the
-          research pass is complete.
-        </p>
+        <div className="matterNextStepsStack">
+          {renderPendingMatterUnderstandingQuestion()}
+          <p className="matterDebriefEmpty">
+            Next procedural steps and draft suggestions will appear once the
+            matter understanding pass is complete.
+            {activeMatter?.id ? (
+              <span className="matterChecklistActionButtonWrap">
+                <Button
+                  type="button"
+                  className="matterStartDraftingBtn"
+                  disabled={
+                    activeMatterUnderstandingRunning ||
+                    Boolean(activeMatterUnderstandingPendingQuestion)
+                  }
+                  onClick={() => void runMatterUnderstanding(activeMatter.id)}
+                >
+                  {activeMatterUnderstandingRunning
+                    ? "Understanding..."
+                    : "Run matter understanding"}
+                </Button>
+              </span>
+            ) : null}
+            {activeMatterUnderstandingError ? (
+              <span className="matterNextStepDraftType">
+                {activeMatterUnderstandingError}
+              </span>
+            ) : null}
+          </p>
+        </div>
       );
     }
 
@@ -2016,6 +3281,14 @@ const MatterSection = ({
       : [];
     const blockingItems = Array.isArray(activeAtlasNextSteps.blockingItems)
       ? activeAtlasNextSteps.blockingItems
+      : [];
+    const ambiguities = Array.isArray(activeAtlasNextSteps.ambiguities)
+      ? activeAtlasNextSteps.ambiguities
+      : [];
+    const askAiEligibleQuestions = Array.isArray(
+      activeAtlasNextSteps.askAiEligibleQuestions,
+    )
+      ? activeAtlasNextSteps.askAiEligibleQuestions
       : [];
     const nextStepHighlightTerms = [
       "blocked",
@@ -2036,6 +3309,7 @@ const MatterSection = ({
     ].filter(Boolean);
     return (
       <div className="matterNextStepsStack">
+        {renderPendingMatterUnderstandingQuestion()}
         {!draftQueue.length ? (
           <article className="matterNextStepsPanel">
             <div className="matterNextStepCardHead">
@@ -2074,60 +3348,116 @@ const MatterSection = ({
             ) : null}
           </article>
         ) : null}
+        {blockingItems.length || ambiguities.length ? (
+          <article className="matterNextStepsPanel">
+            <div className="matterNextStepCardHead">
+              <strong>What still needs support</strong>
+            </div>
+            {blockingItems.length ? (
+              <ul className="matterBulletList">
+                {blockingItems.map((item) => (
+                  <li key={`next-step-blocker-${item}`}>
+                    {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {ambiguities.length ? (
+              <>
+                <p className="matterNextStepsPreview">
+                  Ambiguities still present in the prompt or uploaded record:
+                </p>
+                <ul className="matterBulletList">
+                  {ambiguities.map((item) => (
+                    <li key={`next-step-ambiguity-${item}`}>
+                      {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {askAiEligibleQuestions.length ? (
+              <div className="matterNextStepsAccordionBody">
+                <ul className="matterBulletList">
+                  {askAiEligibleQuestions.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.question}</strong>
+                      {item.whyItMatters ? ` ${item.whyItMatters}` : ""}
+                      <span className="matterChecklistActionButtonWrap">
+                        <button
+                          type="button"
+                          className="matterChecklistAskAiButton"
+                          onClick={() =>
+                            openMissingProofInMatterChat(item.question)
+                          }
+                          aria-label="Ask AI for help"
+                        >
+                          Ask AI
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </article>
+        ) : null}
         {draftQueue.length ? (
           <article className="matterNextStepsPanel">
             <div className="matterNextStepsStack">
-              {draftQueue.map((item) => (
+              {draftQueue.map((item) =>
                 (() => {
-                  const dependencies = visibleDraftDependencies(item.unblocksWhen);
-                  return (
-                <article
-                  className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
-                  key={item.id}
-                >
-                  <div className="matterNextStepCardHead">
-                    <strong>{item.title}</strong>
-                    <Button
-                      type="button"
-                      className="matterStartDraftingBtn"
-                      onClick={() =>
-                        void startAtlasDraftGeneration(
-                          {
-                            id: item.id,
-                            draftType: item.draftType,
-                            title: item.title,
-                          },
-                          "overview",
-                        )
-                      }
-                    >
-                      Start drafting
-                    </Button>
-                  </div>
-                  <p className="matterNextStepsPreview">
-                    {renderEmphasizedInlineText(
-                      item.description,
-                      nextStepHighlightTerms,
-                    )}
-                  </p>
-                  {dependencies.length ? (
-                    <div className="matterNextStepsAccordionBody">
-                      <ul className="matterBulletList">
-                        {dependencies.map((dependency: string) => (
-                          <li key={`${item.id}-${dependency}`}>
-                            {renderEmphasizedInlineText(
-                              dependency,
-                              nextStepHighlightTerms,
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </article>
+                  const dependencies = visibleDraftDependencies(
+                    item.unblocksWhen,
                   );
-                })()
-              ))}
+                  return (
+                    <article
+                      className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
+                      key={item.id}
+                    >
+                      <div className="matterNextStepCardHead">
+                        <strong>{item.title}</strong>
+                        <Button
+                          type="button"
+                          className="matterStartDraftingBtn"
+                          onClick={() =>
+                            void startAtlasDraftGeneration(
+                              {
+                                id: item.id,
+                                draftType: item.draftType,
+                                title: item.title,
+                              },
+                              "overview",
+                            )
+                          }
+                        >
+                          Start drafting
+                        </Button>
+                      </div>
+                      <p className="matterNextStepsPreview">
+                        {renderEmphasizedInlineText(
+                          item.description,
+                          nextStepHighlightTerms,
+                        )}
+                      </p>
+                      {dependencies.length ? (
+                        <div className="matterNextStepsAccordionBody">
+                          <ul className="matterBulletList">
+                            {dependencies.map((dependency: string) => (
+                              <li key={`${item.id}-${dependency}`}>
+                                {renderEmphasizedInlineText(
+                                  dependency,
+                                  nextStepHighlightTerms,
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })(),
+              )}
             </div>
           </article>
         ) : null}
@@ -2140,7 +3470,8 @@ const MatterSection = ({
                 onClick={() =>
                   setExpandedNextStepIds((current) => ({
                     ...current,
-                    ["why-these-steps-matter"]: !current["why-these-steps-matter"],
+                    ["why-these-steps-matter"]:
+                      !current["why-these-steps-matter"],
                   }))
                 }
                 aria-expanded={Boolean(
@@ -2168,7 +3499,10 @@ const MatterSection = ({
                   <ul className="matterBulletList">
                     {whyTheseNext.map((item) => (
                       <li key={`why-next-${item}`}>
-                        {renderEmphasizedInlineText(item, nextStepHighlightTerms)}
+                        {renderEmphasizedInlineText(
+                          item,
+                          nextStepHighlightTerms,
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -2195,6 +3529,147 @@ const MatterSection = ({
     "workflow_confirmation_needed",
     "workflow_gap_checkpoint",
   ]);
+  const atlasStatusFeedConfig: Record<
+    string,
+    {
+      label: string;
+      message: string;
+      rotationMessages?: string[];
+    }
+  > = {
+    orientation_running: {
+      label: "Reading matter record",
+      message:
+        "Reading the uploaded record, matter goal, and document structure.",
+      rotationMessages: [
+        "Reading the uploaded record and matter goal.",
+        "Identifying document type, parties, clauses, and section headings.",
+        "Building the initial matter orientation from the uploaded files.",
+      ],
+    },
+    base_recognition_running: {
+      label: "Matching workflow",
+      message: "Comparing the uploaded matter against the atlas workflows.",
+      rotationMessages: [
+        "Comparing the matter against atlas workflows.",
+        "Scoring the closest procedural match.",
+        "Ranking the most likely workflow candidates from the atlas.",
+      ],
+    },
+    workflow_confirmation_needed: {
+      label: "Classification verification",
+      message:
+        "Verifying the Atlas classification before the research branches begin.",
+      rotationMessages: [
+        "Checking whether the selected Atlas workflow fits the uploaded record.",
+        "Verifying the classification before deeper research begins.",
+      ],
+    },
+    decider_research_running: {
+      label: "Parallel research branches",
+      message:
+        "Building the draft path and the case-search path in parallel from the uploaded matter and selected Atlas workflow.",
+      rotationMessages: [
+        "Reading the uploaded matter packet and selected Atlas workflow.",
+        "Determining likely draft actions and checking for material ambiguities.",
+        "Generating issue-focused case queries from the matter and prompt.",
+      ],
+    },
+    case_research_running: {
+      label: "Case verification",
+      message:
+        "Filtering search results down to verified official cases relevant to this matter.",
+      rotationMessages: [
+        "Searching only the approved case-source domains.",
+        "Verifying which official cases are truly analogous.",
+        "Discarding weak or generic references before drafting the brief.",
+      ],
+    },
+    next_steps_running: {
+      label: "Next steps analysis",
+      message:
+        "Grounding the likely next procedural steps and draft actions in similar official cases.",
+      rotationMessages: [
+        "Sequencing the likely next procedural steps.",
+        "Checking what can be drafted now and what remains blocked.",
+        "Comparing the current matter against similar case patterns.",
+      ],
+    },
+    atlas_brief_running: {
+      label: "Brief synthesis",
+      message:
+        "Preparing the summary brief and detailed agent brief from the matter, cases, and draft queue.",
+      rotationMessages: [
+        "Combining document grounding, case verification, and draft sequencing.",
+        "Writing the user-facing summary and detailed agent brief.",
+        "Finalizing the cases and drafts panels for review.",
+      ],
+    },
+    atlas_brief_ready: {
+      label: "Matter brief ready",
+      message: "The atlas-backed matter brief is ready.",
+      rotationMessages: ["The atlas-backed matter brief is ready."],
+    },
+    atlas_cancelling: {
+      label: "Cancelling research",
+      message: "Stopping atlas research after the current stage finishes.",
+      rotationMessages: [
+        "Stopping the current research run.",
+        "Wrapping up the active stage safely before cancellation.",
+      ],
+    },
+    atlas_cancelled: {
+      label: "Research cancelled",
+      message: "Atlas research was cancelled before the brief was completed.",
+      rotationMessages: ["Atlas research was cancelled."],
+    },
+    atlas_failed: {
+      label: "Research failed",
+      message: "Atlas research hit an error before the brief was completed.",
+      rotationMessages: ["Atlas research hit an error before completion."],
+    },
+    atlas_needs_review: {
+      label: "Needs review",
+      message: "Atlas research completed with issues that need review.",
+      rotationMessages: [
+        "Atlas research completed with issues that need review.",
+      ],
+    },
+  };
+  const buildAtlasStatusOnlyFeed = (
+    status: string,
+  ): NonNullable<NonNullable<MatterRecord["analysis_state"]>["feed"]> => {
+    const orderedIds = [
+      "orientation_running",
+      "base_recognition_running",
+      "workflow_confirmation_needed",
+      "decider_research_running",
+      "case_research_running",
+      "atlas_brief_running",
+      "atlas_brief_ready",
+      "atlas_cancelling",
+      "atlas_cancelled",
+      "atlas_failed",
+      "atlas_needs_review",
+    ];
+    return orderedIds.map((id) => {
+      const config = atlasStatusFeedConfig[id];
+      const state =
+        status === id
+          ? "current"
+          : orderedIds.indexOf(id) < orderedIds.indexOf(status)
+            ? "done"
+            : "waiting";
+      return {
+        id,
+        label: config.label,
+        state:
+          id === "atlas_failed" ? (status === id ? "attention" : state) : state,
+        message: config.message,
+        rotationMessages: config.rotationMessages || [],
+      };
+    });
+  };
   const isExtractionRunning =
     activeMatter?.status === "processing" ||
     activeMatter?.extractedFieldsStatus === "processing";
@@ -2205,11 +3680,16 @@ const MatterSection = ({
     activeOrientationSnapshot,
   );
   const analysisProgressMessages = useMemo<AnalysisProgressMessage[]>(() => {
-    if (
+    const atlasStatus = String(activeAnalysisState?.status || "").trim();
+    const atlasFeed =
       Array.isArray(activeAnalysisState?.feed) &&
       activeAnalysisState.feed.length
-    ) {
-      return activeAnalysisState.feed.map((rawItem) => {
+        ? activeAnalysisState.feed
+        : atlasStatusFeedConfig[atlasStatus]
+          ? buildAtlasStatusOnlyFeed(atlasStatus)
+          : null;
+    if (Array.isArray(atlasFeed) && atlasFeed.length) {
+      return atlasFeed.map((rawItem) => {
         const item = rawItem as {
           id: string;
           state: "done" | "current" | "waiting" | "attention";
@@ -2324,6 +3804,7 @@ const MatterSection = ({
     });
     return messages;
   }, [
+    activeAnalysisState?.status,
     activeAnalysisState?.feed,
     activeBriefArtifact,
     activeMatter,
@@ -2355,7 +3836,101 @@ const MatterSection = ({
     : "";
   const shouldShowProgressThread =
     activeSummaryRunState.running ||
-    (!activePrimarySummary && Boolean(activeMatter));
+    (!activePrimarySummary &&
+      Boolean(activeMatter) &&
+      !isMatterUnderstandingAwaitingInput);
+  const activeAtlasLiveEvents = activeMatter?.id
+    ? atlasLiveEventsByMatterId[activeMatter.id] || []
+    : [];
+  const atlasFeedTimelineEntries = useMemo(() => {
+    return analysisProgressMessages
+      .map((message, index) => ({
+        id: `feed_${message.id}_${index}`,
+        title:
+          index === 0
+            ? "Assessing matter"
+            : message.id === "read"
+              ? "Reviewing uploaded record"
+              : message.id === "understand"
+                ? "Understanding the dispute"
+                : message.id === "verify"
+                  ? "Checking support and gaps"
+                  : message.id === "summary"
+                    ? "Preparing the brief"
+                    : "Research update",
+        message:
+          message.tone === "current" && activeProgressDisplayText
+            ? activeProgressDisplayText
+            : message.text,
+        query: "",
+        rankedCandidates: [],
+        createdAt: "",
+        tone: message.tone,
+      }))
+      .filter((entry) => Boolean(entry.message));
+  }, [analysisProgressMessages, activeProgressDisplayText]);
+  const atlasLiveTimelineEntries = useMemo(() => {
+    return activeAtlasLiveEvents
+      .filter(
+        (item) =>
+          item.type !== "atlas_snapshot" && item.type !== "stream_connected",
+      )
+      .map((item) => {
+        const customTitle = normalizeInline(String(item.payload?.title || ""));
+        const stageLabel = item.payload?.stage
+          ? item.payload.stage.replace(/_/g, " ")
+          : "";
+        const progressMessage = normalizeInline(
+          String(item.payload?.progress?.message || ""),
+        );
+        const fallbackMessage = normalizeInline(
+          String(item.payload?.message || ""),
+        );
+        const message = progressMessage || fallbackMessage;
+        const title =
+          customTitle ||
+          (item.type === "case_research_progress"
+            ? "Checking cases"
+            : item.type === "stage_started"
+              ? `Started ${stageLabel || "research step"}`
+              : item.type === "stage_completed"
+                ? `Completed ${stageLabel || "research step"}`
+                : item.type === "stage_failed"
+                  ? `Problem in ${stageLabel || "research step"}`
+                  : stageLabel || "Research update");
+        return {
+          id: item.id,
+          title,
+          message,
+          query: normalizeInline(String(item.payload?.progress?.query || "")),
+          rankedCandidates: Array.isArray(item.payload?.rankedCandidates)
+            ? item.payload.rankedCandidates.slice(0, 5)
+            : [],
+          createdAt: item.createdAt,
+          tone:
+            item.type === "stage_completed"
+              ? "done"
+              : item.type === "stage_failed"
+                ? "attention"
+                : "current",
+        };
+      })
+      .filter(
+        (item) => item.message || item.query || item.rankedCandidates.length,
+      )
+      .slice(-8);
+  }, [activeAtlasLiveEvents]);
+  const atlasAnimatedTimelineEntries = useMemo(() => {
+    const sourceEntries = (
+      atlasLiveTimelineEntries.length
+        ? atlasLiveTimelineEntries
+        : atlasFeedTimelineEntries
+    ).slice(-4);
+    return sourceEntries.map((entry, index) => ({
+      ...entry,
+      visibleAge: sourceEntries.length - index - 1,
+    }));
+  }, [atlasFeedTimelineEntries, atlasLiveTimelineEntries]);
   const shouldShowWorkflowConfirmationState =
     Boolean(activeAtlasRecognition) &&
     !activeAtlasConfirmation?.selectedWorkflowId &&
@@ -2382,22 +3957,23 @@ const MatterSection = ({
     (!isAtlasMatterFlow ? activeClarificationCheckpoint?.questions : null) ||
     [];
   const isMatterResearchRunning =
-    isClarificationAdvancing ||
-    activeSummaryRunState.running ||
-    isExtractionRunning ||
-    isIndexingRunning ||
-    Boolean(
-      activeAnalysisState?.status &&
-      atlasRunningStatuses.has(String(activeAnalysisState.status)),
-    ) ||
-    (!activePrimarySummary &&
-      Boolean(activeMatter) &&
-      !shouldShowClarificationState &&
-      !shouldShowWorkflowConfirmationState &&
-      !(
+    !isMatterUnderstandingAwaitingInput &&
+    (isClarificationAdvancing ||
+      activeSummaryRunState.running ||
+      isExtractionRunning ||
+      isIndexingRunning ||
+      Boolean(
         activeAnalysisState?.status &&
-        atlasPauseStatuses.has(String(activeAnalysisState.status))
-      ));
+        atlasRunningStatuses.has(String(activeAnalysisState.status)),
+      ) ||
+      (!activePrimarySummary &&
+        Boolean(activeMatter) &&
+        !shouldShowClarificationState &&
+        !shouldShowWorkflowConfirmationState &&
+        !(
+          activeAnalysisState?.status &&
+          atlasPauseStatuses.has(String(activeAnalysisState.status))
+        )));
   const isMatterStatePolling =
     Boolean(activeMatter?.id) &&
     (isExtractionRunning ||
@@ -2407,6 +3983,12 @@ const MatterSection = ({
         activeAnalysisState?.status &&
         atlasRunningStatuses.has(String(activeAnalysisState.status)),
       ));
+  const hasActiveAtlasStream = Boolean(
+    activeMatter?.id &&
+    atlasEventSourceRefs.current[activeMatter.id] &&
+    atlasEventSourceRefs.current[activeMatter.id]?.readyState !==
+      EventSource.CLOSED,
+  );
   const clarificationQuestions = activeQuestionSet;
   const activeClarificationQuestion =
     clarificationQuestions[activeClarificationQuestionIndex] || null;
@@ -2416,34 +3998,17 @@ const MatterSection = ({
   const canAdvanceClarificationQuestion = activeClarificationQuestion
     ? Boolean(String(activeClarificationAnswerValue || "").trim())
     : false;
-  const researchWorkspaceTitle = activePrimarySummary
-    ? "Matter brief ready"
-    : shouldShowWorkflowConfirmationState
-      ? "Associate has matched this matter to an atlas workflow"
-      : shouldShowClarificationState
-        ? "Associate needs a few targeted inputs"
-        : "Associate is actively researching this matter";
-  const researchWorkspaceSummary = activePrimarySummary
-    ? "The short brief is ready below. Open it to review the full research, workflow grounding, and case analogs."
-    : shouldShowWorkflowConfirmationState
-      ? activeAtlasRecognition?.checkpoint?.messageToUser ||
-        "Confirm the workflow match before deeper research starts."
-      : shouldShowClarificationState
-        ? (isAtlasCheckpointActionable
-            ? activeAtlasCheckpoint?.messageToUser
-            : null) ||
-          activeClarificationCheckpoint?.messageToUser ||
-          "The contract framework is visible, but a stronger conclusion needs a few answers or supporting records."
-        : "The system is reading the record, mapping the matter type, checking what the documents actually support, and preparing the legal brief.";
   const researchWorkspaceStatusLabel = activePrimarySummary
     ? "brief ready"
     : shouldShowWorkflowConfirmationState
       ? "workflow confirmation"
       : shouldShowClarificationState
         ? "clarification checkpoint"
-        : isMatterResearchRunning
-          ? "live execution"
-          : "research queued";
+        : isMatterUnderstandingAwaitingInput
+          ? "input needed"
+          : isMatterResearchRunning
+            ? "live execution"
+            : "research queued";
   const activeAnalysisStatus = String(activeAnalysisState?.status || "").trim();
   const canStartResearchFromUi =
     Boolean(activeMatter?.id) &&
@@ -2451,6 +4016,7 @@ const MatterSection = ({
     !activePrimarySummary &&
     !shouldShowWorkflowConfirmationState &&
     !shouldShowClarificationState &&
+    !isMatterUnderstandingAwaitingInput &&
     !isMatterResearchRunning;
   const isResearchStartBlockedByPreparation =
     isExtractionRunning || isIndexingRunning;
@@ -2459,6 +4025,179 @@ const MatterSection = ({
     activeAnalysisStatus === "atlas_cancelled"
       ? "Restart research"
       : "Start research";
+
+  const renderAtlasLiveActivity = () => {
+    const isMatterUnderstandingFeed =
+      activeMatterUnderstandingRunning ||
+      activeMatterUnderstandingLiveFeed.entries.length > 0;
+    const timelineEntries = isMatterUnderstandingFeed
+      ? activeMatterUnderstandingLiveFeed.entries
+      : atlasAnimatedTimelineEntries;
+    const activeTypedEntry =
+      timelineEntries.length > 0
+        ? timelineEntries[timelineEntries.length - 1]
+        : null;
+    if (!timelineEntries.length) {
+      return null;
+    }
+    const progressValue = isMatterUnderstandingFeed
+      ? activeMatterUnderstandingLiveFeed.progress
+      : Math.min(96, Math.max(8, 18 + timelineEntries.length * 18));
+    const progressLabel =
+      progressValue >= 92
+        ? "High"
+        : progressValue >= 60
+          ? "Moderate to High"
+          : progressValue >= 32
+            ? "Moderate"
+            : "Starting";
+    return (
+      <div className="matterResearchLiveThread">
+        <div className="matterResearchLiveThreadHead">
+          <span>Live Feed</span>
+          <button type="button" className="matterResearchThinkingStepsButton">
+            View Thinking Steps
+          </button>
+        </div>
+        {timelineEntries.length ? (
+          <div className="matterResearchTimeline">
+            {timelineEntries.map((entry, index) => {
+              const isNewest = index === timelineEntries.length - 1;
+              const typedMessage =
+                isNewest && activeTypedEntry
+                  ? activeTypedEntry.message.slice(0, atlasLiveTypewriterCount)
+                  : entry.message;
+              return (
+                <article
+                  key={entry.id}
+                  className={`matterResearchTimelineEntry is-${entry.tone} age-${entry.visibleAge} ${isNewest ? "is-newest" : ""}`}
+                >
+                  <div className="matterResearchTimelineBody">
+                    <strong>{entry.title}</strong>
+                    {entry.message ? (
+                      <p>
+                        {typedMessage}
+                        {isNewest && activeTypedEntry ? (
+                          <span
+                            className="matterResearchTypeCursor"
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
+        <div className="matterResearchEvidenceStrength">
+          <span>Preliminary evidence strength</span>
+          <div className="matterResearchEvidenceMeter">
+            <div
+              className="matterResearchEvidenceMeterFill"
+              style={{ width: `${progressValue}%` }}
+            />
+          </div>
+          <strong>{progressLabel}</strong>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMatterResearchCommandPanel = () => (
+    <article className="matterResearchModePanel matterResearchModePanelMinimal">
+      <div className="matterResearchCommandBar">
+        <div className="matterResearchCommandStatusRow">
+          <span className="matterResearchModeStatus">
+            {researchWorkspaceStatusLabel}
+          </span>
+        </div>
+        <div className="matterResearchModeMeta">
+          {canStartResearchFromUi && activeMatter ? (
+            <button
+              type="button"
+              className="matterResearchStartBtn"
+              disabled={
+                isResearchStartBlockedByPreparation ||
+                Boolean(activeMatterUnderstandingPendingQuestion)
+              }
+              onClick={() => void runMatterUnderstanding(activeMatter.id)}
+            >
+              {researchStartButtonLabel}
+            </button>
+          ) : null}
+          {isMatterResearchRunning && activeMatter ? (
+            <button
+              type="button"
+              className="matterResearchCancelBtn"
+              onClick={() => void cancelMatterAtlasResearch(activeMatter.id)}
+            >
+              Cancel research
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="matterResearchCommandSurface">
+        {activeMatterUnderstandingPendingQuestion && activeMatter ? (
+          <div className="matterResearchLiveThread matterResearchLiveThreadIdle">
+            <div className="matterResearchLiveThreadHead">
+              <span>Input needed</span>
+            </div>
+            <div className="matterResearchTimeline">
+              <article className="matterResearchTimelineEntry age-0 is-newest">
+                <div className="matterResearchTimelineBody">
+                  <strong>
+                    {activeMatterUnderstandingPendingQuestion.question}
+                  </strong>
+                  {activeMatterUnderstandingPendingQuestion.reason ? (
+                    <p>{activeMatterUnderstandingPendingQuestion.reason}</p>
+                  ) : null}
+                  <div className="matterChecklistActionButtonWrap">
+                    {activeMatterUnderstandingPendingQuestion.options.map(
+                      (option) => (
+                        <Button
+                          key={`${activeMatterUnderstandingPendingQuestion.questionId}-${option}`}
+                          type="button"
+                          className="matterStartDraftingBtn"
+                          disabled={activeMatterUnderstandingRunning}
+                          onClick={() =>
+                            void answerMatterUnderstandingQuestion(
+                              activeMatter.id,
+                              activeMatterUnderstandingPendingQuestion,
+                              option,
+                            )
+                          }
+                        >
+                          {option}
+                        </Button>
+                      ),
+                    )}
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+        ) : (
+          renderAtlasLiveActivity() || (
+            <div className="matterResearchLiveThread matterResearchLiveThreadIdle">
+              <div className="matterResearchLiveThreadHead">
+                <span>Working...</span>
+              </div>
+              <div className="matterResearchTimeline">
+                <article className="matterResearchTimelineEntry age-0 is-newest">
+                  <div className="matterResearchTimelineBody">
+                    <strong>Status</strong>
+                    <p>{activeProgressDisplayText}</p>
+                  </div>
+                </article>
+              </div>
+            </div>
+          )
+        )}
+      </div>
+    </article>
+  );
 
   useEffect(() => {
     setActiveProgressVariantIndex(0);
@@ -2470,7 +4209,77 @@ const MatterSection = ({
   }, [activeProgressMessage?.id, activeProgressMessage?.rotationMessages]);
 
   useEffect(() => {
+    const latestEntry =
+      atlasAnimatedTimelineEntries.length > 0
+        ? atlasAnimatedTimelineEntries[atlasAnimatedTimelineEntries.length - 1]
+        : null;
+    const targetText = String(latestEntry?.message || "");
+    setAtlasLiveTypewriterCount(0);
+    if (!targetText) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setAtlasLiveTypewriterCount((current) => {
+        if (current >= targetText.length) {
+          window.clearInterval(interval);
+          return current;
+        }
+        return Math.min(targetText.length, current + 2);
+      });
+    }, 18);
+    return () => window.clearInterval(interval);
+  }, [
+    atlasAnimatedTimelineEntries.length,
+    atlasAnimatedTimelineEntries[atlasAnimatedTimelineEntries.length - 1]?.id,
+  ]);
+
+  useEffect(() => {
+    const matterId = String(activeMatter?.id || "").trim();
+    if (!matterId || !activeProgressMessage || !activeProgressDisplayText) {
+      return;
+    }
+    const isAtlasThinkingStep =
+      Boolean(activeAnalysisStatus) &&
+      atlasRunningStatuses.has(activeAnalysisStatus);
+    if (!isAtlasThinkingStep) {
+      return;
+    }
+    const title =
+      atlasStatusFeedConfig[activeAnalysisStatus]?.label ||
+      activeProgressMessage.text ||
+      "Research update";
+    appendAtlasLiveEvent(matterId, {
+      id: `synthetic_${matterId}_${activeAnalysisStatus}_${activeProgressMessage.id}_${activeProgressVariantIndex}`,
+      type: "synthetic_progress",
+      matterId,
+      createdAt: new Date().toISOString(),
+      payload: {
+        stage: activeAnalysisStatus,
+        title,
+        message: activeProgressDisplayText,
+      },
+    });
+  }, [
+    activeAnalysisStatus,
+    activeMatter?.id,
+    activeProgressDisplayText,
+    activeProgressMessage,
+    activeProgressVariantIndex,
+  ]);
+
+  useEffect(() => {
     if (!activeMatter?.id || !isMatterStatePolling) return;
+    if (isMockMatterId(activeMatter.id)) return;
+    const shouldSkipPollingForStream =
+      hasActiveAtlasStream &&
+      (Boolean(
+        activeAnalysisState?.status &&
+        atlasRunningStatuses.has(String(activeAnalysisState.status)),
+      ) ||
+        Boolean(activeSummaryRunState.running));
+    if (shouldSkipPollingForStream) {
+      return;
+    }
     const interval = window.setInterval(() => {
       const isAtlasPolling =
         Boolean(
@@ -2482,13 +4291,51 @@ const MatterSection = ({
         return;
       }
       void refreshMattersFromServer();
-    }, 2500);
+    }, ATLAS_STATE_POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [
     activeAnalysisState?.status,
     activeMatter?.id,
     activeSummaryRunState.running,
+    hasActiveAtlasStream,
     isMatterStatePolling,
+    mergeMatterAtlasLatest,
+  ]);
+
+  useEffect(() => {
+    const matterId = String(activeMatter?.id || "").trim();
+    const status = String(activeAnalysisState?.status || "").trim();
+    const shouldStream =
+      Boolean(matterId) &&
+      (atlasRunningStatuses.has(status) || activeSummaryRunState.running) &&
+      !isMockMatterId(matterId);
+    if (!shouldStream) {
+      if (matterId && atlasEventSourceRefs.current[matterId]) {
+        atlasEventSourceRefs.current[matterId]?.close();
+        delete atlasEventSourceRefs.current[matterId];
+      }
+      return;
+    }
+    if (atlasEventSourceRefs.current[matterId]) {
+      return;
+    }
+
+    const stream = ensureAtlasEventStream(matterId);
+    if (!stream) {
+      return;
+    }
+
+    return () => {
+      stream.close();
+      if (atlasEventSourceRefs.current[matterId] === stream) {
+        delete atlasEventSourceRefs.current[matterId];
+      }
+    };
+  }, [
+    activeAnalysisState?.status,
+    activeMatter?.id,
+    activeSummaryRunState.running,
+    mergeMatterAtlasLatest,
   ]);
 
   useEffect(() => {
@@ -2529,26 +4376,47 @@ const MatterSection = ({
         [activeMatter.id]: {
           ...entry,
           running: false,
+          error:
+            status === "atlas_failed"
+              ? normalizeInline(
+                  activeAnalysisState?.error ||
+                    entry.error ||
+                    "Matter atlas research failed.",
+                )
+              : entry.error,
         },
       };
     });
-  }, [activeAnalysisState?.status, activeMatter?.id, activePrimarySummary]);
+  }, [
+    activeAnalysisState?.error,
+    activeAnalysisState?.status,
+    activeMatter?.id,
+    activePrimarySummary,
+  ]);
 
   useEffect(() => {
     if (!activeMatter?.id || isMockMatterId(activeMatter.id)) return;
+    if (activeMatterUnderstandingPendingQuestion) return;
     if (activePrimarySummary) return;
-    if (activeSummaryRunState.running || isExtractionRunning || isIndexingRunning) {
+    if (
+      activeSummaryRunState.running ||
+      isExtractionRunning ||
+      isIndexingRunning ||
+      activeMatterUnderstandingRunning
+    ) {
       return;
     }
-    if (activeAnalysisStatus) return;
+    if (activeMatter?.matterUnderstandingV2) return;
     if (autoStartedAtlasMatterIdsRef.current.has(activeMatter.id)) return;
     autoStartedAtlasMatterIdsRef.current.add(activeMatter.id);
-    void runMatterAtlasResearch(activeMatter.id);
+    void runMatterUnderstanding(activeMatter.id);
   }, [
-    activeAnalysisStatus,
     activeMatter?.id,
+    activeMatter?.matterUnderstandingV2,
+    activeMatterUnderstandingPendingQuestion,
     activePrimarySummary,
     activeSummaryRunState.running,
+    activeMatterUnderstandingRunning,
     isExtractionRunning,
     isIndexingRunning,
   ]);
@@ -2643,6 +4511,32 @@ const MatterSection = ({
     activeMatter?.draftRecommendations?.generated_at,
     activeMatter?.draftRecommendations?.counts?.total,
   ]);
+
+  const completedDraftJobSignature = useMemo(
+    () =>
+      jobs
+        .filter((job) => job.source === "draft-job" && job.status === "succeeded")
+        .map(
+          (job) =>
+            `${job.id}:${job.resultId || job.draftId || ""}:${job.completedAt || ""}`,
+        )
+        .join("|"),
+    [jobs],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void listDrafts()
+      .then((drafts) => {
+        if (!cancelled) setSavedDrafts(drafts);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedDrafts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completedDraftJobSignature]);
 
   const runPeopleExtraction = async (
     matterId: string,
@@ -2912,8 +4806,23 @@ const MatterSection = ({
     ? atlasDraftQueue
     : draftRecommendationItems;
   const draftPanelCount = draftPanelItems.length;
+  const matterUnderstandingAnalysisCount = activeMatterUnderstanding
+    ? (activeMatterUnderstanding.issues_and_ambiguities?.length || 0) +
+      (activeMatterUnderstanding.missing_information?.length || 0) +
+      (activeMatterUnderstanding.next_steps?.length || 0) +
+      (activeMatterUnderstanding.legal_analysis?.issue_analyses?.length || 0)
+    : 0;
+  const matterUnderstandingRunTimelineCount =
+    activeMatterUnderstandingEvents.filter(
+      (item) =>
+        item.event === "stage_started" ||
+        item.event === "stage_complete" ||
+        item.event === "agent_done" ||
+        item.event === "section_complete" ||
+        item.event === "tool_call",
+    ).length;
   const factCoverageCount =
-    groundAnalysisCards.length || secondaryVerifiedFactCount || 0;
+    matterUnderstandingAnalysisCount || analysisReferenceCount || 0;
   const workspaceTabs: Array<{
     id: MatterWorkspaceTab;
     label: string;
@@ -2923,18 +4832,29 @@ const MatterSection = ({
     {
       id: "facts",
       label: "Analysis",
-      count: summaryIssues.length || factCoverageCount,
+      count: factCoverageCount,
     },
     {
       id: "evidence",
       label: "Evidence",
-      count: activeEvidenceReference?.evidenceItems?.length || 0,
+      count:
+        activeEvidenceReference?.evidenceItems?.length ||
+        activeAtlasCaseResearch?.similarCases?.length ||
+        matterUnderstandingResearchAuthorities.length ||
+        briefEvidenceCount ||
+        0,
     },
-    { id: "drafts", label: "Drafts", count: draftPanelCount },
+    {
+      id: "drafts",
+      label: "Drafts",
+      count: matterUnderstandingDrafts.length || draftPanelCount,
+    },
     {
       id: "timeline",
       label: "Timeline",
       count:
+        matterUnderstandingTimeline.length ||
+        matterUnderstandingRunTimelineCount ||
         (isAtlasMatterFlow ? atlasDraftQueue.length : 0) ||
         briefPoints.length ||
         groundAnalysisCards.length,
@@ -2943,6 +4863,65 @@ const MatterSection = ({
   ];
 
   const timelineItems = useMemo(() => {
+    if (matterUnderstandingTimeline.length) {
+      return matterUnderstandingTimeline.slice(0, 14).map((item, index) => ({
+        id: `understanding-timeline-${index}`,
+        title: item.event || "Matter event",
+        detail: item.legal_effect || item.source_document || "",
+        source: [item.date, item.source_document].filter(Boolean).join(" · "),
+        step: index + 1,
+      }));
+    }
+    if (activeMatterUnderstandingEvents.length) {
+      const runEvents = activeMatterUnderstandingEvents
+        .filter(
+          (item) =>
+            item.event === "stage_started" ||
+            item.event === "stage_complete" ||
+            item.event === "agent_done" ||
+            item.event === "section_complete" ||
+            item.event === "tool_call" ||
+            item.event === "final" ||
+            item.event === "done",
+        )
+        .slice(-14);
+      if (runEvents.length) {
+        return runEvents.map((item, index) => {
+          const stage = String(item.data.stage || "").replace(/_/g, " ");
+          const agent = String(item.data.agent || "").replace(/_/g, " ");
+          const section = String(item.data.section || "").replace(/_/g, " ");
+          const tool = String(item.data.tool || "").replace(/_/g, " ");
+          const elapsedMs = Number(item.data.elapsedMs || 0);
+          const title =
+            item.event === "stage_started"
+              ? `Started ${stage || "analysis stage"}`
+              : item.event === "stage_complete"
+                ? `Completed ${stage || "analysis stage"}`
+                : item.event === "agent_done"
+                  ? `${agent || "Agent"} completed`
+                  : item.event === "section_complete"
+                    ? `${section || "Section"} ready`
+                    : item.event === "tool_call"
+                      ? `Ran ${tool || "research tool"}`
+                      : "Matter analysis complete";
+          const detail =
+            item.event === "tool_call" && item.data.query
+              ? String(item.data.query)
+              : elapsedMs
+                ? `Completed in ${Math.round(elapsedMs / 1000)}s.`
+                : item.event === "final" || item.event === "done"
+                  ? "The structured matter understanding is ready."
+                  : "Research checkpoint recorded during the analysis run.";
+          return {
+            id: `understanding-run-timeline-${index}`,
+            title,
+            detail,
+            source: "Matter understanding stream",
+            step: index + 1,
+          };
+        });
+      }
+    }
     if (isAtlasMatterFlow && atlasDraftQueue.length) {
       return atlasDraftQueue.slice(0, 8).map((item, index) => {
         const dependencyText = Array.isArray(item.unblocksWhen)
@@ -2984,10 +4963,17 @@ const MatterSection = ({
       id: `${card.id}-timeline`,
       title: card.title,
       detail: card.factText,
-        source: card.sourceFiles[0] || "",
-        step: index + 1,
-      }));
-  }, [atlasDraftQueue, briefPoints, groundAnalysisCards, isAtlasMatterFlow]);
+      source: card.sourceFiles[0] || "",
+      step: index + 1,
+    }));
+  }, [
+    atlasDraftQueue,
+    briefPoints,
+    groundAnalysisCards,
+    isAtlasMatterFlow,
+    activeMatterUnderstandingEvents,
+    matterUnderstandingTimeline,
+  ]);
   const findDocumentBySource = (
     sourceName: string,
     sourceRef?: MatterSignalSourceRef | null,
@@ -3693,12 +5679,11 @@ const MatterSection = ({
         lastGroundAnalysisPollAtRef.current[matterKey] = Date.now();
         const response = await fetch(
           buildApiUrl(
-            `/api/matters/${encodeURIComponent(activeMatter.id)}/ground-analysis`,
+            `/api/matters/${encodeURIComponent(activeMatter.id)}/ground-analysis?view=status`,
           ),
         );
         const payload = (await response.json()) as {
           success?: boolean;
-          result?: MatterProcessedResult | null;
           statuses?: {
             generation?: string;
             verification?: string;
@@ -3708,14 +5693,11 @@ const MatterSection = ({
             inference_verification?: string;
             next_step_planner?: string;
           };
+          payload_ready?: boolean;
         };
 
         if (!response.ok || !payload.success) {
           return;
-        }
-
-        if (!cancelled && payload.result) {
-          updateMatter(payload.result);
         }
 
         const shouldContinue =
@@ -3726,6 +5708,26 @@ const MatterSection = ({
           payload.statuses?.inference_generation === "processing" ||
           payload.statuses?.inference_verification === "processing" ||
           payload.statuses?.next_step_planner === "processing";
+
+        if (!cancelled && !shouldContinue && payload.payload_ready) {
+          const fullResponse = await fetch(
+            buildApiUrl(
+              `/api/matters/${encodeURIComponent(activeMatter.id)}/ground-analysis?view=full`,
+            ),
+          );
+          const fullPayload = (await fullResponse.json()) as {
+            success?: boolean;
+            result?: MatterProcessedResult | null;
+          };
+          if (
+            !cancelled &&
+            fullResponse.ok &&
+            fullPayload.success &&
+            fullPayload.result
+          ) {
+            updateMatter(fullPayload.result);
+          }
+        }
 
         if (!cancelled && shouldContinue) {
           timeoutId = window.setTimeout(() => {
@@ -4150,6 +6152,477 @@ const MatterSection = ({
     persistMockMatter(result);
   };
 
+  const cloneMatterResult = <T,>(value: T): T =>
+    JSON.parse(JSON.stringify(value)) as T;
+
+  const getMockMatterResultById = (matterId: string) => {
+    const normalizedMatterId = String(matterId || "").trim();
+    if (!normalizedMatterId || !isMockMatterId(normalizedMatterId)) {
+      return null;
+    }
+    return (
+      loadMockMatterResults().find(
+        (entry) => entry?.matter?.id === normalizedMatterId,
+      ) || null
+    );
+  };
+
+  const createMockAtlasRecognition = (
+    matterId: string,
+    overrideNote = "",
+  ): AtlasBaseRecognitionResult => ({
+    matterId,
+    status: "needs_confirmation",
+    primaryWorkflowId: "adv-contractreview",
+    primaryWorkflowName: "Advanced Contract Review",
+    primaryAreaId: "contracts",
+    primaryAreaName: "Contracts",
+    primaryReason:
+      overrideNote ||
+      "The uploaded record is a commercial contract dispute with delay, breach, and remedy analysis.",
+    candidateWorkflows: [
+      {
+        workflowId: "adv-contractreview",
+        workflowName: "Advanced Contract Review",
+        areaId: "contracts",
+        areaName: "Contracts",
+        score: 93,
+        confidence: "high",
+        confidenceScore: 0.93,
+        whyItMatches:
+          "Best fit for milestone delay, remedy analysis, and contractual risk allocation.",
+        matchedSignals: [
+          "contract dispute",
+          "milestone delay",
+          "liquidated damages",
+        ],
+        missingSignals: [],
+      },
+      {
+        workflowId: "arb-prep",
+        workflowName: "Arbitration Preparation",
+        areaId: "disputes",
+        areaName: "Disputes",
+        score: 74,
+        confidence: "medium",
+        confidenceScore: 0.74,
+        whyItMatches:
+          "Also fits the dispute posture but is slightly downstream.",
+        matchedSignals: ["contract dispute"],
+        missingSignals: ["remedy sequencing", "delay allocation"],
+      },
+    ],
+    matchedSignals: [
+      "contract dispute",
+      "milestone delay",
+      "liquidated damages",
+    ],
+    conflictingSignals: [],
+    forumMismatch: false,
+    triggerMatchPenaltyApplied: false,
+    requiresConfirmation: true,
+    verification: {
+      agrees: true,
+      recommendedWorkflowId: "adv-contractreview",
+      verifiedConfidence: 0.91,
+      reason:
+        "The matter is best handled as a contract review and enforcement workflow.",
+      requiresConfirmation: true,
+    },
+    atlasRequirementsPreview: {
+      inputs: ["Timeline facts", "Notice trail", "Delay allocation"],
+      collected: ["Contract pack", "Uploaded statement"],
+      stages: ["Workflow confirmation", "Case verification", "Brief synthesis"],
+      applications: ["Rights analysis", "Delay remedy review"],
+    },
+    checkpoint: {
+      type: "workflow_confirmation",
+      messageToUser:
+        "Associate matched this file set to Advanced Contract Review. Confirm to continue the deeper research flow.",
+      primaryWorkflowId: "adv-contractreview",
+      candidates: [
+        {
+          workflowId: "adv-contractreview",
+          workflowName: "Advanced Contract Review",
+          areaId: "contracts",
+          areaName: "Contracts",
+          score: 93,
+          confidence: "high",
+          confidenceScore: 0.93,
+          whyItMatches:
+            "Best fit for milestone delay, remedy analysis, and contractual risk allocation.",
+          matchedSignals: [
+            "contract dispute",
+            "milestone delay",
+            "liquidated damages",
+          ],
+          missingSignals: [],
+        },
+      ],
+      canAcceptPrimary: true,
+      areaName: "Contracts",
+      conflictingSignals: [],
+    },
+  });
+
+  const createMockAtlasCheckpoint = (matterId: string): AtlasGapCheckpoint => ({
+    matterId,
+    status: "needs_user_input",
+    messageToUser:
+      "The record is usable, but Associate needs one factual clarification before finalizing the brief.",
+    criticalQuestions: [
+      {
+        id: "mock_gap_1",
+        question:
+          "Was any written extension of time or milestone revision approved after the supplier delay surfaced?",
+        whyItMatters:
+          "This determines whether the missed milestone remains a clean breach or shifted onto a revised contractual timeline.",
+        answerType: "yes_no",
+        priority: "critical",
+        linkedIssue: "extension_of_time",
+        linkedMissingInputIds: ["extension_notice"],
+      },
+    ],
+    requestedDocuments: [],
+    missingWorkflowRequirements: [
+      "Explicit confirmation of any approved milestone extension",
+    ],
+    supportedWorkflowRequirements: [
+      "Base contract terms",
+      "Delay allegations",
+      "Issue framing for remedies",
+    ],
+    gapClassification: {
+      supported: ["Base contractual framework", "Delay propositions"],
+      frameworkOnly: ["Extension mechanism"],
+      factualProofMissing: ["Written approval / amendment trail"],
+      irrelevantToCurrentMatter: [],
+    },
+    canContinueWithLimitedResearch: true,
+    consequenceIfSkipped:
+      "The brief can still be generated, but extension-related conclusions will remain qualified.",
+  });
+
+  const createMockAtlasDeciderResearch = (
+    _matterId: string,
+  ): AtlasDeciderResearchResult => ({
+    workflowId: "adv-contractreview",
+    agentBrief:
+      "Review supplier-caused delay allocation, extension mechanisms, notice compliance, and milestone remedies.",
+    workflowGrounding: [
+      "Advanced Contract Review",
+      "Delay analysis",
+      "Remedy sequencing",
+    ],
+    documentGrounding: [
+      "Uploaded matter packet",
+      "Supplier delay narrative",
+      "Milestone extension issue",
+    ],
+    webGrounding: [],
+    openQuestions: [
+      "Was any formal extension granted?",
+      "Did the contract require written amendment approval?",
+    ],
+  });
+
+  const createMockAtlasCaseResearch = (
+    _matterId: string,
+    progress?: AtlasCaseResearchResult["progress"],
+  ): AtlasCaseResearchResult => ({
+    workflowId: "adv-contractreview",
+    progress,
+    similarCases: [
+      {
+        title:
+          "Mehra Exports Pvt. Ltd. v. CloudServ Technologies Pvt. Ltd. (2024)",
+        officialDocumentUrl: "#",
+        officialViewerUrl: "#",
+        officialSourceType: "html",
+        sourceCourt: "Mock Reference",
+        pageNumber: 1,
+        relevantExcerpt:
+          "The mock benchmark treats extension mechanics and delay allocation as the central dispute issue.",
+        relevantExcerptTitle: "Delay allocation and extension mechanism",
+        officialCitation: "Mock Citation 2024",
+        note: "Illustrative authority for the UI preview path.",
+        facts:
+          "Supplier delay and milestone slippage in a commercial services contract.",
+        legalQuestion:
+          "Whether the delay stayed within contractor risk or moved under an approved extension mechanism.",
+        holding:
+          "Delay remedies depend on strict compliance with the written extension machinery.",
+        relevanceToMatter:
+          "Mirrors the exact extension-of-time and delay-remedy issue surfaced by the matter packet.",
+      },
+    ],
+    procedurePatterns: [
+      "Check written extension approvals before treating the missed milestone as final breach.",
+      "Sequence remedy analysis after notice and amendment compliance review.",
+    ],
+    sourceLinks: ["#"],
+    openQuestions: ["Need final confirmation on extension approval trail."],
+    rankedCandidates: [
+      {
+        title: "K.M. Joseph v. Sample Infrastructure Co. (2025)",
+        officialUrl: "#",
+        supportedProposition:
+          "Whether the contract permits any extension of time for the reported milestone delay.",
+        propositionSupportStatus: "exact",
+        baseScore: 78,
+        fetchedScore: 88,
+        finalScore: 90,
+        fetchStatus: "fetched",
+        note: "Direct discussion of written extension mechanics.",
+      },
+      {
+        title: "Corporate Infotech Pvt. Ltd. v. NTRO (2024)",
+        officialUrl: "#",
+        supportedProposition:
+          "Whether supplier-caused milestone delay constitutes a contractual breach or remains within the contractor's risk allocation.",
+        propositionSupportStatus: "overlap",
+        baseScore: 62,
+        fetchedScore: 67,
+        finalScore: 68,
+        fetchStatus: "fetched",
+        note: "Useful but less direct on extension approval mechanics.",
+      },
+    ],
+    debugQueries: [
+      "contractual extension of time supplier delay milestone breach",
+    ],
+    debugSummary: {
+      iterations: 1,
+      candidateCount: 2,
+      retainedCount: 1,
+      discardedCount: 1,
+    },
+  });
+
+  const createMockAtlasNextSteps = (
+    _matterId: string,
+  ): AtlasNextStepsAnalysis => ({
+    matterId: _matterId,
+    workflowId: "adv-contractreview",
+    doNow: [
+      {
+        id: "mock_step_1",
+        title: "Verify extension approval trail",
+        description:
+          "Confirm whether any written approval, amendment, or change order revised the milestone date.",
+        priority: "high",
+        unblocks: ["Delay allocation", "LD exposure"],
+        groundedInCases: ["K.M. Joseph v. Sample Infrastructure Co. (2025)"],
+        groundedInWorkflow: ["Advanced Contract Review"],
+      },
+    ],
+    draftQueue: [
+      {
+        id: "mock_draft_1",
+        title: "Delay and remedies advice note",
+        description:
+          "Summarize extension, notice, and delay-remedy exposure for counsel review.",
+        draftType: "delay_advice_note",
+        status: "ready",
+        priority: "high",
+        unblocksWhen: ["Extension facts are confirmed"],
+        dependsOn: [],
+        isStartable: true,
+        availabilityNote: "Available in mock mode for UI inspection.",
+      },
+    ],
+    systemWorkingOn: [
+      {
+        id: "mock_sys_1",
+        title: "Case verification thread",
+        description: "Checking analogy strength and proposition fit.",
+        status: "completed",
+        groundedInWorkflow: ["Advanced Contract Review"],
+      },
+    ],
+    whyTheseNext: [
+      "Extension mechanics are the threshold issue for breach and remedy analysis.",
+      "Delay remedies depend on whether the original milestone remained operative.",
+    ],
+    blockingItems: [],
+    ambiguities: ["Written approval trail still needs confirmation."],
+    askAiEligibleQuestions: [
+      {
+        id: "mock_ask_1",
+        question: "What if no formal extension approval exists?",
+        whyItMatters: "This changes breach and liquidated damages analysis.",
+      },
+    ],
+    confidence: "high",
+    shouldContinueResearch: false,
+    followUpQueries: [],
+    fallbackCases: [],
+    researchTrace: {
+      model: "mock-mode",
+      provider: "local",
+      loopsUsed: 0,
+      error: null,
+    },
+  });
+
+  const createMockAtlasBrief = (_matterId: string): AtlasMatterBrief => ({
+    matterId: _matterId,
+    workflowId: "adv-contractreview",
+    brief:
+      "The current record supports a contract-focused delay analysis. The key threshold issue is whether any written extension or amendment revised the milestone. If not, the missed milestone remains the cleanest breach anchor and delay remedies can be assessed on the original timeline.",
+    summaryBrief:
+      "The contract issue turns on extension-of-time compliance. Confirm whether a written milestone extension was actually approved before treating the delay as excused.",
+    detailedBrief:
+      "Associate's mock analysis concludes that the matter should be framed around supplier-caused delay, the contract's written extension mechanism, and downstream remedy exposure. The benchmark path is: verify the approval trail, assess whether the original milestone remained operative, and then evaluate liquidated damages, deductions, or termination leverage.",
+    wordCount: 94,
+    confidence: "high",
+    usedWorkflow: {
+      id: "adv-contractreview",
+      name: "Advanced Contract Review",
+      area: "Contracts",
+    },
+    usedCaseResearch: {
+      sourceCount: 1,
+      patternCount: 2,
+    },
+    remainingGaps: ["Need final confirmation of written extension approval."],
+    recordSupports: [
+      "Delay issue framing",
+      "Extension mechanism analysis",
+      "Remedy sequencing",
+    ],
+    recordDoesNotSupportYet: ["Final proof of written amendment approval"],
+    recordContradicts: [],
+    citations: [
+      {
+        title: "K.M. Joseph v. Sample Infrastructure Co. (2025)",
+        citation: "Mock Citation 2025",
+        url: "#",
+      },
+    ],
+  });
+
+  const createMockAtlasResult = ({
+    baseResult,
+    status,
+    recognition,
+    confirmation,
+    checkpoint,
+    deciderResearch,
+    caseResearch,
+    nextSteps,
+    brief,
+  }: {
+    baseResult: MatterProcessedResult;
+    status: string;
+    recognition?: AtlasBaseRecognitionResult | null;
+    confirmation?: AtlasWorkflowConfirmation | null;
+    checkpoint?: AtlasGapCheckpoint | null;
+    deciderResearch?: AtlasDeciderResearchResult | null;
+    caseResearch?: AtlasCaseResearchResult | null;
+    nextSteps?: AtlasNextStepsAnalysis | null;
+    brief?: AtlasMatterBrief | null;
+  }) => {
+    const next = cloneMatterResult(baseResult);
+    next.matter.analysis_state = {
+      ...(next.matter.analysis_state || {}),
+      status,
+      currentStage: status,
+      feed: buildAtlasStatusOnlyFeed(status),
+      whatWeFound: [
+        recognition?.primaryWorkflowName
+          ? {
+              id: "mock_workflow",
+              label: "Workflow",
+              value: recognition.primaryWorkflowName,
+              state: "done",
+            }
+          : null,
+        brief?.summaryBrief
+          ? {
+              id: "mock_brief",
+              label: "Finding",
+              value: brief.summaryBrief,
+              state: "done",
+            }
+          : null,
+      ].filter(Boolean) as NonNullable<
+        MatterRecord["analysis_state"]
+      >["whatWeFound"],
+      pendingClarification: checkpoint || null,
+      canContinueWithLimitedSummary: Boolean(
+        checkpoint?.canContinueWithLimitedResearch,
+      ),
+      updatedAt: new Date().toISOString(),
+    };
+    next.matter.intelligence_statuses = {
+      ...(next.matter.intelligence_statuses || {}),
+      executive_summary:
+        status === "atlas_brief_ready" ? "ready" : "processing",
+    };
+    next.atlas_base_recognition =
+      recognition !== undefined
+        ? recognition
+        : (next.atlas_base_recognition ?? null);
+    next.atlas_workflow_confirmation =
+      confirmation !== undefined
+        ? confirmation
+        : (next.atlas_workflow_confirmation ?? null);
+    next.atlas_gap_checkpoint =
+      checkpoint !== undefined
+        ? checkpoint
+        : (next.atlas_gap_checkpoint ?? null);
+    next.atlas_decider_research =
+      deciderResearch !== undefined
+        ? deciderResearch
+        : (next.atlas_decider_research ?? null);
+    next.atlas_case_research =
+      caseResearch !== undefined
+        ? caseResearch
+        : (next.atlas_case_research ?? null);
+    next.atlas_next_steps =
+      nextSteps !== undefined ? nextSteps : (next.atlas_next_steps ?? null);
+    next.atlas_matter_brief =
+      brief !== undefined ? brief : (next.atlas_matter_brief ?? null);
+    return next;
+  };
+
+  const emitMockAtlasEvent = (
+    matterId: string,
+    type: string,
+    payload: AtlasLiveEvent["payload"],
+  ) => {
+    appendAtlasLiveEvent(matterId, {
+      id: `mock_${matterId}_${type}_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+      type,
+      matterId,
+      createdAt: new Date().toISOString(),
+      payload,
+    });
+  };
+
+  const runMockAtlasSequence = (
+    matterId: string,
+    steps: Array<{
+      delayMs: number;
+      result: MatterProcessedResult;
+      event?: { type: string; payload: AtlasLiveEvent["payload"] };
+      onApply?: () => void;
+    }>,
+  ) => {
+    clearMockPipelineTimeouts(matterId);
+    steps.forEach((step) => {
+      const timeoutId = window.setTimeout(() => {
+        applyMockMatterResult(step.result);
+        if (step.event) {
+          emitMockAtlasEvent(matterId, step.event.type, step.event.payload);
+        }
+        step.onApply?.();
+      }, step.delayMs);
+      mockPipelineTimeoutsRef.current.push({ matterId, timeoutId });
+    });
+  };
+
   const scheduleMockMatterPipeline = (
     scenario: ReturnType<typeof createMockMatterScenario>,
   ) => {
@@ -4493,6 +6966,21 @@ const MatterSection = ({
     throw new MatterPollingTimeoutError(jobId);
   };
 
+  const shouldFetchFullAtlasPayload = (status: string) => {
+    const normalized = String(status || "").trim();
+    return (
+      normalized === "decider_research_running" ||
+      normalized === "case_research_running" ||
+      normalized === "atlas_brief_running" ||
+      normalized === "workflow_confirmation_needed" ||
+      normalized === "workflow_gap_checkpoint" ||
+      normalized === "atlas_brief_ready" ||
+      normalized === "atlas_cancelled" ||
+      normalized === "atlas_failed" ||
+      normalized === "atlas_needs_review"
+    );
+  };
+
   const refreshMattersFromServer = async () => {
     const response = await fetch(buildApiUrl("/api/matters"));
     const payload = (await response.json()) as {
@@ -4505,118 +6993,749 @@ const MatterSection = ({
     setMattersFromServer(Array.isArray(payload.matters) ? payload.matters : []);
   };
 
-  const refreshActiveAtlasMatterState = async (matterId: string) => {
-    const response = await fetch(
-      buildApiUrl(
-        `/api/matters/${encodeURIComponent(matterId)}/atlas-research/latest`,
-      ),
-    );
-    const payload = (await response.json()) as {
-      success?: boolean;
-      result?: MatterProcessedResult;
-    };
-    if (!response.ok || !payload?.success || !payload.result) {
-      throw new Error("Failed to refresh atlas matter state.");
+  const appendAtlasLiveEvent = (matterId: string, event: AtlasLiveEvent) => {
+    setAtlasLiveEventsByMatterId((current) => {
+      const existing = Array.isArray(current[matterId])
+        ? current[matterId]
+        : [];
+      if (existing.some((item) => item.id === event.id)) {
+        return current;
+      }
+      return {
+        ...current,
+        [matterId]: [...existing, event].slice(-40),
+      };
+    });
+  };
+
+  const ensureAtlasEventStream = (matterId: string) => {
+    const normalizedMatterId = String(matterId || "").trim();
+    if (!normalizedMatterId || isMockMatterId(normalizedMatterId)) {
+      return null;
     }
-    updateMatter(payload.result);
+    if (atlasEventSourceRefs.current[normalizedMatterId]) {
+      return atlasEventSourceRefs.current[normalizedMatterId] || null;
+    }
+
+    try {
+      const stream = new EventSource(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(normalizedMatterId)}/atlas-research/stream`,
+        ),
+        { withCredentials: true },
+      );
+      atlasEventSourceRefs.current[normalizedMatterId] = stream;
+
+      const handleProgressEvent = (rawEvent: Event) => {
+        const messageEvent = rawEvent as MessageEvent<string>;
+        try {
+          const parsed = JSON.parse(
+            String(messageEvent.data || "{}"),
+          ) as AtlasLiveEvent;
+          if (!parsed?.id) return;
+          appendAtlasLiveEvent(normalizedMatterId, parsed);
+          if (parsed.type === "atlas_snapshot" && parsed.payload) {
+            applyAtlasLatestPayload(
+              normalizedMatterId,
+              parsed.payload as Parameters<typeof applyAtlasLatestPayload>[1],
+              { includeFull: true },
+            );
+          }
+        } catch {
+          // ignore malformed stream events
+        }
+      };
+
+      stream.addEventListener(
+        "atlas-progress",
+        handleProgressEvent as EventListener,
+      );
+      stream.onerror = () => {
+        console.warn("[atlas-stream][error]", {
+          matterId: normalizedMatterId,
+          readyState: stream.readyState,
+        });
+        stream.close();
+        if (atlasEventSourceRefs.current[normalizedMatterId] === stream) {
+          delete atlasEventSourceRefs.current[normalizedMatterId];
+        }
+      };
+
+      return stream;
+    } catch (error) {
+      console.warn("[atlas-stream][init-failed]", {
+        matterId: normalizedMatterId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  };
+
+  const appendMatterUnderstandingEvent = (
+    matterId: string,
+    event: string,
+    data: Record<string, unknown>,
+  ) => {
+    setMatterUnderstandingEventsByMatterId((current) => {
+      const existing = current[matterId] || [];
+      return {
+        ...current,
+        [matterId]: [...existing, { event, data }].slice(-60),
+      };
+    });
+  };
+
+  const parseSseEventBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    let event = "message";
+    const dataLines: string[] = [];
+    lines.forEach((line) => {
+      if (line.startsWith("event:")) {
+        event = line.slice("event:".length).trim() || "message";
+      } else if (line.startsWith("data:")) {
+        dataLines.push(line.slice("data:".length).trimStart());
+      }
+    });
+    const rawData = dataLines.join("\n");
+    let data: Record<string, unknown> = {};
+    try {
+      data = rawData ? (JSON.parse(rawData) as Record<string, unknown>) : {};
+    } catch {
+      data = { raw: rawData };
+    }
+    return { event, data };
+  };
+
+  const runMatterUnderstanding = async (
+    matterId: string,
+    resumeRunId?: string,
+  ) => {
+    const normalizedMatterId = String(matterId || "").trim();
+    if (!normalizedMatterId || isMockMatterId(normalizedMatterId)) return;
+    if (matterUnderstandingRunningByMatterId[normalizedMatterId]) return;
+    const normalizedRunId = String(resumeRunId || "").trim();
+    if (
+      !normalizedRunId &&
+      matterUnderstandingPendingQuestionByMatterId[normalizedMatterId]
+    ) {
+      appendMatterUnderstandingEvent(normalizedMatterId, "run_blocked", {
+        reason:
+          "Answer the pending matter-understanding question before starting a new run.",
+      });
+      return;
+    }
+
+    matterUnderstandingAbortRefs.current[normalizedMatterId]?.abort();
+    const abortController = new AbortController();
+    matterUnderstandingAbortRefs.current[normalizedMatterId] = abortController;
+    setMatterUnderstandingRunningByMatterId((current) => ({
+      ...current,
+      [normalizedMatterId]: true,
+    }));
+    setMatterUnderstandingErrorByMatterId((current) => ({
+      ...current,
+      [normalizedMatterId]: "",
+    }));
+    if (!normalizedRunId) {
+      setMatterUnderstandingEventsByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]: [],
+      }));
+      setMatterUnderstandingPendingQuestionByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]: null,
+      }));
+    }
+
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(normalizedMatterId)}/understanding/stream`,
+        ),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            runId: normalizedRunId || undefined,
+            userPrompt:
+              activeMatter?.id === normalizedMatterId
+                ? activeMatter.user_message || activeMatter.title || ""
+                : "",
+          }),
+          signal: abortController.signal,
+        },
+      );
+      if (!response.ok || !response.body) {
+        throw new Error(`Matter understanding failed (${response.status})`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let done = false;
+      while (!done) {
+        const chunk = await reader.read();
+        done = chunk.done;
+        buffer += decoder.decode(chunk.value || new Uint8Array(), {
+          stream: !done,
+        });
+        let delimiterIndex = buffer.search(/\r?\n\r?\n/);
+        while (delimiterIndex >= 0) {
+          const block = buffer.slice(0, delimiterIndex);
+          buffer = buffer.slice(
+            delimiterIndex + (buffer[delimiterIndex] === "\r" ? 4 : 2),
+          );
+          delimiterIndex = buffer.search(/\r?\n\r?\n/);
+          if (!block.trim()) continue;
+          const parsed = parseSseEventBlock(block);
+          appendMatterUnderstandingEvent(
+            normalizedMatterId,
+            parsed.event,
+            parsed.data,
+          );
+          if (parsed.event === "user_question") {
+            const runId = String(parsed.data.runId || normalizedRunId || "");
+            const questionId = String(parsed.data.questionId || "");
+            const question = String(parsed.data.question || "");
+            const options = Array.isArray(parsed.data.options)
+              ? parsed.data.options
+                  .map((item) => String(item || ""))
+                  .filter(Boolean)
+              : [];
+            if (runId && questionId && question) {
+              setMatterUnderstandingPendingQuestionByMatterId((current) => ({
+                ...current,
+                [normalizedMatterId]: {
+                  runId,
+                  questionId,
+                  question,
+                  options,
+                  reason:
+                    typeof parsed.data.reason === "string"
+                      ? parsed.data.reason
+                      : undefined,
+                },
+              }));
+            }
+          }
+          if (parsed.event === "final") {
+            const understanding = parsed.data.understanding as
+              | MatterUnderstandingV2
+              | undefined;
+            if (understanding) {
+              setMatterUnderstandingPendingQuestionByMatterId((current) => ({
+                ...current,
+                [normalizedMatterId]: null,
+              }));
+              setMatterUnderstandingByMatterId((current) => ({
+                ...current,
+                [normalizedMatterId]: understanding,
+              }));
+              const updatedResult = parsed.data.result as
+                | MatterProcessedResult
+                | undefined;
+              if (updatedResult?.matter?.id) {
+                updateMatter(updatedResult);
+              }
+            }
+          }
+          if (parsed.event === "error") {
+            setMatterUnderstandingErrorByMatterId((current) => ({
+              ...current,
+              [normalizedMatterId]: String(
+                parsed.data.error || "Matter understanding failed.",
+              ),
+            }));
+          }
+        }
+      }
+    } catch (error) {
+      if ((error as Error)?.name !== "AbortError") {
+        setMatterUnderstandingErrorByMatterId((current) => ({
+          ...current,
+          [normalizedMatterId]:
+            error instanceof Error
+              ? error.message
+              : "Matter understanding failed.",
+        }));
+      }
+    } finally {
+      setMatterUnderstandingRunningByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]: false,
+      }));
+      if (
+        matterUnderstandingAbortRefs.current[normalizedMatterId] ===
+        abortController
+      ) {
+        delete matterUnderstandingAbortRefs.current[normalizedMatterId];
+      }
+    }
+  };
+
+  const answerMatterUnderstandingQuestion = async (
+    matterId: string,
+    question: {
+      runId: string;
+      questionId: string;
+      question: string;
+    },
+    answer: string,
+  ) => {
+    const normalizedMatterId = String(matterId || "").trim();
+    const runId = String(question?.runId || "").trim();
+    const questionId = String(question?.questionId || "").trim();
+    const cleanedAnswer = String(answer || "").trim();
+    if (!normalizedMatterId || !runId || !questionId || !cleanedAnswer) return;
+
+    setMatterUnderstandingErrorByMatterId((current) => ({
+      ...current,
+      [normalizedMatterId]: "",
+    }));
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(
+            normalizedMatterId,
+          )}/understanding/runs/${encodeURIComponent(runId)}/answer`,
+        ),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            questionId,
+            question: question.question,
+            answer: cleanedAnswer,
+          }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`Could not submit answer (${response.status})`);
+      }
+      appendMatterUnderstandingEvent(normalizedMatterId, "user_answer", {
+        runId,
+        questionId,
+        answer: cleanedAnswer,
+      });
+      setMatterUnderstandingPendingQuestionByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]: null,
+      }));
+      await runMatterUnderstanding(normalizedMatterId, runId);
+    } catch (error) {
+      setMatterUnderstandingErrorByMatterId((current) => ({
+        ...current,
+        [normalizedMatterId]:
+          error instanceof Error
+            ? error.message
+            : "Could not submit matter-understanding answer.",
+      }));
+    }
+  };
+
+  useEffect(() => {
+    const matterId = String(activeMatter?.id || "").trim();
+    if (!matterId || isMockMatterId(matterId)) return;
+    if (matterUnderstandingPendingQuestionByMatterId[matterId]) return;
+    if (activeMatter?.matterUnderstandingV2) return;
+    if (matterUnderstandingByMatterId[matterId]) return;
+    if (matterUnderstandingRunningByMatterId[matterId]) return;
+    if (autoStartedMatterUnderstandingRef.current.has(matterId)) return;
+    autoStartedMatterUnderstandingRef.current.add(matterId);
+    void runMatterUnderstanding(matterId);
+  }, [
+    activeMatter?.id,
+    activeMatter?.matterUnderstandingV2,
+    matterUnderstandingPendingQuestionByMatterId,
+    matterUnderstandingByMatterId,
+    matterUnderstandingRunningByMatterId,
+  ]);
+
+  const applyAtlasLatestPayload = (
+    matterId: string,
+    payload: {
+      matter?: {
+        status?: MatterRecord["status"];
+        job_id?: string | null;
+        versionFingerprint?: string | null;
+        contextcore?: MatterRecord["contextcore"];
+        intelligence_statuses?: MatterRecord["intelligence_statuses"];
+        analysis_state?: MatterRecord["analysis_state"];
+        classification?: MatterRecord["classification"];
+        classification_meta?: MatterRecord["classification_meta"];
+        extracted_fields_status?: MatterRecord["extractedFieldsStatus"];
+        extracted_fields_error?: string | null;
+      } | null;
+      analysis_state?: MatterRecord["analysis_state"];
+      baseRecognition?: AtlasBaseRecognitionResult | null;
+      workflowConfirmation?: AtlasWorkflowConfirmation | null;
+      gapCheckpoint?: AtlasGapCheckpoint | null;
+      deciderResearch?: AtlasDeciderResearchResult | null;
+      caseResearch?: AtlasCaseResearchResult | null;
+      nextStepsAnalysis?: AtlasNextStepsAnalysis | null;
+      brief?: AtlasMatterBrief | null;
+      atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
+    },
+    options?: { includeFull?: boolean },
+  ) => {
+    const includeFull = options?.includeFull !== false;
+    if (!payload?.matter) return;
+    const matterPatch: {
+      status?: MatterRecord["status"];
+      job_id?: string;
+      versionFingerprint?: string | undefined;
+      contextcore?: MatterRecord["contextcore"];
+      intelligence_statuses?: MatterRecord["intelligence_statuses"];
+      analysis_state?: MatterRecord["analysis_state"];
+      classification?: MatterRecord["classification"];
+      classification_meta?: MatterRecord["classification_meta"];
+    } = {
+      status: payload.matter.status,
+      job_id: payload.matter.job_id || "",
+      analysis_state: payload.analysis_state || payload.matter.analysis_state,
+    };
+    if (payload.matter.contextcore !== undefined) {
+      matterPatch.contextcore = payload.matter.contextcore;
+    }
+    if (payload.matter.intelligence_statuses !== undefined) {
+      matterPatch.intelligence_statuses = payload.matter.intelligence_statuses;
+    }
+    if (payload.matter.versionFingerprint !== undefined) {
+      matterPatch.versionFingerprint =
+        payload.matter.versionFingerprint || undefined;
+    }
+    if (payload.matter.classification !== undefined) {
+      matterPatch.classification = payload.matter.classification;
+    }
+    if (payload.matter.classification_meta !== undefined) {
+      matterPatch.classification_meta = payload.matter.classification_meta;
+    }
+
+    mergeMatterAtlasLatest(matterId, {
+      matter: matterPatch,
+      extractedFieldsStatus:
+        payload.matter.extracted_fields_status || undefined,
+      extractedFieldsError: payload.matter.extracted_fields_error,
+      atlasBaseRecognition: includeFull ? payload.baseRecognition : undefined,
+      atlasWorkflowConfirmation: includeFull
+        ? payload.workflowConfirmation
+        : undefined,
+      atlasGapCheckpoint: includeFull ? payload.gapCheckpoint : undefined,
+      atlasDeciderResearch: includeFull ? payload.deciderResearch : undefined,
+      atlasCaseResearch: includeFull ? payload.caseResearch : undefined,
+      atlasNextSteps: includeFull ? payload.nextStepsAnalysis : undefined,
+      atlasMatterBrief: includeFull ? payload.brief : undefined,
+      atlasUserInputs: includeFull ? payload.atlasUserInputs : undefined,
+    });
+  };
+
+  const refreshActiveAtlasMatterState = async (
+    matterId: string,
+    options?: { full?: boolean },
+  ) => {
+    const includeFull = options?.full === true;
+    if (includeFull && atlasFullRefreshRequestsRef.current[matterId]) {
+      return atlasFullRefreshRequestsRef.current[matterId];
+    }
+    const task = (async () => {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(matterId)}/atlas-research/latest?view=${includeFull ? "full" : "status"}`,
+        ),
+      );
+      const payload = (await response.json()) as {
+        success?: boolean;
+        matter?: {
+          status?: MatterRecord["status"];
+          job_id?: string | null;
+          versionFingerprint?: string | null;
+          contextcore?: MatterRecord["contextcore"];
+          intelligence_statuses?: MatterRecord["intelligence_statuses"];
+          analysis_state?: MatterRecord["analysis_state"];
+          classification?: MatterRecord["classification"];
+          classification_meta?: MatterRecord["classification_meta"];
+          extracted_fields_status?: MatterRecord["extractedFieldsStatus"];
+          extracted_fields_error?: string | null;
+        } | null;
+        analysis_state?: MatterRecord["analysis_state"];
+        status?: string;
+        payload_ready?: boolean;
+        baseRecognition?: AtlasBaseRecognitionResult | null;
+        workflowConfirmation?: AtlasWorkflowConfirmation | null;
+        gapCheckpoint?: AtlasGapCheckpoint | null;
+        deciderResearch?: AtlasDeciderResearchResult | null;
+        caseResearch?: AtlasCaseResearchResult | null;
+        nextStepsAnalysis?: AtlasNextStepsAnalysis | null;
+        brief?: AtlasMatterBrief | null;
+        atlasUserInputs?: MatterProcessedResult["atlas_user_inputs"];
+      };
+      if (!response.ok || !payload?.success || !payload.matter) {
+        throw new Error("Failed to refresh atlas matter state.");
+      }
+      applyAtlasLatestPayload(matterId, payload, { includeFull });
+
+      const latestStatus = String(
+        payload.status ||
+          payload.analysis_state?.status ||
+          payload.matter.analysis_state?.status ||
+          "",
+      ).trim();
+      if (
+        !includeFull &&
+        (payload.payload_ready || shouldFetchFullAtlasPayload(latestStatus))
+      ) {
+        await refreshActiveAtlasMatterState(matterId, { full: true });
+      }
+    })();
+    if (!includeFull) {
+      return task;
+    }
+    atlasFullRefreshRequestsRef.current[matterId] = task.finally(() => {
+      delete atlasFullRefreshRequestsRef.current[matterId];
+    });
+    return atlasFullRefreshRequestsRef.current[matterId];
   };
 
   const waitForMatterAvailability = async (matterId: string) => {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      try {
-        await refreshActiveAtlasMatterState(matterId);
-        return true;
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Matter not ready yet.";
-        if (!/not found/i.test(message)) {
-          throw error;
-        }
-      }
-      await sleep(500);
+    if (atlasAvailabilityChecksRef.current[matterId]) {
+      return atlasAvailabilityChecksRef.current[matterId];
     }
-    return false;
+    const task = (async () => {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+          await refreshActiveAtlasMatterState(matterId, { full: true });
+          return true;
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Matter not ready yet.";
+          if (!/not found/i.test(message)) {
+            throw error;
+          }
+        }
+        await sleep(500);
+      }
+      return false;
+    })();
+    atlasAvailabilityChecksRef.current[matterId] = task.finally(() => {
+      delete atlasAvailabilityChecksRef.current[matterId];
+    });
+    return atlasAvailabilityChecksRef.current[matterId];
   };
 
   const runMatterAtlasResearch = async (
     matterId: string,
     options?: { continueWithLimitedResearch?: boolean },
   ) => {
-    try {
-      const isAvailable = await waitForMatterAvailability(matterId);
-      if (!isAvailable) {
-        throw new Error(
-          "Matter was uploaded, but the research workspace is not ready yet. Please retry in a moment.",
-        );
-      }
-      setSummaryGenerationStateByMatterId((current) => ({
-        ...current,
-        [matterId]: { running: true, error: "" },
-      }));
-      const response = await fetch(
-        buildApiUrl(
-          `/api/matters/${encodeURIComponent(matterId)}/atlas-research/run`,
-        ),
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            continueWithLimitedResearch: Boolean(
-              options?.continueWithLimitedResearch,
-            ),
-          }),
-        },
-      );
-      const payload = (await response.json()) as {
-        success?: boolean;
-        status?: string;
-        recognition?: AtlasBaseRecognitionResult;
-        checkpoint?: AtlasGapCheckpoint;
-        brief?: AtlasMatterBrief;
-        deciderResearch?: AtlasDeciderResearchResult;
-        caseResearch?: AtlasCaseResearchResult;
-        error?: string;
-        meta?: Record<string, unknown>;
-      };
-
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error || "Matter legal brief request failed.");
-      }
-
-      await refreshMattersFromServer();
-      if (payload.status === "needs_confirmation") {
-        console.log("[atlas][base-recognition]", payload.recognition);
-        return;
-      }
-      if (payload.status === "running") {
-        return;
-      }
-      if (
-        payload.status === "needs_user_input" ||
-        payload.status === "needs_more_documents"
-      ) {
-        console.log("[atlas][gap-checkpoint]", payload.checkpoint);
-        return;
-      }
-    } catch (error) {
-      setSummaryGenerationStateByMatterId((current) => ({
-        ...current,
-        [matterId]: {
-          running: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Matter atlas research request failed.",
-        },
-      }));
-      console.error("[atlas-research][failed]", error);
+    if (atlasRunRequestsRef.current[matterId]) {
+      return atlasRunRequestsRef.current[matterId];
     }
+    const task = (async () => {
+      try {
+        if (isMockMatterId(matterId)) {
+          const baseResult = getMockMatterResultById(matterId);
+          if (!baseResult) {
+            throw new Error("Mock matter is not available.");
+          }
+          const recognition = createMockAtlasRecognition(matterId);
+          const orientationResult = createMockAtlasResult({
+            baseResult,
+            status: "orientation_running",
+            recognition: null,
+            confirmation: null,
+            checkpoint: null,
+            deciderResearch: null,
+            caseResearch: null,
+            nextSteps: null,
+            brief: null,
+          });
+          const recognitionResult = createMockAtlasResult({
+            baseResult: orientationResult,
+            status: "base_recognition_running",
+            recognition,
+            confirmation: null,
+            checkpoint: null,
+            deciderResearch: null,
+            caseResearch: null,
+            nextSteps: null,
+            brief: null,
+          });
+          const confirmationResult = createMockAtlasResult({
+            baseResult: recognitionResult,
+            status: "workflow_confirmation_needed",
+            recognition,
+            confirmation: null,
+            checkpoint: null,
+            deciderResearch: null,
+            caseResearch: null,
+            nextSteps: null,
+            brief: null,
+          });
+
+          setSummaryGenerationStateByMatterId((current) => ({
+            ...current,
+            [matterId]: { running: true, error: "" },
+          }));
+          setWorkflowConfirmationStateByMatterId((current) => ({
+            ...current,
+            [matterId]: { submitting: false, error: "" },
+          }));
+          runMockAtlasSequence(matterId, [
+            {
+              delayMs: 120,
+              result: orientationResult,
+              event: {
+                type: "stage_started",
+                payload: {
+                  stage: "orientation",
+                  message:
+                    "Reading the record and building the initial matter orientation.",
+                },
+              },
+            },
+            {
+              delayMs: 900,
+              result: recognitionResult,
+              event: {
+                type: "stage_started",
+                payload: {
+                  stage: "base_recognition",
+                  message:
+                    "Classifying the matter and mapping it to the strongest workflow.",
+                },
+              },
+            },
+            {
+              delayMs: 1850,
+              result: confirmationResult,
+              event: {
+                type: "stage_completed",
+                payload: {
+                  stage: "base_recognition",
+                  message:
+                    "Workflow recommendation ready. Review the category before continuing.",
+                },
+              },
+              onApply: () => {
+                setSummaryGenerationStateByMatterId((current) => ({
+                  ...current,
+                  [matterId]: { running: false, error: "" },
+                }));
+              },
+            },
+          ]);
+          return;
+        }
+        const isAvailable = await waitForMatterAvailability(matterId);
+        if (!isAvailable) {
+          throw new Error(
+            "Matter was uploaded, but the research workspace is not ready yet. Please retry in a moment.",
+          );
+        }
+        setSummaryGenerationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: { running: true, error: "" },
+        }));
+        ensureAtlasEventStream(matterId);
+        const response = await fetch(
+          buildApiUrl(
+            `/api/matters/${encodeURIComponent(matterId)}/atlas-research/run`,
+          ),
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              continueWithLimitedResearch: Boolean(
+                options?.continueWithLimitedResearch,
+              ),
+            }),
+          },
+        );
+        const payload = (await response.json()) as {
+          success?: boolean;
+          status?: string;
+          analysis_state?: MatterRecord["analysis_state"];
+          recognition?: AtlasBaseRecognitionResult;
+          checkpoint?: AtlasGapCheckpoint;
+          brief?: AtlasMatterBrief;
+          deciderResearch?: AtlasDeciderResearchResult;
+          caseResearch?: AtlasCaseResearchResult;
+          error?: string;
+          meta?: Record<string, unknown>;
+        };
+
+        if (!response.ok || !payload?.success) {
+          throw new Error(
+            payload?.error || "Matter legal brief request failed.",
+          );
+        }
+
+        if (payload.analysis_state) {
+          mergeMatterAtlasLatest(matterId, {
+            matter: {
+              analysis_state: payload.analysis_state,
+            },
+          });
+        }
+
+        await refreshMattersFromServer();
+        if (payload.status === "needs_confirmation") {
+          console.log("[atlas][base-recognition]", payload.recognition);
+          return;
+        }
+        if (payload.status === "running") {
+          return;
+        }
+        if (
+          payload.status === "needs_user_input" ||
+          payload.status === "needs_more_documents"
+        ) {
+          console.log("[atlas][gap-checkpoint]", payload.checkpoint);
+          return;
+        }
+      } catch (error) {
+        setSummaryGenerationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: {
+            running: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Matter atlas research request failed.",
+          },
+        }));
+        console.error("[atlas-research][failed]", error);
+      }
+    })();
+    atlasRunRequestsRef.current[matterId] = task.finally(() => {
+      delete atlasRunRequestsRef.current[matterId];
+    });
+    return atlasRunRequestsRef.current[matterId];
   };
 
   const cancelMatterAtlasResearch = async (matterId: string) => {
     try {
+      if (isMockMatterId(matterId)) {
+        clearMockPipelineTimeouts(matterId);
+        const baseResult = getMockMatterResultById(matterId);
+        if (baseResult) {
+          const cancelledResult = createMockAtlasResult({
+            baseResult,
+            status: "atlas_cancelled",
+            checkpoint: null,
+          });
+          applyMockMatterResult(cancelledResult);
+        }
+        setSummaryGenerationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: { running: false, error: "" },
+        }));
+        setIsClarificationAdvancing(false);
+        return;
+      }
       const response = await fetch(
         buildApiUrl(
           `/api/matters/${encodeURIComponent(matterId)}/atlas-research/cancel`,
@@ -4636,7 +7755,7 @@ const MatterSection = ({
       if (!response.ok || !payload?.success) {
         throw new Error(payload?.error || "Failed to cancel atlas research.");
       }
-      await refreshActiveAtlasMatterState(matterId);
+      await refreshActiveAtlasMatterState(matterId, { full: true });
       setSummaryGenerationStateByMatterId((current) => ({
         ...current,
         [matterId]: { running: false, error: "" },
@@ -4664,10 +7783,19 @@ const MatterSection = ({
     },
     requestedFrom: "overview" | "drafts",
   ) => {
-    if (!activeMatter?.id) return;
-    setDraftGenerationError("");
+    const targetMatterId = activeMatter?.id
+      ? isMockMatterId(activeMatter.id)
+        ? matters.find((matter) => !isMockMatterId(matter.id))?.id || ""
+        : activeMatter.id
+      : "";
+    if (!targetMatterId) {
+      setDraftRecommendationError(
+        "This drafting test needs at least one real saved matter.",
+      );
+      return;
+    }
     navigate(
-      `/drafting?matter=${encodeURIComponent(activeMatter.id)}&startDraft=${encodeURIComponent(
+      `/drafting?matter=${encodeURIComponent(targetMatterId)}&startDraft=${encodeURIComponent(
         draftItem.draftType || draftItem.title,
       )}&draftLabel=${encodeURIComponent(draftItem.title)}&requestedFrom=${encodeURIComponent(
         requestedFrom,
@@ -4675,73 +7803,18 @@ const MatterSection = ({
     );
   };
 
-  const closeDraftGenerationCheckpoint = async () => {
-    if (!activeMatter?.id || !draftGenerationCheckpoint?.threadId) {
-      setDraftGenerationCheckpoint(null);
-      setDraftGenerationAnswers({});
-      return;
-    }
-    try {
-      await cancelMatterDraftGeneration({
-        matterId: activeMatter.id,
-        threadId: draftGenerationCheckpoint.threadId,
-      });
-    } catch {
-      // Best-effort cancel; local close should still succeed.
-    }
-    setDraftGenerationCheckpoint(null);
-    setDraftGenerationAnswers({});
-    setDraftGenerationError("");
-  };
-
-  const continueAtlasDraftGeneration = async (chosenAction: string) => {
-    if (!activeMatter?.id || !draftGenerationCheckpoint?.threadId) return;
-    try {
-      setIsSubmittingDraftGeneration(true);
-      setDraftGenerationError("");
-      const answers = draftGenerationCheckpoint.questions
-        .map((question) => {
-          const raw = String(draftGenerationAnswers[question.id] || "").trim();
-          if (!raw) return null;
-          const answer =
-            question.answerType === "yes_no"
-              ? raw === "yes"
-                ? true
-                : raw === "no"
-                  ? false
-                  : raw
-              : raw;
-          return {
-            questionId: question.id,
-            answer,
-            answerType: question.answerType,
-          };
-        })
-        .filter(Boolean) as Array<{
-        questionId: string;
-        answer: string | boolean;
-        answerType?: string;
-      }>;
-      const payload = await continueMatterDraftGeneration({
-        matterId: activeMatter.id,
-        threadId: draftGenerationCheckpoint.threadId,
-        chosenAction,
-        answers,
-      });
-      setDraftGenerationCheckpoint(null);
-      setDraftGenerationAnswers({});
-      navigate(
-        `/drafting?draft=${encodeURIComponent(payload.draft.id)}&matter=${encodeURIComponent(activeMatter.id)}&mode=edit`,
-      );
-    } catch (error) {
-      setDraftGenerationError(
-        error instanceof Error
-          ? error.message
-          : "Failed to continue draft generation.",
-      );
-    } finally {
-      setIsSubmittingDraftGeneration(false);
-    }
+  const startMockPipelineDraftCheck = async (
+    requestedFrom: "overview" | "drafts",
+  ) => {
+    await startAtlasDraftGeneration(
+      {
+        id: "mock_pipeline_reference_check",
+        draftType:
+          "I want to draft a civil pleadings suit for recovery under Order 37 CPC",
+        title: "Suit for recovery under Order XXXVII CPC",
+      },
+      requestedFrom,
+    );
   };
 
   const retryMatterAtlasRecognition = async (
@@ -4753,6 +7826,31 @@ const MatterSection = ({
         ...current,
         [matterId]: { submitting: true, error: "" },
       }));
+      if (isMockMatterId(matterId)) {
+        const baseResult = getMockMatterResultById(matterId);
+        if (!baseResult) {
+          throw new Error("Mock matter is not available.");
+        }
+        const recognition = createMockAtlasRecognition(matterId, overrideNote);
+        const retriedResult = createMockAtlasResult({
+          baseResult,
+          status: "workflow_confirmation_needed",
+          recognition,
+          confirmation: null,
+          checkpoint: null,
+        });
+        applyMockMatterResult(retriedResult);
+        setWorkflowConfirmationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: { submitting: false, error: "" },
+        }));
+        emitMockAtlasEvent(matterId, "stage_completed", {
+          stage: "base_recognition",
+          message:
+            "Workflow recommendation refreshed using your override note.",
+        });
+        return recognition;
+      }
       const response = await fetch(
         buildApiUrl(
           `/api/matters/${encodeURIComponent(matterId)}/base-recognition`,
@@ -4781,6 +7879,7 @@ const MatterSection = ({
         [matterId]: { submitting: false, error: "" },
       }));
       console.log("[atlas][base-recognition][retry]", payload.recognition);
+      return payload.recognition || null;
     } catch (error) {
       setWorkflowConfirmationStateByMatterId((current) => ({
         ...current,
@@ -4792,6 +7891,7 @@ const MatterSection = ({
               : "Failed to retry categorization.",
         },
       }));
+      return null;
     }
   };
 
@@ -4809,6 +7909,129 @@ const MatterSection = ({
         ...current,
         [matterId]: { submitting: true, error: "" },
       }));
+      if (isMockMatterId(matterId)) {
+        const baseResult = getMockMatterResultById(matterId);
+        if (!baseResult) {
+          throw new Error("Mock matter is not available.");
+        }
+        const recognition =
+          baseResult.atlas_base_recognition ||
+          createMockAtlasRecognition(matterId, overrideNote || "");
+        const confirmation: AtlasWorkflowConfirmation = {
+          matterId,
+          status: overrideNote ? "overridden" : "accepted",
+          selectedWorkflowId,
+          overrideNote: overrideNote || null,
+          source: overrideNote ? "user_override" : "agent_primary",
+          rerankedCandidates: recognition.candidateWorkflows,
+        };
+        const deciderResearch = createMockAtlasDeciderResearch(matterId);
+        const inFlightCaseResearch = createMockAtlasCaseResearch(matterId, {
+          step: "ranking",
+          message:
+            "Ranking the strongest authorities after comparing proposition support.",
+          query:
+            "contractual extension of time supplier delay milestone breach",
+          totalCandidates: 5,
+          retainedCount: 0,
+          updatedAt: new Date().toISOString(),
+        });
+        const completedCaseResearch = createMockAtlasCaseResearch(matterId);
+        const checkpoint = createMockAtlasCheckpoint(matterId);
+        const deciderResult = createMockAtlasResult({
+          baseResult,
+          status: "decider_research_running",
+          recognition,
+          confirmation,
+          checkpoint: null,
+          deciderResearch,
+          caseResearch: null,
+          nextSteps: null,
+          brief: null,
+        });
+        const caseResearchResult = createMockAtlasResult({
+          baseResult: deciderResult,
+          status: "case_research_running",
+          recognition,
+          confirmation,
+          checkpoint: null,
+          deciderResearch,
+          caseResearch: inFlightCaseResearch,
+          nextSteps: null,
+          brief: null,
+        });
+        const checkpointResult = createMockAtlasResult({
+          baseResult: caseResearchResult,
+          status: "workflow_gap_checkpoint",
+          recognition,
+          confirmation,
+          checkpoint,
+          deciderResearch,
+          caseResearch: completedCaseResearch,
+          nextSteps: null,
+          brief: null,
+        });
+        setAtlasTransitionStateByMatterId((current) => ({
+          ...current,
+          [matterId]: "post-confirm",
+        }));
+        setSummaryGenerationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: { running: true, error: "" },
+        }));
+        runMockAtlasSequence(matterId, [
+          {
+            delayMs: 140,
+            result: deciderResult,
+            event: {
+              type: "stage_started",
+              payload: {
+                stage: "decider_research",
+                message:
+                  "Reviewing the selected workflow and preparing the legal research path.",
+              },
+            },
+          },
+          {
+            delayMs: 1250,
+            result: caseResearchResult,
+            event: {
+              type: "case_research_progress",
+              payload: {
+                stage: "case_research",
+                message:
+                  "Scoring the retrieved authorities and comparing them to the contract issues.",
+                progress: inFlightCaseResearch.progress,
+                rankedCandidates: inFlightCaseResearch.rankedCandidates,
+              },
+            },
+          },
+          {
+            delayMs: 2550,
+            result: checkpointResult,
+            event: {
+              type: "stage_completed",
+              payload: {
+                stage: "case_research",
+                message:
+                  "A clarification checkpoint is ready before the brief is finalized.",
+                rankedCandidates: completedCaseResearch.rankedCandidates,
+              },
+            },
+            onApply: () => {
+              setWorkflowConfirmationStateByMatterId((current) => ({
+                ...current,
+                [matterId]: { submitting: false, error: "" },
+              }));
+              setSummaryGenerationStateByMatterId((current) => ({
+                ...current,
+                [matterId]: { running: false, error: "" },
+              }));
+            },
+          },
+        ]);
+        return;
+      }
       const response = await fetch(
         buildApiUrl(
           `/api/matters/${encodeURIComponent(matterId)}/base-recognition/confirm`,
@@ -4859,8 +8082,61 @@ const MatterSection = ({
     }
   };
 
+  const submitMatterAtlasWorkflowClassification = async (matterId: string) => {
+    const overrideNote = normalizeInline(
+      workflowOverrideNoteByMatterId[matterId] || "",
+    );
+    let selectedWorkflowId = normalizeInline(
+      activeAtlasRecognition?.primaryWorkflowId ||
+        activeWorkflowSelectionId ||
+        activeAtlasRecognition?.candidateWorkflows?.[0]?.workflowId ||
+        "",
+    );
+
+    if (overrideNote) {
+      const rerankedRecognition = await retryMatterAtlasRecognition(
+        matterId,
+        overrideNote,
+      );
+      selectedWorkflowId = normalizeInline(
+        rerankedRecognition?.primaryWorkflowId ||
+          rerankedRecognition?.candidateWorkflows?.[0]?.workflowId ||
+          "",
+      );
+      if (!selectedWorkflowId) {
+        setWorkflowConfirmationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: {
+            submitting: false,
+            error:
+              "Atlas could not find a close enough category and subcategory from that note.",
+          },
+        }));
+        return;
+      }
+    }
+
+    if (!selectedWorkflowId) {
+      setWorkflowConfirmationStateByMatterId((current) => ({
+        ...current,
+        [matterId]: {
+          submitting: false,
+          error:
+            "No atlas subcategory is available to confirm for this matter.",
+        },
+      }));
+      return;
+    }
+
+    await confirmMatterAtlasWorkflow({
+      matterId,
+      selectedWorkflowId,
+      overrideNote,
+    });
+  };
+
   const logMatterUnderstandingAgents = async (matterId: string) => {
-    await runMatterAtlasResearch(matterId);
+    await runMatterUnderstanding(matterId);
   };
 
   const submitClarificationAnswers = async (
@@ -4876,6 +8152,90 @@ const MatterSection = ({
           "Using your answers to resume the research and prepare the next stage.",
         );
         setIsClarificationAdvancing(true);
+      }
+      if (isMockMatterId(matterId)) {
+        const baseResult = getMockMatterResultById(matterId);
+        if (!baseResult) {
+          throw new Error("Mock matter is not available.");
+        }
+        const recognition =
+          baseResult.atlas_base_recognition ||
+          createMockAtlasRecognition(matterId);
+        const confirmation = baseResult.atlas_workflow_confirmation || null;
+        const deciderResearch =
+          baseResult.atlas_decider_research ||
+          createMockAtlasDeciderResearch(matterId);
+        const caseResearch =
+          baseResult.atlas_case_research ||
+          createMockAtlasCaseResearch(matterId);
+        const nextSteps = createMockAtlasNextSteps(matterId);
+        const brief = createMockAtlasBrief(matterId);
+        const briefRunningResult = createMockAtlasResult({
+          baseResult,
+          status: "atlas_brief_running",
+          recognition,
+          confirmation,
+          checkpoint: null,
+          deciderResearch,
+          caseResearch,
+          nextSteps: null,
+          brief: null,
+        });
+        const briefReadyResult = createMockAtlasResult({
+          baseResult: briefRunningResult,
+          status: "atlas_brief_ready",
+          recognition,
+          confirmation,
+          checkpoint: null,
+          deciderResearch,
+          caseResearch,
+          nextSteps,
+          brief,
+        });
+        setAtlasTransitionStateByMatterId((current) => ({
+          ...current,
+          [matterId]: "post-clarification",
+        }));
+        setSummaryGenerationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: { running: true, error: "" },
+        }));
+        runMockAtlasSequence(matterId, [
+          {
+            delayMs: 120,
+            result: briefRunningResult,
+            event: {
+              type: "stage_started",
+              payload: {
+                stage: "atlas_brief",
+                message:
+                  "Applying your clarification answers and drafting the brief.",
+              },
+            },
+          },
+          {
+            delayMs: 1750,
+            result: briefReadyResult,
+            event: {
+              type: "stage_completed",
+              payload: {
+                stage: "atlas_brief",
+                message:
+                  "Mock brief ready. Review the final research output below.",
+              },
+            },
+            onApply: () => {
+              setClarificationDraftAnswers({});
+              setActiveClarificationQuestionIndex(0);
+              setIsClarificationAdvancing(false);
+              setSummaryGenerationStateByMatterId((current) => ({
+                ...current,
+                [matterId]: { running: false, error: "" },
+              }));
+            },
+          },
+        ]);
+        return;
       }
       const answers = activeClarificationCheckpoint.questions
         .map((question) => {
@@ -4966,6 +8326,86 @@ const MatterSection = ({
         ...current,
         [matterId]: "post-clarification",
       }));
+      if (isMockMatterId(matterId)) {
+        const baseResult = getMockMatterResultById(matterId);
+        if (!baseResult) {
+          throw new Error("Mock matter is not available.");
+        }
+        const recognition =
+          baseResult.atlas_base_recognition ||
+          createMockAtlasRecognition(matterId);
+        const confirmation = baseResult.atlas_workflow_confirmation || null;
+        const deciderResearch =
+          baseResult.atlas_decider_research ||
+          createMockAtlasDeciderResearch(matterId);
+        const caseResearch =
+          baseResult.atlas_case_research ||
+          createMockAtlasCaseResearch(matterId);
+        const nextSteps = createMockAtlasNextSteps(matterId);
+        const brief = createMockAtlasBrief(matterId);
+        const briefRunningResult = createMockAtlasResult({
+          baseResult,
+          status: "atlas_brief_running",
+          recognition,
+          confirmation,
+          checkpoint: null,
+          deciderResearch,
+          caseResearch,
+          nextSteps: null,
+          brief: null,
+        });
+        const briefReadyResult = createMockAtlasResult({
+          baseResult: briefRunningResult,
+          status: "atlas_brief_ready",
+          recognition,
+          confirmation,
+          checkpoint: null,
+          deciderResearch,
+          caseResearch,
+          nextSteps,
+          brief,
+        });
+        setSummaryGenerationStateByMatterId((current) => ({
+          ...current,
+          [matterId]: { running: true, error: "" },
+        }));
+        runMockAtlasSequence(matterId, [
+          {
+            delayMs: 120,
+            result: briefRunningResult,
+            event: {
+              type: "stage_started",
+              payload: {
+                stage: "atlas_brief",
+                message:
+                  "Continuing with the available record and drafting a limited brief.",
+              },
+            },
+          },
+          {
+            delayMs: 1600,
+            result: briefReadyResult,
+            event: {
+              type: "stage_completed",
+              payload: {
+                stage: "atlas_brief",
+                message:
+                  "Mock limited brief ready. Review the current record support below.",
+              },
+            },
+            onApply: () => {
+              setClarificationDraftAnswers({});
+              setActiveClarificationQuestionIndex(0);
+              setIsClarificationAdvancing(false);
+              setSummaryGenerationStateByMatterId((current) => ({
+                ...current,
+                [matterId]: { running: false, error: "" },
+              }));
+            },
+          },
+        ]);
+        return;
+      }
       const response = await fetch(
         buildApiUrl(
           `/api/matters/${encodeURIComponent(matterId)}/atlas-research/continue`,
@@ -5184,7 +8624,7 @@ const MatterSection = ({
       }
       const response = await fetch(
         buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}`),
-        { method: "DELETE" },
+        { method: "DELETE", credentials: "include" },
       );
       const payload = (await response.json()) as {
         success?: boolean;
@@ -5194,6 +8634,7 @@ const MatterSection = ({
         throw new Error(payload?.error || "Failed to delete matter.");
       }
       deleteMatter(activeMatter.id);
+      await refreshStoredMatters().catch(() => {});
       setIsDeleteDialogOpen(false);
       setDeleteConfirmText("");
       navigate("/dashboard");
@@ -5223,7 +8664,9 @@ const MatterSection = ({
     setMatterTitleError("");
     try {
       const response = await fetch(
-        buildApiUrl(`/api/matters/${encodeURIComponent(activeMatter.id)}/title`),
+        buildApiUrl(
+          `/api/matters/${encodeURIComponent(activeMatter.id)}/title`,
+        ),
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -5265,6 +8708,9 @@ const MatterSection = ({
     }
     const filesToUpload = [...pendingUploadFiles];
     const queryToUpload = uploadQuery.trim();
+    if (!isMockModeEnabled && !(await ensureCreditsAvailable(50))) {
+      return;
+    }
     setIsUploadPopupOpen(false);
 
     setIsUploadingMatter(true);
@@ -5335,6 +8781,14 @@ const MatterSection = ({
         );
         result = payload.result;
       } else if ("job_id" in payload && payload.job_id) {
+        trackMatterJob({
+          jobId: payload.job_id,
+          title: filesToUpload.length
+            ? `Matter upload · ${filesToUpload.length} file${filesToUpload.length === 1 ? "" : "s"}`
+            : "Matter upload",
+          targetPath: "/matter",
+          type: "matter",
+        });
         updateMatterUploadLoaderStage(payload.stage, payload.progress);
         result = await pollMatterJob(
           payload.job_id,
@@ -5383,6 +8837,9 @@ const MatterSection = ({
     }
     const filesToUpload = [...pendingUploadFiles];
     const queryToUpload = uploadQuery.trim();
+    if (!(await ensureCreditsAvailable(50))) {
+      return;
+    }
     setIsUploadPopupOpen(false);
 
     setIsAppendingMatterFiles(true);
@@ -5428,6 +8885,12 @@ const MatterSection = ({
         );
       }
 
+      trackMatterJob({
+        jobId: payload.job_id,
+        title: `Add files · ${filesToUpload.length} file${filesToUpload.length === 1 ? "" : "s"}`,
+        targetPath: `/matter?matter=${encodeURIComponent(activeMatter.id)}`,
+        type: "matter",
+      });
       updateAppendLoaderStage(payload.stage, payload.progress);
       await refreshStoredMatters();
       const result = await pollMatterJob(
@@ -5723,21 +9186,15 @@ const MatterSection = ({
     setStartingDraftKey(recommendation.draft_key);
     setDraftRecommendationError("");
     try {
-      const payload = await startDraftRecommendation({
-        matterId: activeMatter.id,
-        recommendation,
-      });
-      if (payload.draft_recommendations) {
-        setDraftRecommendations(payload.draft_recommendations);
-      }
-      if (payload.result) {
-        updateMatter(payload.result);
-      }
-      if (payload.draft?.id) {
-        navigate(
-          `/drafting?draft=${encodeURIComponent(payload.draft.id)}&matter=${encodeURIComponent(activeMatter.id)}&mode=edit`,
-        );
-      }
+      navigate(
+        `/drafting?matter=${encodeURIComponent(activeMatter.id)}&startDraft=${encodeURIComponent(
+          recommendation.draft_key,
+        )}&draftLabel=${encodeURIComponent(
+          recommendation.title,
+        )}&requestedFrom=drafts&draftKey=${encodeURIComponent(
+          recommendation.draft_key,
+        )}`,
+      );
     } catch (error) {
       setDraftRecommendationError(
         error instanceof Error
@@ -6313,9 +9770,48 @@ const MatterSection = ({
               ))}
             </div>
           </>
-        ) : null}
+        ) : (
+          <section
+            className="matterEmptyUploadPanel"
+            aria-label="Start a matter upload"
+          >
+            <div>
+              <p className="matterEyebrow">New Matter</p>
+              <h2>Upload the record to begin.</h2>
+              <p>
+                Add contracts, notices, pleadings, emails, PDFs, or case files.
+                Associate will create the matter workspace from the uploaded
+                material.
+              </p>
+            </div>
+            <div className="matterEmptyUploadActions">
+              <Button
+                type="button"
+                className="matterEmptyUploadButton"
+                onClick={() => openUploadPopup("create")}
+                disabled={isUploadingMatter || isValidatingUploadFiles}
+                showImage
+                image={<Plus size={20} />}
+              >
+                Upload matter
+              </Button>
+              <p>
+                Starting with a legal question instead? Use Active Research to
+                explore the law, authorities, and strategy before creating a
+                matter.
+              </p>
+              <Button
+                type="button"
+                className="matterEmptyResearchButton"
+                onClick={() => navigate("/research")}
+              >
+                Open Active Research
+              </Button>
+            </div>
+          </section>
+        )}
         {activeMatterTab === "people" ? (
-          <section className="matterPeopleSection">
+          <section className="matterPeopleSection terraMatterPeopleTab">
             <div className="matterPeopleHead">
               <div>
                 <h2>Parties involved</h2>
@@ -6383,13 +9879,27 @@ const MatterSection = ({
                       showImage
                       image={<X size={14} />}
                     />
-                    <span className="matterPersonAvatar">
-                      {person.initials}
-                    </span>
-                    <div>
-                      <h3>{person.name}</h3>
-                      <strong>{person.role}</strong>
-                      <p>{person.description}</p>
+                    <div className="matterPersonTop">
+                      <span className="matterPersonAvatar">
+                        {person.initials}
+                      </span>
+                      <div className="matterPersonIdentity">
+                        <h3>{person.name}</h3>
+                        <strong>{person.role}</strong>
+                      </div>
+                    </div>
+                    {person.description ? (
+                      <p className="matterPersonDescription">
+                        {person.description}
+                      </p>
+                    ) : null}
+                    <div className="matterPersonFooter">
+                      <span className="matterPersonConfidence">
+                        High confidence
+                      </span>
+                      <span className="matterPersonDetailsLink">
+                        View details
+                      </span>
                     </div>
                   </article>
                 ))}
@@ -6417,6 +9927,7 @@ const MatterSection = ({
           !activePrimarySummary &&
           (shouldShowWorkflowConfirmationState ||
             shouldShowClarificationState ||
+            isMatterUnderstandingAwaitingInput ||
             shouldShowProgressThread) ? (
             <section className="matterAnalysisWorkspace matterAnalysisWorkspaceBlocking">
               {activeSummaryRunState.error ? (
@@ -6431,82 +9942,9 @@ const MatterSection = ({
                 </article>
               ) : null}
 
-              {!shouldShowClarificationState ? (
-                <article className="matterResearchModePanel matterResearchModePanelBlocking">
-                  <div className="matterResearchModeHero">
-                    <div>
-                      <p className="matterEyebrow">Active Research</p>
-                      <h3>{researchWorkspaceTitle}</h3>
-                      <p className="matterResearchModeSummary">
-                        {researchWorkspaceSummary}
-                      </p>
-                    </div>
-                    <div className="matterResearchModeMeta">
-                      <span className="matterResearchModeStatus">
-                        {researchWorkspaceStatusLabel}
-                      </span>
-                      {canStartResearchFromUi && activeMatter ? (
-                        <button
-                          type="button"
-                          className="matterResearchStartBtn"
-                          disabled={isResearchStartBlockedByPreparation}
-                          onClick={() =>
-                            void runMatterAtlasResearch(activeMatter.id)
-                          }
-                        >
-                          {researchStartButtonLabel}
-                        </button>
-                      ) : null}
-                      {isMatterResearchRunning && activeMatter ? (
-                        <button
-                          type="button"
-                          className="matterResearchCancelBtn"
-                          onClick={() =>
-                            void cancelMatterAtlasResearch(activeMatter.id)
-                          }
-                        >
-                          Cancel research
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  {activeProgressMessage ? (
-                    <article className="matterResearchCurrentStage">
-                      <div className="matterResearchCurrentStageTop">
-                        <div>
-                          <span className="matterResearchCurrentStageLabel">
-                            Research in progress
-                          </span>
-                          <h4>Associate is researching in the background</h4>
-                        </div>
-                        <div className="matterResearchPulse" aria-hidden="true">
-                          <span />
-                          <span />
-                          <span />
-                        </div>
-                      </div>
-                      <p>{activeProgressDisplayText}</p>
-                      {isMatterStatePolling ? (
-                        <div className="matterResearchPollingRow">
-                          <div
-                            className="matterResearchPulse"
-                            aria-hidden="true"
-                          >
-                            <span />
-                            <span />
-                            <span />
-                          </div>
-                          <span>Refreshing live research state</span>
-                        </div>
-                      ) : null}
-                    </article>
-                  ) : null}
-                  <div className="matterResearchFootnote">
-                    You can do something else. Associate will notify you once
-                    the brief is ready.
-                  </div>
-                </article>
-              ) : null}
+              {!shouldShowClarificationState
+                ? renderMatterResearchCommandPanel()
+                : null}
             </section>
           ) : (
             <section className="matterAnalysisWorkspace">
@@ -6554,9 +9992,6 @@ const MatterSection = ({
                               />
                             ) : null}
                           </p>
-                          <span className="matterSummaryPreviewHint">
-                            Click to open the research detail
-                          </span>
                         </button>
                         {isMatterStatePolling ? (
                           <div className="matterResearchPollingRow">
@@ -6574,7 +10009,8 @@ const MatterSection = ({
                       </article>
 
                       {missingProofItems.length ||
-                      activeAtlasNextSteps?.draftQueue?.length ? (
+                      activeAtlasNextSteps?.draftQueue?.length ||
+                      Boolean(activeMatterUnderstanding) ? (
                         <div className="matterAnalysisSecondaryGrid">
                           {missingProofItems.length &&
                           (!shouldAnimateBriefSections ||
@@ -6641,9 +10077,9 @@ const MatterSection = ({
                             <div className="matterAnalysisPanelHead">
                               <div>
                                 <p className="matterEyebrow">
-                                  Next Steps and Drafts
+                                  Matter Understanding
                                 </p>
-                                <h3>What likely comes next</h3>
+                                <h3>Current legal picture</h3>
                               </div>
                             </div>
                             {renderAtlasNextSteps()}
@@ -6651,7 +10087,8 @@ const MatterSection = ({
                         </div>
                       ) : null}
 
-                      {activeAtlasCaseResearch?.similarCases?.length &&
+                      {(activeAtlasCaseResearch?.similarCases?.length ||
+                        activeAtlasCaseResearch?.debugReferences?.length) &&
                       (!shouldAnimateBriefSections || briefRevealStage >= 3) ? (
                         <article className="matterAnalysisPanel">
                           <div className="matterAnalysisPanelHead">
@@ -6662,11 +10099,22 @@ const MatterSection = ({
                               <h3>Comparable sources and references</h3>
                             </div>
                           </div>
-                          {renderAtlasSimilarCases(
-                            activeAtlasCaseResearch.similarCases,
+                          {activeAtlasCaseResearch?.similarCases?.length ? (
+                            renderAtlasSimilarCases(
+                              activeAtlasCaseResearch.similarCases,
+                            )
+                          ) : (
+                            <p className="matterDebriefEmpty">
+                              No cases survived verification for this run.
+                              Review the debug panel below for search and
+                              discard details.
+                            </p>
                           )}
                         </article>
                       ) : null}
+                      {!shouldAnimateBriefSections || briefRevealStage >= 3
+                        ? renderAtlasCaseDebug()
+                        : null}
 
                       {summaryIssues.length ? (
                         <article className="matterAnalysisPanel">
@@ -6782,89 +10230,9 @@ const MatterSection = ({
                     </>
                   ) : null}
 
-                  {!activePrimarySummary ? (
-                    <article className="matterResearchModePanel">
-                      <div className="matterResearchModeHero">
-                        <div>
-                          <p className="matterEyebrow">Active Research</p>
-                          <h3>{researchWorkspaceTitle}</h3>
-                          <p className="matterResearchModeSummary">
-                            {researchWorkspaceSummary}
-                          </p>
-                        </div>
-                        <div className="matterResearchModeMeta">
-                          <span className="matterResearchModeStatus">
-                            {researchWorkspaceStatusLabel}
-                          </span>
-                          {canStartResearchFromUi && activeMatter ? (
-                            <button
-                              type="button"
-                              className="matterResearchStartBtn"
-                              disabled={isResearchStartBlockedByPreparation}
-                              onClick={() =>
-                                void runMatterAtlasResearch(activeMatter.id)
-                              }
-                            >
-                              {researchStartButtonLabel}
-                            </button>
-                          ) : null}
-                          {isMatterResearchRunning && activeMatter ? (
-                            <button
-                              type="button"
-                              className="matterResearchCancelBtn"
-                              onClick={() =>
-                                void cancelMatterAtlasResearch(activeMatter.id)
-                              }
-                            >
-                              Cancel research
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      {shouldShowProgressThread && activeProgressMessage ? (
-                        <article className="matterResearchCurrentStage">
-                          <div className="matterResearchCurrentStageTop">
-                            <div>
-                              <span className="matterResearchCurrentStageLabel">
-                                Research in progress
-                              </span>
-                              <h4>
-                                Associate is researching in the background
-                              </h4>
-                            </div>
-                            <div
-                              className="matterResearchPulse"
-                              aria-hidden="true"
-                            >
-                              <span />
-                              <span />
-                              <span />
-                            </div>
-                          </div>
-                          <p>{activeProgressDisplayText}</p>
-                          {isMatterStatePolling ? (
-                            <div className="matterResearchPollingRow">
-                              <div
-                                className="matterResearchPulse"
-                                aria-hidden="true"
-                              >
-                                <span />
-                                <span />
-                                <span />
-                              </div>
-                              <span>Refreshing live research state</span>
-                            </div>
-                          ) : null}
-                        </article>
-                      ) : null}
-
-                      <div className="matterResearchFootnote">
-                        You can do something else. Associate will notify you
-                        once the brief is ready.
-                      </div>
-                    </article>
-                  ) : null}
+                  {!activePrimarySummary
+                    ? renderMatterResearchCommandPanel()
+                    : null}
 
                   {!activePrimarySummary &&
                   activeAnalysisState?.whatWeFound?.length ? (
@@ -7281,22 +10649,24 @@ const MatterSection = ({
                         {secondaryClassificationMarkers.length ? (
                           <div className="matterSecondaryTagSection">
                             <div className="matterSecondaryTagList">
-                              {secondaryClassificationMarkers.map((marker, index) => (
-                                <span
-                                  key={`secondary-marker-${index}-${marker.slice(0, 48)}`}
-                                  className={`matterSecondaryTag ${
-                                    secondaryUserDefinedTags.some(
-                                      (tag) =>
-                                        tag.toLowerCase() ===
-                                        marker.toLowerCase(),
-                                    )
-                                      ? "isUserTag"
-                                      : ""
-                                  }`}
-                                >
-                                  {marker}
-                                </span>
-                              ))}
+                              {secondaryClassificationMarkers.map(
+                                (marker, index) => (
+                                  <span
+                                    key={`secondary-marker-${index}-${marker.slice(0, 48)}`}
+                                    className={`matterSecondaryTag ${
+                                      secondaryUserDefinedTags.some(
+                                        (tag) =>
+                                          tag.toLowerCase() ===
+                                          marker.toLowerCase(),
+                                      )
+                                        ? "isUserTag"
+                                        : ""
+                                    }`}
+                                  >
+                                    {marker}
+                                  </span>
+                                ),
+                              )}
                             </div>
                           </div>
                         ) : null}
@@ -7422,14 +10792,17 @@ const MatterSection = ({
             ) : null}
 
             {activeMatterTab === "evidence" ? (
-              <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+              <article className="matterWorkspacePanel matterWorkspaceFactsPanel terraMatterEvidenceTab">
                 <div className="matterWorkspacePanelHead">
                   <div>
                     <p className="matterEyebrow">Evidence</p>
                     <h2>Evidence reference</h2>
                   </div>
                   <span className="matterBriefStatus is-ready">
-                    {activeEvidenceReference?.evidenceItems?.length || 0} items
+                    {activeEvidenceReference?.evidenceItems?.length ||
+                      briefEvidenceCount ||
+                      0}{" "}
+                    items
                   </span>
                 </div>
                 {activeEvidenceReference?.citationGroups?.length ? (
@@ -7464,11 +10837,95 @@ const MatterSection = ({
                           </span>
                         </div>
                         <p>{item.excerpt}</p>
+                        {item.sourceUrl ? (
+                          <div className="matterIssueCardBody isOpen">
+                            <UiButton
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                window.open(
+                                  item.sourceUrl || "",
+                                  "_blank",
+                                  "noopener,noreferrer",
+                                )
+                              }
+                            >
+                              See evidence
+                            </UiButton>
+                          </div>
+                        ) : null}
                       </article>
                     ))}
                   </div>
+                ) : matterUnderstandingResearchAuthorities.length ? (
+                  <div className="matterCaseList">
+                    {matterUnderstandingResearchAuthorities.map(
+                      (item, index) => {
+                        const caseId = `${item.id}-${index}`;
+                        const isExpanded = Boolean(expandedCaseIds[caseId]);
+                        return (
+                          <article className="matterCaseRow" key={caseId}>
+                            <div className="matterCaseRowMain">
+                              <button
+                                type="button"
+                                className="matterCaseTitleLink"
+                                onClick={() => {
+                                  if (item.url) {
+                                    window.open(
+                                      item.url,
+                                      "_blank",
+                                      "noopener,noreferrer",
+                                    );
+                                  }
+                                }}
+                              >
+                                {item.title}
+                              </button>
+                              {item.summary ? (
+                                <button
+                                  type="button"
+                                  className="matterCaseSummaryToggle"
+                                  onClick={() =>
+                                    setExpandedCaseIds((current) => ({
+                                      ...current,
+                                      [caseId]: !current[caseId],
+                                    }))
+                                  }
+                                  aria-expanded={isExpanded}
+                                >
+                                  <span>Summary</span>
+                                  {isExpanded ? (
+                                    <ChevronDown size={16} />
+                                  ) : (
+                                    <ChevronRight size={16} />
+                                  )}
+                                </button>
+                              ) : null}
+                            </div>
+                            <small className="matterNextStepDraftType">
+                              {item.kind}
+                              {item.source ? ` · ${item.source}` : ""}
+                            </small>
+                            {isExpanded && item.summary ? (
+                              <div className="matterCaseSummary">
+                                <p>{item.summary}</p>
+                              </div>
+                            ) : null}
+                          </article>
+                        );
+                      },
+                    )}
+                  </div>
                 ) : activeAtlasCaseResearch?.similarCases?.length ? (
                   renderAtlasSimilarCases(activeAtlasCaseResearch.similarCases)
+                ) : activeAtlasCaseResearch?.debugReferences?.length ? (
+                  <>
+                    <p className="matterDebriefEmpty">
+                      No cases survived verification for this run. Debug details
+                      are shown below.
+                    </p>
+                    {renderAtlasCaseDebug()}
+                  </>
                 ) : (
                   <p className="matterDebriefEmpty">
                     Evidence excerpts will appear here once a summary is
@@ -7480,7 +10937,7 @@ const MatterSection = ({
 
             {activeMatterTab === "facts" ? (
               activeBriefArtifact ? (
-                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel terraMatterAnalysisTab">
                   <div className="matterWorkspacePanelHead">
                     <div>
                       <p className="matterEyebrow">Analysis</p>
@@ -7492,6 +10949,7 @@ const MatterSection = ({
                       {formatSummaryTypeLabel(activeBriefArtifact.summaryType)}
                     </span>
                   </div>
+                  {renderMatterUnderstandingAnalysis()}
                   {activeDetailedBrief?.contractualFramework?.length ? (
                     <section className="matterAnalysisPanel">
                       <div className="matterAnalysisPanelHead">
@@ -7596,7 +11054,7 @@ const MatterSection = ({
                   ) : null}
                 </article>
               ) : activeAtlasMatterBrief ? (
-                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel terraMatterAnalysisTab">
                   <div className="matterWorkspacePanelHead">
                     <div>
                       <p className="matterEyebrow">Analysis</p>
@@ -7606,6 +11064,26 @@ const MatterSection = ({
                       {activeAtlasMatterBrief.confidence}
                     </span>
                   </div>
+                  {renderMatterUnderstandingAnalysis()}
+                  {activeAtlasMatterBrief.detailedBrief ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Brief</p>
+                          <h3>Detailed agent brief</h3>
+                        </div>
+                      </div>
+                      <div className="matterReadableTextBlock">
+                        {splitReadableParagraphs(
+                          activeAtlasMatterBrief.detailedBrief,
+                        ).map((paragraph, index) => (
+                          <p key={`facts-atlas-detailed-${index}`}>
+                            {paragraph}
+                          </p>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                   {activeAtlasDeciderResearch ? (
                     <section className="matterAnalysisPanel">
                       <div className="matterAnalysisPanelHead">
@@ -7641,6 +11119,61 @@ const MatterSection = ({
                       ) : null}
                     </section>
                   ) : null}
+                  {activeAtlasMatterBrief.recordSupports?.length ||
+                  activeAtlasMatterBrief.recordDoesNotSupportYet?.length ||
+                  activeAtlasMatterBrief.recordContradicts?.length ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Grounding</p>
+                          <h3>
+                            Supported, unresolved, and contradicted points
+                          </h3>
+                        </div>
+                      </div>
+                      {activeAtlasMatterBrief.recordSupports?.length ? (
+                        <>
+                          <strong>Supported by the uploaded record</strong>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordSupports.map(
+                              (item) => (
+                                <li key={`facts-support-${item}`}>{item}</li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                      {activeAtlasMatterBrief.recordDoesNotSupportYet
+                        ?.length ? (
+                        <>
+                          <strong>Not yet supported</strong>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordDoesNotSupportYet.map(
+                              (item) => (
+                                <li key={`facts-unsupported-${item}`}>
+                                  {item}
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                      {activeAtlasMatterBrief.recordContradicts?.length ? (
+                        <>
+                          <strong>Contradicted by the current record</strong>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordContradicts.map(
+                              (item) => (
+                                <li key={`facts-contradiction-${item}`}>
+                                  {item}
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                    </section>
+                  ) : null}
                   {activeAtlasCaseResearch ? (
                     <section className="matterAnalysisPanel">
                       <div className="matterAnalysisPanelHead">
@@ -7660,9 +11193,27 @@ const MatterSection = ({
                       ) : null}
                     </section>
                   ) : null}
+                  {activeAtlasMatterBrief.citations?.length ? (
+                    <section className="matterAnalysisPanel">
+                      <div className="matterAnalysisPanelHead">
+                        <div>
+                          <p className="matterEyebrow">Cases</p>
+                          <h3>Verified citations used in the brief</h3>
+                        </div>
+                      </div>
+                      <ul className="matterBulletList">
+                        {activeAtlasMatterBrief.citations.map((item) => (
+                          <li key={`${item.title}-${item.citation}`}>
+                            <strong>{item.title}</strong>
+                            {item.citation ? ` (${item.citation})` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
                 </article>
               ) : (
-                <article className="matterWorkspacePanel matterWorkspaceFactsPanel">
+                <article className="matterWorkspacePanel matterWorkspaceFactsPanel terraMatterAnalysisTab">
                   <div className="matterWorkspacePanelHead">
                     <div>
                       <p className="matterEyebrow">Facts</p>
@@ -7674,6 +11225,7 @@ const MatterSection = ({
                       {groundAnalysisStatus || "not started"}
                     </span>
                   </div>
+                  {renderMatterUnderstandingAnalysis()}
                   {briefDisplayPayload?.warning ? (
                     <p className="matterWorkspaceWarning">
                       {briefDisplayPayload.warning}
@@ -7854,7 +11406,7 @@ const MatterSection = ({
               )
             ) : null}
             {activeMatterTab === "drafts" ? (
-              <article className="matterWorkspacePanel matterWorkspaceDraftsPanel">
+              <article className="matterWorkspacePanel matterWorkspaceDraftsPanel terraMatterDraftsTab">
                 <div className="matterWorkspacePanelHead">
                   <div>
                     <p className="matterEyebrow">Drafts</p>
@@ -7888,75 +11440,190 @@ const MatterSection = ({
                     ) : null}
                   </div>
                 </div>
-                {isAtlasMatterFlow ? (
-                  atlasDraftQueue.length ? (
-                    <div className="matterNextStepsStack">
-                      {atlasDraftQueue.map((item) => (
-                        (() => {
-                          const dependencies = visibleDraftDependencies(
-                            item.unblocksWhen,
-                          );
-                          return (
+                {matterUnderstandingDrafts.length ? (
+                  <div className="matterNextStepsStack">
+                    {matterUnderstandingDrafts.map((item, index) => {
+                      const draftState = resolveDraftGenerationState({
+                        id: item.draft_type || item.title,
+                        draftType: item.draft_type,
+                        title: item.title,
+                      });
+                      return (
                         <article
-                          className="matterNextStepsPanel matterNextStepsStaticCard isDraft"
-                          key={item.id}
+                          className={`matterNextStepsPanel matterNextStepsStaticCard isDraft is-${draftState.status}`}
+                          key={`${item.draft_type || item.title}-${index}`}
                         >
                           <div className="matterNextStepCardHead">
-                            <strong>{item.title}</strong>
-                            <Button
-                              type="button"
-                              className="matterStartDraftingBtn"
-                              disabled={item.isStartable === false}
-                              onClick={() =>
-                                item.isStartable === false
-                                  ? undefined
-                                  : void startAtlasDraftGeneration(
-                                      {
-                                        id: item.id,
-                                        draftType: item.draftType,
-                                        title: item.title,
-                                      },
-                                      "drafts",
-                                    )
-                              }
-                            >
-                              {item.isStartable === false
-                                ? "Not yet supported"
-                                : "Start drafting"}
-                            </Button>
+                            <strong>{item.title || item.draft_type}</strong>
+                            <div className="matterDraftCardActions">
+                              <span
+                                className={`matterBriefStatus ${
+                                  draftState.status === "done"
+                                    ? "is-ready"
+                                    : draftState.status === "running"
+                                      ? "is-processing"
+                                      : ""
+                                }`}
+                              >
+                                {draftState.label}
+                              </span>
+                              <Button
+                                type="button"
+                                className="matterStartDraftingBtn"
+                                disabled={draftState.status === "running"}
+                                onClick={() =>
+                                  void startAtlasDraftGeneration(
+                                    {
+                                      id: item.draft_type || item.title,
+                                      draftType: item.draft_type,
+                                      title: item.title,
+                                    },
+                                    "drafts",
+                                  )
+                                }
+                              >
+                                {draftState.status === "done"
+                                  ? "Redraft"
+                                  : draftState.status === "running"
+                                    ? "Drafting"
+                                    : "Start drafting"}
+                              </Button>
+                            </div>
                           </div>
-                          <p className="matterNextStepsPreview">
-                            {renderEmphasizedInlineText(item.description, [
-                              "termination",
-                              "notice",
-                              "refund",
-                              "cure period",
-                              "material default",
-                              "proof",
-                              "upload",
-                              activeAtlasMatterBrief?.usedWorkflow?.name || "",
-                            ])}
-                          </p>
-                          {item.availabilityNote ? (
-                            <p className="matterNextStepsMeta">
-                              {item.availabilityNote}
-                            </p>
-                          ) : null}
-                          {dependencies.length ? (
+                        <p className="matterNextStepsPreview">
+                          {item.rationale ||
+                            "Recommended by the matter understanding pass."}
+                        </p>
+                        <div className="matterDraftRecommendationFooter">
+                          <span>
+                            {item.urgency || "standard"}
+                            {item.is_primary_legal_draft
+                              ? " · primary legal draft"
+                              : " · supporting draft"}
+                          </span>
+                        </div>
+                        {item.gates?.length ? (
+                          <details className="matterNextStepDisclosure">
+                            <summary>
+                              <span>
+                                <strong>Readiness gates</strong>
+                                <small>
+                                  {item.gates.length} item
+                                  {item.gates.length === 1 ? "" : "s"}
+                                </small>
+                              </span>
+                              <ChevronRight size={16} />
+                            </summary>
                             <div className="matterNextStepsAccordionBody">
                               <ul className="matterBulletList">
-                                {dependencies.map((dependency: string) => (
-                                  <li key={`${item.id}-${dependency}`}>
-                                    {dependency}
+                                {item.gates.map((gate) => (
+                                  <li key={`${item.draft_type}-${gate}`}>
+                                    {gate}
                                   </li>
                                 ))}
                               </ul>
                             </div>
-                          ) : null}
-                        </article>
+                          </details>
+                        ) : null}
+                      </article>
+                      );
+                    })}
+                  </div>
+                ) : isAtlasMatterFlow ? (
+                  atlasDraftQueue.length ? (
+                    <div className="matterNextStepsStack">
+                      {atlasDraftQueue.map((item) =>
+                        (() => {
+                          const dependencies = visibleDraftDependencies(
+                            item.unblocksWhen,
                           );
-                        })()
-                      ))}
+                          const draftState = resolveDraftGenerationState({
+                            id: item.id,
+                            draftType: item.draftType,
+                            title: item.title,
+                          });
+                          return (
+                            <article
+                              className={`matterNextStepsPanel matterNextStepsStaticCard isDraft is-${draftState.status}`}
+                              key={item.id}
+                            >
+                              <div className="matterNextStepCardHead">
+                                <strong>{item.title}</strong>
+                                <div className="matterDraftCardActions">
+                                  <span
+                                    className={`matterBriefStatus ${
+                                      draftState.status === "done"
+                                        ? "is-ready"
+                                        : draftState.status === "running"
+                                          ? "is-processing"
+                                          : ""
+                                    }`}
+                                  >
+                                    {draftState.label}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    className="matterStartDraftingBtn"
+                                    disabled={
+                                      item.isStartable === false ||
+                                      draftState.status === "running"
+                                    }
+                                    onClick={() =>
+                                      item.isStartable === false
+                                        ? undefined
+                                        : void startAtlasDraftGeneration(
+                                            {
+                                              id: item.id,
+                                              draftType: item.draftType,
+                                              title: item.title,
+                                            },
+                                            "drafts",
+                                          )
+                                    }
+                                  >
+                                    {item.isStartable === false
+                                      ? "Not yet supported"
+                                      : draftState.status === "done"
+                                        ? "Redraft"
+                                        : draftState.status === "running"
+                                          ? "Drafting"
+                                          : "Start drafting"}
+                                  </Button>
+                                </div>
+                              </div>
+                              <p className="matterNextStepsPreview">
+                                {renderEmphasizedInlineText(item.description, [
+                                  "termination",
+                                  "notice",
+                                  "refund",
+                                  "cure period",
+                                  "material default",
+                                  "proof",
+                                  "upload",
+                                  activeAtlasMatterBrief?.usedWorkflow?.name ||
+                                    "",
+                                ])}
+                              </p>
+                              {item.availabilityNote ? (
+                                <p className="matterNextStepsMeta">
+                                  {item.availabilityNote}
+                                </p>
+                              ) : null}
+                              {dependencies.length ? (
+                                <div className="matterNextStepsAccordionBody">
+                                  <ul className="matterBulletList">
+                                    {dependencies.map((dependency: string) => (
+                                      <li key={`${item.id}-${dependency}`}>
+                                        {dependency}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                            </article>
+                          );
+                        })(),
+                      )}
                     </div>
                   ) : (
                     <p className="matterDebriefEmpty">
@@ -7964,6 +11631,48 @@ const MatterSection = ({
                       workflow research pass is complete.
                     </p>
                   )
+                ) : isMockModeEnabled && activeMatter ? (
+                  <>
+                    {startingDraftKey ? (
+                      <div className="matterInlineLoaderWrap">
+                        <Loader
+                          mode="inline"
+                          variant="spinner"
+                          eyebrow="Drafting"
+                          title="Creating draft workspace"
+                          message="Generating the draft, saving it, and preparing the editor."
+                        />
+                      </div>
+                    ) : null}
+                    <div className="matterDraftRecommendationGrid">
+                      <article className="matterDraftRecommendationCard isReady">
+                        <div className="matterDraftRecommendationTop">
+                          <h3>Mock pipeline check: Suit for recovery</h3>
+                          <span>TEST</span>
+                        </div>
+                        <p>
+                          Triggers the full start-draft pipeline with a fixed
+                          reference-heavy query before other rollout changes.
+                        </p>
+                        <small>
+                          Uses the normal drafting workspace route and is
+                          visible only while Mock mode is on.
+                        </small>
+                        <div className="matterDraftRecommendationFooter">
+                          <span>debug · reference-pipeline</span>
+                          <Button
+                            type="button"
+                            className="matterStartDraftingBtn"
+                            onClick={() =>
+                              void startMockPipelineDraftCheck("overview")
+                            }
+                          >
+                            Start mock draft
+                          </Button>
+                        </div>
+                      </article>
+                    </div>
+                  </>
                 ) : readyDraftRecommendations.length ? (
                   <>
                     {startingDraftKey ? (
@@ -8139,9 +11848,11 @@ const MatterSection = ({
                   <div>
                     <p className="matterEyebrow">Timeline</p>
                     <h2>
-                      {isAtlasMatterFlow
-                        ? "What action needs to happen when"
-                        : "Matter sequence"}
+                      {matterUnderstandingTimeline.length
+                        ? "Matter chronology"
+                        : isAtlasMatterFlow
+                          ? "What action needs to happen when"
+                          : "Matter sequence"}
                     </h2>
                   </div>
                 </div>
@@ -8164,7 +11875,9 @@ const MatterSection = ({
                   <p className="matterDebriefEmpty">
                     {isAtlasMatterFlow
                       ? "Action timing will appear here once the workflow sequence is fully assembled."
-                      : "A chronology will appear here once fact extraction has enough material."}
+                      : activeMatterUnderstanding
+                        ? "The matter-understanding timeline will appear here once chronology extraction finishes."
+                        : "A chronology will appear here once fact extraction has enough material."}
                   </p>
                 )}
               </article>
@@ -8590,6 +12303,44 @@ const MatterSection = ({
                               </article>
                             ))}
                           </div>
+                        ) : isMockModeEnabled && activeMatter ? (
+                          <section className="matterDraftRecommendationGroup">
+                            <div className="matterDraftRecommendationGroupHead">
+                              <span>Ready to draft</span>
+                              <small>Mock mode pipeline check.</small>
+                            </div>
+                            <div className="matterDraftRecommendationGrid">
+                              <article className="matterDraftRecommendationCard isReady">
+                                <div className="matterDraftRecommendationTop">
+                                  <h3>
+                                    Mock pipeline check: Suit for recovery
+                                  </h3>
+                                  <span>TEST</span>
+                                </div>
+                                <p>
+                                  Triggers the full start-draft pipeline with a
+                                  fixed reference-heavy query before other
+                                  rollout changes.
+                                </p>
+                                <small>
+                                  Uses the normal drafting workspace route and
+                                  is visible only while Mock mode is on.
+                                </small>
+                                <div className="matterDraftRecommendationFooter">
+                                  <span>debug · reference-pipeline</span>
+                                  <Button
+                                    type="button"
+                                    className="matterStartDraftingBtn"
+                                    onClick={() =>
+                                      void startMockPipelineDraftCheck("drafts")
+                                    }
+                                  >
+                                    Start mock draft
+                                  </Button>
+                                </div>
+                              </article>
+                            </div>
+                          </section>
                         ) : draftRecommendationItems.length ? (
                           <>
                             {readyDraftRecommendations.length ? (
@@ -9224,8 +12975,16 @@ const MatterSection = ({
           className="matterChatDockButton"
           onClick={() => setIsMatterChatOpen(true)}
         >
-          <span className="matterChatDockButtonEyebrow">Matter chat</span>
-          <strong>Ask about this record</strong>
+          <span className="matterChatDockButtonModeRow" aria-hidden="true">
+            <span className="isActive">Normal Chat</span>
+            <span>Deep Research</span>
+          </span>
+          <span className="matterChatDockButtonInput">
+            Ask a question about this matter...
+          </span>
+          <span className="matterChatDockButtonSend" aria-hidden="true">
+            <ArrowUp size={16} />
+          </span>
         </button>
       ) : null}
 
@@ -9405,72 +13164,54 @@ const MatterSection = ({
                 <div className="matterClarificationQuestionHero">
                   <span className="matterIssueKey">Atlas classification</span>
                   <h3>
-                    {activeWorkflowDisplayName || "A workflow match is ready"}
+                    {activeWorkflowDisplayName ||
+                      "A subcategory match is ready"}
                   </h3>
                   <p className="matterClarificationMeta">
-                    {activePracticeAreaDisplayName ||
-                      "Select the closest practice area and workflow."}
+                    Associate is confident in the detected atlas category and
+                    subcategory. Add a short correction only if you want atlas
+                    to search for a closer fit.
                   </p>
                 </div>
 
-	                <div className="matterClarificationOptionList">
-	                  {activeAtlasRecognition.candidateWorkflows.map(
-	                    (candidate: AtlasBaseRecognitionCandidate) => (
-                      <button
-                        type="button"
-                        key={candidate.workflowId}
-                        className={`matterClarificationOptionRow ${
-                          activeWorkflowSelectionId === candidate.workflowId
-                            ? "isSelected"
-                            : ""
-                        }`}
-                        onClick={() =>
-                          setWorkflowSelectionIdByMatterId((current) => ({
-                            ...current,
-                            [activeMatter.id]: candidate.workflowId,
-                          }))
-                        }
-                      >
-                        <span className="matterClarificationOptionCheck" />
-	                        <span className="matterClarificationOptionContent">
-	                          <strong>
-	                            {candidate.workflowName ||
-	                              formatAtlasLabel(candidate.workflowId)}
-	                          </strong>
-	                          <small>
-	                            {candidate.areaName ||
-	                              formatAtlasLabel(candidate.areaId)}
-	                          </small>
-	                          {candidate.trigger ? (
-	                            <small>{candidate.trigger}</small>
-	                          ) : null}
-	                        </span>
-	                      </button>
-	                    ),
-	                  )}
-	                </div>
-	                {Array.isArray(activeAtlasRecognition?.conflictingSignals) &&
-	                activeAtlasRecognition.conflictingSignals.length ? (
-	                  <div className="matterClarificationConflictNote">
-	                    {activeAtlasRecognition.conflictingSignals.map((item) => (
-	                      <p
-	                        key={`${item.type}:${item.values.join("|")}`}
-	                        className="matterClarificationMeta"
-	                      >
-	                        Signal conflict in {item.type.replace(/_/g, " ")}:{" "}
-	                        {item.values.join(", ")}
-	                      </p>
-	                    ))}
-	                  </div>
-	                ) : null}
-	                {activeAtlasRecognition?.forumMismatch ? (
-	                  <p className="matterClarificationMeta">
-	                    Extracted forum signals do not cleanly match the top
-	                    workflow forum.
-	                  </p>
-	                ) : null}
+                <div className="matterSecondaryClassificationBox">
+                  <p className="matterClarificationMeta">
+                    <strong>Category:</strong>{" "}
+                    {activePracticeAreaDisplayName || "Unspecified"}
+                  </p>
+                  <p className="matterClarificationMeta">
+                    <strong>Subcategory:</strong>{" "}
+                    {activeWorkflowDisplayName || "Unspecified"}
+                  </p>
+                  {activeAtlasRecognition?.primaryReason ? (
+                    <p className="matterClarificationMeta">
+                      <strong>Why this fit:</strong>{" "}
+                      {activeAtlasRecognition.primaryReason}
+                    </p>
+                  ) : null}
+                  {Array.isArray(activeAtlasRecognition?.conflictingSignals) &&
+                  activeAtlasRecognition.conflictingSignals.length ? (
+                    <div className="matterClarificationConflictNote">
+                      {activeAtlasRecognition.conflictingSignals.map((item) => (
+                        <p
+                          key={`${item.type}:${item.values.join("|")}`}
+                          className="matterClarificationMeta"
+                        >
+                          Signal conflict in {item.type.replace(/_/g, " ")}:{" "}
+                          {item.values.join(", ")}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                  {activeAtlasRecognition?.forumMismatch ? (
+                    <p className="matterClarificationMeta">
+                      Extracted forum signals do not cleanly match the detected
+                      subcategory forum.
+                    </p>
+                  ) : null}
+                </div>
 
-	                <div className="matterClarificationChoiceFlow">
+                <div className="matterClarificationChoiceFlow">
                   <UiInput
                     type="text"
                     value={activeWorkflowOverrideNote}
@@ -9480,34 +13221,17 @@ const MatterSection = ({
                         [activeMatter.id]: event.target.value,
                       }))
                     }
-                    placeholder="Optional: add a case-specific note to rerun categorization"
+                    placeholder="Optional: add a note if the category or subcategory should be different"
                   />
                   <div className="matterClarificationFooter">
-                    <div className="matterClarificationFooterActions">
-                      <UiButton
-                        variant="ghost"
-                        className="matterClarificationTextButton"
-                        disabled={activeWorkflowConfirmationState.submitting}
-                        onClick={() =>
-                          void retryMatterAtlasRecognition(
-                            activeMatter.id,
-                            activeWorkflowOverrideNote,
-                          )
-                        }
-                      >
-                        Retry categorization
-                      </UiButton>
-                    </div>
                     <UiButton
                       variant="primary"
                       className="matterClarificationIconButton"
                       disabled={activeWorkflowConfirmationState.submitting}
                       onClick={() =>
-                        void confirmMatterAtlasWorkflow({
-                          matterId: activeMatter.id,
-                          selectedWorkflowId: activeWorkflowSelectionId,
-                          overrideNote: activeWorkflowOverrideNote,
-                        })
+                        void submitMatterAtlasWorkflowClassification(
+                          activeMatter.id,
+                        )
                       }
                     >
                       <ArrowRight size={18} />
@@ -9526,280 +13250,7 @@ const MatterSection = ({
       ) : null}
 
       {shouldShowClarificationState &&
-      draftGenerationCheckpoint ? (
-        <div
-          className="matterDialogBackdrop matterClarificationOverlay"
-          role="presentation"
-        >
-          <section
-            className="matterClarificationModal"
-            role="dialog"
-            aria-modal="true"
-          >
-            <header className="matterClarificationModalHead">
-              <div>
-                <p className="matterEyebrow">
-                  {getDraftCheckpointEyebrow(draftGenerationCheckpoint)}
-                </p>
-                <h2>{draftGenerationCheckpoint.title}</h2>
-              </div>
-              <span className="matterResearchModeStatus">
-                {draftGenerationCheckpoint.status ===
-                "review_ready_with_optional_inputs"
-                  ? "guarded draft available"
-                  : draftGenerationCheckpoint.questions.length ||
-                      draftGenerationCheckpoint.requestedDocuments.length
-                    ? "review before drafting"
-                    : "ready to draft"}
-              </span>
-              <button
-                type="button"
-                className="matterClarificationCloseButton"
-                aria-label="Close draft readiness checkpoint"
-                onClick={() => void closeDraftGenerationCheckpoint()}
-              >
-                <X size={18} />
-              </button>
-            </header>
-            <div className="matterClarificationModalBody">
-              <article className="matterClarificationActiveCard uiCard">
-                <div className="matterClarificationQuestionHero">
-                  <h3>{draftGenerationCheckpoint.messageToUser}</h3>
-                  <p>{draftGenerationCheckpoint.consequenceIfSkipped}</p>
-                </div>
-
-                {draftGenerationCheckpoint.blockingItems.length ? (
-                  <div className="matterClarificationUploadGrid">
-                    {draftGenerationCheckpoint.blockingItems.map((item) => (
-                      <article
-                        className="matterClarificationUploadCard uiCard"
-                        key={`draft-blocker-${item}`}
-                      >
-                        <strong>{item}</strong>
-                      </article>
-                    ))}
-                  </div>
-                ) : null}
-
-                {draftGenerationCheckpoint.questions.length ? (
-                  <div className="matterClarificationChoiceFlow">
-                    {draftGenerationCheckpoint.questions.map((question) => (
-                      <div
-                        className="matterClarificationUploadCard uiCard"
-                        key={question.id}
-                      >
-                        <strong>{question.question}</strong>
-                        <p>{question.whyItMatters}</p>
-                        {question.answerType === "yes_no" ? (
-                          <div className="matterClarificationOptionList">
-                            {["yes", "no", "not_sure"].map((option) => (
-                              <button
-                                type="button"
-                                key={`${question.id}-${option}`}
-                                className={`matterClarificationOptionRow ${
-                                  draftGenerationAnswers[question.id] === option
-                                    ? "isSelected"
-                                    : ""
-                                }`}
-                                onClick={() =>
-                                  setDraftGenerationAnswers((current) => ({
-                                    ...current,
-                                    [question.id]: option,
-                                  }))
-                                }
-                              >
-                                <span className="matterClarificationOptionCheck" />
-                                <span className="matterClarificationOptionContent">
-                                  <strong>{option.replace(/_/g, " ")}</strong>
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : question.answerType === "choice" &&
-                          question.options?.length ? (
-                          <div className="matterClarificationOptionList">
-                            {question.options.map((option) => (
-                              <button
-                                type="button"
-                                key={`${question.id}-${option}`}
-                                className={`matterClarificationOptionRow ${
-                                  draftGenerationAnswers[question.id] === option
-                                    ? "isSelected"
-                                    : ""
-                                }`}
-                                onClick={() =>
-                                  setDraftGenerationAnswers((current) => ({
-                                    ...current,
-                                    [question.id]: option,
-                                  }))
-                                }
-                              >
-                                <span className="matterClarificationOptionCheck" />
-                                <span className="matterClarificationOptionContent">
-                                  <strong>{option}</strong>
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <>
-                            {question.suggestedAnswer ? (
-                              <div className="matterClarificationOptionList">
-                                <button
-                                  type="button"
-                                  className={`matterClarificationOptionRow ${
-                                    draftGenerationAnswers[question.id] ===
-                                    question.suggestedAnswer
-                                      ? "isSelected"
-                                      : ""
-                                  }`}
-                                  onClick={() =>
-                                    setDraftGenerationAnswers((current) => ({
-                                      ...current,
-                                      [question.id]:
-                                        question.suggestedAnswer || "",
-                                    }))
-                                  }
-                                >
-                                  <span className="matterClarificationOptionCheck" />
-                                  <span className="matterClarificationOptionContent">
-                                    <strong>Use suggested answer</strong>
-                                    <small>{question.suggestedAnswer}</small>
-                                  </span>
-                                </button>
-                              </div>
-                            ) : null}
-                            <UiInput
-                              type={
-                                question.answerType === "date"
-                                  ? "date"
-                                  : question.answerType === "amount"
-                                    ? "number"
-                                    : "text"
-                              }
-                              value={draftGenerationAnswers[question.id] || ""}
-                              onChange={(event) =>
-                                setDraftGenerationAnswers((current) => ({
-                                  ...current,
-                                  [question.id]: event.target.value,
-                                }))
-                              }
-                              placeholder="Type your answer"
-                            />
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                {draftGenerationCheckpoint.requestedDocuments.length ? (
-                  <div className="matterClarificationUploadGrid">
-                    {draftGenerationCheckpoint.requestedDocuments.map((item) => (
-                      <article
-                        className="matterClarificationUploadCard uiCard"
-                        key={item.id}
-                      >
-                        <strong>{item.label}</strong>
-                        <p>{item.whyNeeded}</p>
-                        <small>{item.unlocks}</small>
-                        <div className="matterClarificationActions">
-                          <UiButton
-                            variant="secondary"
-                            onClick={() => {
-                              const prefill = [
-                                `Add supporting files for: ${item.label}.`,
-                                item.whyNeeded
-                                  ? `Why needed: ${item.whyNeeded}.`
-                                  : "",
-                                `Target draft: ${draftGenerationCheckpoint.title}.`,
-                                "Upload the strongest supporting records you have and note any missing dates or disputed facts.",
-                              ]
-                                .filter(Boolean)
-                                .join(" ");
-                              sessionStorage.setItem(
-                                MATTER_APPEND_UPLOAD_SESSION_KEY,
-                                "1",
-                              );
-                              sessionStorage.setItem(
-                                MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY,
-                                prefill,
-                              );
-                              window.dispatchEvent(
-                                new Event("matter-uploader:append-open"),
-                              );
-                            }}
-                          >
-                            {item.interactionType === "either"
-                              ? "Answer or upload support"
-                              : "Upload supporting files"}
-                          </UiButton>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="matterClarificationActions">
-                  <UiButton
-                    variant="primary"
-                    onClick={() =>
-                      void continueAtlasDraftGeneration(
-                        "review_draft_with_placeholders",
-                      )
-                    }
-                    disabled={isSubmittingDraftGeneration}
-                  >
-                    {isSubmittingDraftGeneration
-                      ? "Starting..."
-                      : draftGenerationCheckpoint.status ===
-                          "review_ready_with_optional_inputs"
-                        ? "Generate guarded review draft"
-                        : "Generate review draft"}
-                  </UiButton>
-                  {draftGenerationCheckpoint.recommendedAlternativeDraftType ? (
-                    <UiButton
-                      variant="secondary"
-                      onClick={() =>
-                        void continueAtlasDraftGeneration(
-                          "generate_safer_first_draft",
-                        )
-                      }
-                      disabled={isSubmittingDraftGeneration}
-                    >
-                      {draftGenerationCheckpoint.recommendedAlternativeTitle
-                        ? `Generate ${draftGenerationCheckpoint.recommendedAlternativeTitle}`
-                        : "Generate safer first draft"}
-                    </UiButton>
-                  ) : null}
-                  <UiButton
-                    variant="outline"
-                    onClick={() =>
-                      void continueAtlasDraftGeneration("lawyer_review_draft")
-                    }
-                    disabled={isSubmittingDraftGeneration}
-                  >
-                    Continue as lawyer-review draft
-                  </UiButton>
-                  <UiButton
-                    variant="secondary"
-                    onClick={() => {
-                      setUploadPopupMode("append");
-                      setIsUploadPopupOpen(true);
-                    }}
-                  >
-                    Upload missing proof
-                  </UiButton>
-                </div>
-                {draftGenerationError ? (
-                  <p className="matterBriefError">{draftGenerationError}</p>
-                ) : null}
-              </article>
-            </div>
-          </section>
-        </div>
-      ) : shouldShowClarificationState &&
-        (activeAtlasCheckpoint || activeClarificationCheckpoint) ? (
+      (activeAtlasCheckpoint || activeClarificationCheckpoint) ? (
         <div
           className="matterDialogBackdrop matterClarificationOverlay"
           role="presentation"
@@ -10131,6 +13582,20 @@ const MatterSection = ({
             <div className="matterBriefDetailBody">
               {activeAtlasMatterBrief ? (
                 <>
+                  {activeAtlasMatterBrief.detailedBrief ? (
+                    <section className="matterBriefDetailSection">
+                      <h3>Detailed brief</h3>
+                      <div className="matterReadableTextBlock">
+                        {splitReadableParagraphs(
+                          activeAtlasMatterBrief.detailedBrief,
+                        ).map((paragraph, index) => (
+                          <p key={`atlas-detailed-brief-${index}`}>
+                            {paragraph}
+                          </p>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                   {activeAtlasDeciderResearch ? (
                     <section className="matterBriefDetailSection">
                       <h3>Workflow grounding</h3>
@@ -10164,6 +13629,54 @@ const MatterSection = ({
                       ) : null}
                     </section>
                   ) : null}
+                  {activeAtlasMatterBrief.recordSupports?.length ||
+                  activeAtlasMatterBrief.recordDoesNotSupportYet?.length ||
+                  activeAtlasMatterBrief.recordContradicts?.length ? (
+                    <section className="matterBriefDetailSection">
+                      <h3>Grounding summary</h3>
+                      {activeAtlasMatterBrief.recordSupports?.length ? (
+                        <>
+                          <h4>Supported by the record</h4>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordSupports.map(
+                              (item) => (
+                                <li key={`atlas-support-${item}`}>{item}</li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                      {activeAtlasMatterBrief.recordDoesNotSupportYet
+                        ?.length ? (
+                        <>
+                          <h4>Not yet supported</h4>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordDoesNotSupportYet.map(
+                              (item) => (
+                                <li key={`atlas-unsupported-${item}`}>
+                                  {item}
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                      {activeAtlasMatterBrief.recordContradicts?.length ? (
+                        <>
+                          <h4>Contradicted by the current record</h4>
+                          <ul className="matterBulletList">
+                            {activeAtlasMatterBrief.recordContradicts.map(
+                              (item) => (
+                                <li key={`atlas-contradiction-${item}`}>
+                                  {item}
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                    </section>
+                  ) : null}
 
                   {activeAtlasCaseResearch ? (
                     <section className="matterBriefDetailSection">
@@ -10177,6 +13690,19 @@ const MatterSection = ({
                           )}
                         </ul>
                       ) : null}
+                    </section>
+                  ) : null}
+                  {activeAtlasMatterBrief.citations?.length ? (
+                    <section className="matterBriefDetailSection">
+                      <h3>Verified citations</h3>
+                      <ul className="matterBulletList">
+                        {activeAtlasMatterBrief.citations.map((item) => (
+                          <li key={`${item.title}-${item.citation}`}>
+                            <strong>{item.title}</strong>
+                            {item.citation ? ` (${item.citation})` : ""}
+                          </li>
+                        ))}
+                      </ul>
                     </section>
                   ) : null}
                 </>

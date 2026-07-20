@@ -77,6 +77,18 @@ export type DraftReferencedProvision = {
   evidence_bundle_id?: string;
 };
 
+export type DraftPendingChange = {
+  id: string;
+  block_id?: string;
+  removed_text?: string;
+  added_text?: string;
+  proposed_by?: string;
+  status?: string;
+  reason?: string;
+  source_issue_ids?: string[];
+  created_at?: string;
+};
+
 export type DraftBlockMeta = {
   blockId: string;
   sectionId?: string;
@@ -94,6 +106,7 @@ export type DraftBlockMeta = {
   referencedProvisions?: DraftReferencedProvision[];
   placeholders?: string[];
   warnings?: unknown[];
+  pendingChanges?: DraftPendingChange[];
   createdByAi?: boolean;
 };
 
@@ -122,6 +135,44 @@ export type DraftContext = {
   boilerplateMeta?: Record<string, unknown> | null;
   generatedBlockMeta?: Record<string, DraftBlockMeta>;
   aiGeneratedComments?: DraftAiReviewNote[];
+  latestFormatting?: {
+    status?: string;
+    model?: string;
+    message?: string;
+    sourceCount?: number;
+    startedAt?: string;
+    completedAt?: string;
+    failedAt?: string;
+  };
+  citationReview?: {
+    requiresCaseCitations?: boolean;
+    reason?: string;
+    atlasCaseCount?: number;
+    additionalCaseCount?: number;
+    visibleAuthorityCount?: number;
+    deterministicAppendixApplied?: boolean;
+    propositionCatalog?: Array<{
+      proposition_label?: string;
+      section_heading?: string;
+      proposition_text?: string;
+    }>;
+    selectedAuthorities?: Array<{
+      title?: string;
+      citation?: string;
+      url?: string;
+      proposition?: string;
+      proposition_label?: string;
+      proposition_section?: string;
+    }>;
+  };
+  singleDraftRedline?: {
+    removedParagraphs?: string[];
+    addedParagraphs?: string[];
+  };
+  singleDraftFormattingRedline?: {
+    removedParagraphs?: string[];
+    addedParagraphs?: string[];
+  };
   source?: string;
   recommendation?: MatterDraftRecommendation;
   [key: string]: unknown;
@@ -136,6 +187,7 @@ export type DraftSummary = {
   lastSavedAt: string | null;
   saveVersion: number;
   status: string;
+  generationStatus?: string | null;
 };
 
 export type DraftDetail = DraftSummary & {
@@ -164,6 +216,13 @@ export type DraftComment = {
   classification?: string;
   severity?: string;
   sourcePointers?: Array<Record<string, unknown>>;
+  blockId?: string;
+  suggestedText?: string;
+  originalText?: string;
+  appliedText?: string;
+  isAskAiSuggestion?: boolean;
+  sectionId?: string;
+  sectionTitle?: string;
 };
 
 export type DraftReviewJob = {
@@ -182,12 +241,6 @@ export type DraftReviewJob = {
   error: string | null;
   createdAt: string;
   updatedAt: string;
-};
-
-export type DraftRecommendationsResponse = {
-  matterId: string;
-  draftRecommendations: MatterDraftRecommendations;
-  result?: MatterProcessedResult;
 };
 
 export type PendingAnnotation = {
@@ -226,10 +279,6 @@ const readJson = async <T>(response: Response) => {
     throw new Error(String(payload?.error || "Draft request failed."));
   }
   return payload;
-};
-
-export const getDraftUserId = () => {
-  return "session-user";
 };
 
 export const hashDraftContent = (content: JSONContent) => {
@@ -275,6 +324,25 @@ export const getDraft = async (draftId: string) => {
   );
   const payload = await readJson<{ draft: DraftDetail; success: true }>(response);
   return payload.draft;
+};
+
+export const deleteDraft = async (draftId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}`),
+    {
+      method: "DELETE",
+      headers: buildDraftHeaders(false),
+    },
+  );
+  return readJson<{
+    success: true;
+    deleted: {
+      drafts: number;
+      snapshots: number;
+      reviewJobs: number;
+      storageFiles: Array<Record<string, unknown>>;
+    };
+  }>(response);
 };
 
 export const patchDraft = async (
@@ -330,6 +398,63 @@ export const triggerDraftReview = async (draftId: string) => {
   return payload;
 };
 
+export const openDraftCritiqueStream = async (
+  draftId: string,
+  signal?: AbortSignal,
+) => {
+  return fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/critique/stream`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({}),
+      signal,
+    },
+  );
+};
+
+export const formatDraft = async (draftId: string) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/format`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({}),
+    },
+  );
+  const payload = await readJson<{
+    success: true;
+    draft: DraftDetail;
+    formatting: {
+      status: string;
+      model?: string;
+      sourceCount?: number;
+    };
+  }>(response);
+  return payload;
+};
+
+export const askDraftAi = async (input: {
+  draftId: string;
+  message: string;
+}) => {
+  const response = await fetch(
+    buildApiUrl(`/api/drafts/${encodeURIComponent(input.draftId)}/ask-ai`),
+    {
+      method: "POST",
+      headers: buildDraftHeaders(),
+      body: JSON.stringify({ message: input.message }),
+    },
+  );
+  return readJson<{
+    success: true;
+    answer: string;
+    annotations: DraftComment[];
+    sourcePointers?: Array<Record<string, unknown>>;
+    meta?: Record<string, unknown>;
+  }>(response);
+};
+
 export const getDraftReview = async (draftId: string) => {
   const response = await fetch(
     buildApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/review`),
@@ -343,9 +468,16 @@ export const getDraftReview = async (draftId: string) => {
   return payload.review_job;
 };
 
-export const getDraftRecommendations = async (matterId: string) => {
+export const getDraftRecommendations = async (
+  matterId: string,
+  options: { includeResult?: boolean } = {},
+) => {
+  const includeResult = options.includeResult !== false;
+  const query = includeResult ? "" : "?include_result=false";
   const response = await fetch(
-    buildApiUrl(`/api/matters/${encodeURIComponent(matterId)}/draft-recommendations`),
+    buildApiUrl(
+      `/api/matters/${encodeURIComponent(matterId)}/draft-recommendations${query}`,
+    ),
     {
       headers: buildDraftHeaders(false),
     },
@@ -385,32 +517,6 @@ export const refreshDraftRecommendations = async (matterId: string) => {
   };
 };
 
-export const startDraftRecommendation = async (input: {
-  matterId: string;
-  recommendation: MatterDraftRecommendation;
-  allowIncomplete?: boolean;
-}) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/matters/${encodeURIComponent(input.matterId)}/draft-recommendations/${encodeURIComponent(input.recommendation.draft_key)}/start`,
-    ),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({
-        allow_incomplete: Boolean(input.allowIncomplete),
-      }),
-    },
-  );
-  const payload = await readJson<{
-    success: true;
-    draft: DraftDetail;
-    draft_recommendations?: MatterDraftRecommendations;
-    result?: MatterProcessedResult;
-  }>(response);
-  return payload;
-};
-
 export type DraftFormatProposal = {
   title: string;
   contentJson: JSONContent;
@@ -419,130 +525,14 @@ export type DraftFormatProposal = {
   meta?: Record<string, unknown>;
 };
 
-export type DraftGenerationQuestion = {
-  id: string;
-  question: string;
-  whyItMatters: string;
-  answerType:
-    | "yes_no"
-    | "short_text"
-    | "date"
-    | "amount"
-    | "choice"
-    | "document_upload"
-    | string;
-  options?: string[];
-  suggestedAnswer?: string | null;
-  priority?: string;
-  linkedIssue?: string;
-  linkedMissingInputIds?: string[];
-  interactionType?: string;
-};
-
-export type DraftGenerationRequestedDocument = {
-  id: string;
-  label: string;
-  whyNeeded: string;
-  unlocks: string;
-  priority?: string;
-  linkedIssue?: string;
-  linkedMissingInputIds?: string[];
-  acceptedTypes?: string[];
-  interactionType?: string;
-  strengthensClaims?: boolean;
-  blocks?: boolean;
-};
-
-export type DraftGenerationCheckpoint = {
+export type SingleDraftStreamRequest = {
   matterId: string;
   draftType: string;
-  title: string;
-  status:
-    | "needs_user_input"
-    | "review_ready_with_optional_inputs"
-    | "needs_user_action"
-    | "blocked"
-    | string;
-  readinessStatus?: "ready" | "review_ready" | "needs_user_input" | "blocked" | string;
-  messageToUser: string;
-  consequenceIfSkipped: string;
-  questions: DraftGenerationQuestion[];
-  requestedDocuments: DraftGenerationRequestedDocument[];
-  blockingItems: string[];
-  unsafeClaims: string[];
-  gapClusters?: Record<string, number>;
-  recommendedAlternativeDraftType?: string | null;
-  recommendedAlternativeTitle?: string | null;
-  recommendedActions: Array<{
-    id: string;
-    label: string;
-    description: string;
-  }>;
+  draftKey?: string;
+  draftTitle?: string;
+  source?: "atlas_next_steps";
+  requestedFrom?: "overview" | "drafts";
 };
-
-export type DraftGenerationThread = {
-  id: string;
-  ownerUserId: string;
-  matterId: string;
-  draftId: string | null;
-  selectedDraftType: string;
-  status: string;
-  graphState: Record<string, unknown>;
-  checkpointPayload: DraftGenerationCheckpoint | null;
-  uiSummary: {
-    threadId?: string;
-    matterId?: string;
-    draftId?: string | null;
-    selectedDraftType?: string;
-    readiness?: Record<string, unknown> | null;
-    sectionStatuses?: Array<{
-      sectionId: string;
-      title: string;
-      status: string;
-      sourceRefCount?: number;
-      warningCount?: number;
-    }>;
-    blockers?: string[];
-    riskFlags?: string[];
-    draftScope?: Record<string, unknown> | null;
-    format?: {
-      draftFamily?: string;
-      confidence?: string;
-      cacheStatus?: string;
-      sources?: Array<{
-        type?: string;
-        title?: string;
-        url?: string;
-        file_name?: string;
-      }>;
-    } | null;
-    gapOwnership?: Record<string, number>;
-    criticReport?: {
-      draft_quality_report?: string;
-      blocking_issues?: unknown[];
-      warnings?: unknown[];
-      suggested_fixes?: unknown[];
-      ready_for_lawyer_review?: boolean;
-    } | null;
-    sourceCoverage?: {
-      requirementCount?: number;
-      verifiedCount?: number;
-      userSuppliedCount?: number;
-    };
-  };
-  lastError: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type DraftGenerationStartResponse =
-  {
-    success: true;
-    status: "started";
-    threadId: string;
-    draft: DraftDetail;
-    checkpoint?: DraftGenerationCheckpoint | null;
-  };
 
 export const generateDraftFormat = async (input: {
   matterId: string;
@@ -564,18 +554,15 @@ export const generateDraftFormat = async (input: {
   return payload.proposal;
 };
 
-export const startMatterDraftGeneration = async (input: {
-  matterId: string;
-  draftType: string;
-  draftKey?: string;
-  draftTitle?: string;
-  source?: "atlas_next_steps";
-  requestedFrom?: "overview" | "drafts";
-}) => {
-  const response = await fetch(
-    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/start`),
+export const openSingleDraftStream = async (
+  input: SingleDraftStreamRequest,
+  signal?: AbortSignal,
+) => {
+  return fetch(
+    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/single-draft/stream`),
     {
       method: "POST",
+      signal,
       headers: buildDraftHeaders(),
       body: JSON.stringify({
         draftType: input.draftType,
@@ -586,107 +573,6 @@ export const startMatterDraftGeneration = async (input: {
       }),
     },
   );
-  return readJson<DraftGenerationStartResponse>(response);
-};
-
-export const continueMatterDraftGeneration = async (input: {
-  matterId: string;
-  threadId: string;
-  chosenAction: string;
-  answers: Array<{
-    questionId: string;
-    answer: string | boolean;
-    answerType?: string;
-  }>;
-}) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}/continue`,
-    ),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({
-        chosenAction: input.chosenAction,
-        answers: input.answers,
-      }),
-    },
-  );
-  return readJson<{
-    success: true;
-    status: "started";
-    threadId: string;
-    draft: DraftDetail;
-  }>(response);
-};
-
-export const cancelMatterDraftGeneration = async (input: {
-  matterId: string;
-  threadId: string;
-}) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}/cancel`,
-    ),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({}),
-    },
-  );
-  return readJson<{ success: true; thread: DraftGenerationThread }>(response);
-};
-
-export const getMatterDraftGenerationThread = async (input: {
-  matterId: string;
-  threadId: string;
-}) => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/matters/${encodeURIComponent(input.matterId)}/draft-generation/${encodeURIComponent(input.threadId)}`,
-    ),
-    {
-      headers: buildDraftHeaders(false),
-    },
-  );
-  const payload = await readJson<{ success: true; thread: DraftGenerationThread }>(
-    response,
-  );
-  return payload.thread;
-};
-
-export const getNextStepTemplate = async (input: {
-  matterId: string;
-  groundId: string;
-  stepId: string;
-  templateKey: string;
-}) => {
-  const response = await fetch(
-    buildApiUrl(`/api/matters/${encodeURIComponent(input.matterId)}/next-steps/template`),
-    {
-      method: "POST",
-      headers: buildDraftHeaders(),
-      body: JSON.stringify({
-        ground_id: input.groundId,
-        step_id: input.stepId,
-        template_key: input.templateKey,
-      }),
-    },
-  );
-  const payload = await readJson<{
-    success: true;
-    template: {
-      template_key?: string;
-      title?: string;
-      source_url?: string;
-      content_html?: string;
-      content_text?: string;
-      fetched_at?: string;
-      draft_type?: string | null;
-      search_query?: string | null;
-    };
-  }>(response);
-  return payload.template;
 };
 
 const extractDefinedTerm = (value: string): DefinedTerm | null => {

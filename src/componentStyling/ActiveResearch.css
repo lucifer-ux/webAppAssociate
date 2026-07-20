@@ -1,5 +1,5 @@
 .enhancedResearchWorkspace {
-  padding-bottom: 170px;
+  padding-bottom: 171px;
 }
 
 .searchOnlyWorkspace {
@@ -189,6 +189,89 @@
 
 .thinkingSteps li.done {
   color: #4b3c34;
+}
+
+.researchLiveConversation {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.researchLiveStatus {
+  background: #fffaf2;
+  border-color: #dcc8ae;
+}
+
+.researchLiveStatusHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.researchLiveStatusHeader h4 {
+  margin: 0;
+}
+
+.researchLiveStatusHeader > span:last-child {
+  margin-left: auto;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  color: #6f5f56;
+}
+
+.researchLiveIndicator {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #a2442f;
+  animation: researchLivePulse 1.4s ease-in-out infinite;
+}
+
+.researchJobSteps {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-left: 0;
+  list-style-position: inside;
+}
+
+.researchLiveThought {
+  margin: 14px 0 0;
+  color: #4e3f36;
+}
+
+.researchRetentionCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #dcc8ae;
+  background: #fffaf2;
+}
+
+.researchRetentionCard p {
+  margin: 0;
+  color: #4e3f36;
+}
+
+@media (max-width: 620px) {
+  .researchRetentionCard {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@keyframes researchLivePulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 620px) {
+  .researchJobSteps {
+    grid-template-columns: 1fr;
+  }
 }
 
 .researchResultCard {
@@ -494,7 +577,10 @@
   color: #43352f;
   padding: 12px;
   cursor: pointer;
-  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    transform 0.16s ease;
 }
 
 .clarificationOptionCard:hover,
@@ -556,7 +642,10 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
 }
 
 .continueResearchButton:hover:not(:disabled) {
@@ -613,4 +702,105 @@
   .perplexityStyleSources {
     grid-template-columns: 1fr;
   }
+}
+
+/* Dark operational research workspace overrides. */
+.homeDashPage .enhancedResearchWorkspace,
+.homeDashPage .searchOnlyWorkspace {
+  color: #e2e2e8;
+}
+
+.homeDashPage .researchHead {
+  border-bottom: 1px solid rgba(185, 151, 91, 0.34);
+  padding-bottom: 16px;
+}
+
+.homeDashPage .researchHead h1 {
+  padding-left: 18px;
+  color: #f4efe6;
+  font-family: "EB Garamond", "Newsreader", serif;
+  text-shadow: 0 14px 42px rgba(0, 0, 0, 0.34);
+}
+
+.homeDashPage .researchHead h1::before {
+  top: 9px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 0;
+  background: #b9975b;
+  box-shadow: 0 0 18px rgba(185, 151, 91, 0.24);
+}
+
+.homeDashPage .researchHead p,
+.homeDashPage .mockDataToggle,
+.homeDashPage .readabilityToggleRow {
+  color: #d1c5b5;
+  font-family: "IBM Plex Mono", "Work Sans", monospace;
+}
+
+.homeDashPage .researchHeadActions button,
+.homeDashPage .researchHead button {
+  border-radius: 0;
+  border-color: rgba(185, 151, 91, 0.32);
+  background: rgba(17, 19, 24, 0.72);
+  color: #e2e2e8;
+}
+
+.homeDashPage .researchHeadActions button:hover,
+.homeDashPage .researchHead button:hover {
+  border-color: rgba(231, 193, 129, 0.5);
+  background: rgba(30, 32, 36, 0.94);
+  color: #e7c181;
+}
+
+.homeDashPage .researchOutputPanel,
+.homeDashPage .clarificationPromptCard,
+.homeDashPage .thinkingCard,
+.homeDashPage .researchResultCard,
+.homeDashPage .emptyWorkspaceCard {
+  border-radius: 0;
+  border: 1px solid rgba(185, 151, 91, 0.22);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(26, 28, 32, 0.86) 0%,
+      rgba(17, 19, 24, 0.96) 100%
+    ),
+    #111318;
+  box-shadow:
+    inset 0 1px 0 rgba(231, 193, 129, 0.08),
+    0 18px 46px rgba(0, 0, 0, 0.2);
+}
+
+.homeDashPage .chatOnlyPanel {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.homeDashPage .emptyWorkspaceCard h3,
+.homeDashPage .thinkingCard h3,
+.homeDashPage .researchResultCard h3,
+.homeDashPage .clarificationPromptCard h4 {
+  color: #f4efe6;
+}
+
+.homeDashPage .emptyWorkspaceCard p,
+.homeDashPage .thinkingCard p,
+.homeDashPage .researchResultCard p,
+.homeDashPage .clarificationPromptCard p,
+.homeDashPage .thinkingSteps li,
+.homeDashPage .thinkingSteps li.done,
+.homeDashPage .citationReasonText,
+.homeDashPage .sourceReasonText {
+  color: #d1c5b5;
+}
+
+.homeDashPage .thinkingSteps li.running,
+.homeDashPage .researchSaveSuccess {
+  color: #e7c181;
+}
+
+.homeDashPage .researchSaveError {
+  color: #ffb4ab;
 }

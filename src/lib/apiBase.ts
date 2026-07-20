@@ -29,6 +29,20 @@ const DEFAULT_PROD_API_BASE_URL =
 const EXPLICIT_API_BASE_URL = normalizeBaseUrl(
   frontendEnv.VITE_API_BASE_URL || frontendEnv.API_BASE_URL || "",
 );
+const SESSION_TOKEN_STORAGE_KEY = "associate.sessionToken";
+
+export const setApiSessionToken = (token: string) => {
+  const normalized = String(token || "").trim();
+  if (!normalized) return;
+  window.sessionStorage.setItem(SESSION_TOKEN_STORAGE_KEY, normalized);
+};
+
+export const clearApiSessionToken = () => {
+  window.sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+};
+
+const getApiSessionToken = () =>
+  window.sessionStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || "";
 
 export const apiBaseUrl = normalizeBaseUrl(
   (shouldUseDevProxy(EXPLICIT_API_BASE_URL) ? "" : EXPLICIT_API_BASE_URL) ||
@@ -68,8 +82,16 @@ if (typeof window !== "undefined" && !window.__associateApiFetchPatched) {
       ? String(requestUrl || "").startsWith(apiBaseUrl)
       : false;
     if (isRelativeAppRequest || isAbsoluteApiRequest) {
+      const headers = new Headers(
+        init?.headers || (input instanceof Request ? input.headers : undefined),
+      );
+      const sessionToken = getApiSessionToken();
+      if (sessionToken && !headers.has("Authorization")) {
+        headers.set("Authorization", `Bearer ${sessionToken}`);
+      }
       return nativeFetch(input, {
         ...init,
+        headers,
         credentials: init?.credentials || "include",
       });
     }

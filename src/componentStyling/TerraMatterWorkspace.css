@@ -1,0 +1,2291 @@
+@import url("https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Nunito+Sans:ital,opsz,wght@0,6..12,200..1000;1,6..12,200..1000&display=swap");
+
+.terraMatterPage {
+  --terra-background: #faf6f0;
+  --terra-surface: #faf6f0;
+  --terra-surface-bright: #faf6f0;
+  --terra-surface-low: #f5f1ea;
+  --terra-surface-container: #f0ece4;
+  --terra-surface-high: #eae6de;
+  --terra-surface-highest: #e4e0d8;
+  --terra-text: #2e3230;
+  --terra-muted: #4a4e4a;
+  --terra-secondary: #6b6358;
+  --terra-primary: #4a7c59;
+  --terra-primary-strong: #2a6038;
+  --terra-on-primary: #ffffff;
+  --terra-secondary-container: #f0e8db;
+  --terra-outline: #74796e;
+  --terra-outline-soft: #c4c8bc;
+  --terra-shadow: 0 8px 32px rgba(46, 50, 48, 0.1);
+  background: var(--terra-background);
+  color: var(--terra-text);
+  font-family: "Nunito Sans", sans-serif;
+}
+
+.terraMatterPage h1,
+.terraMatterPage h2,
+.terraMatterPage h3,
+.terraMatterPage h4,
+.terraMatterPage .font-headline {
+  font-family: "Literata", serif;
+  letter-spacing: 0;
+}
+
+.terraMatterPage .homeDashTopBar {
+  height: 64px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--terra-outline-soft);
+  background: var(--terra-surface);
+  box-shadow: none;
+  color: var(--terra-text);
+}
+
+.terraMatterPage .topBarLeft {
+  gap: 12px;
+}
+
+.terraMatterPage .iconBtn,
+.terraMatterPage .avatarBtn,
+.terraMatterPage .productHeaderAvatar {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--terra-secondary-container);
+  color: #5e5548;
+  box-shadow: none;
+}
+
+.terraMatterPage .iconBtn:hover,
+.terraMatterPage .avatarBtn:hover,
+.terraMatterPage .productHeaderUserCluster:hover .productHeaderAvatar {
+  background: var(--terra-primary);
+  color: var(--terra-on-primary);
+}
+
+.terraMatterPage .sectionRouteNav {
+  gap: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.terraMatterPage .sectionRouteBtn {
+  height: 64px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--terra-muted);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: none;
+}
+
+.terraMatterPage .sectionRouteBtn:hover,
+.terraMatterPage .sectionRouteBtn.active {
+  border-bottom-color: var(--terra-secondary);
+  background: transparent;
+  color: var(--terra-primary);
+}
+
+.terraMatterPage .creditBalanceChip {
+  border: 0;
+  background: transparent;
+  color: var(--terra-secondary);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.terraMatterSidebar {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  bottom: 0;
+  z-index: 60;
+  width: 256px;
+  padding: 32px 12px;
+  border-right: 1px solid var(--terra-outline-soft);
+  background: var(--terra-surface-low);
+  color: var(--terra-text);
+  overflow-y: auto;
+  transition:
+    width 180ms ease,
+    padding 180ms ease;
+}
+
+.terraMatterSidebarHead {
+  padding: 0 12px 20px;
+}
+
+.terraMatterSidebarHead h2 {
+  margin: 0;
+  color: var(--terra-primary);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.terraMatterSidebarHead p {
+  margin: 4px 0 0;
+  color: var(--terra-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.terraMatterAddBtn {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--terra-primary);
+  color: var(--terra-on-primary);
+  cursor: pointer;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.1);
+}
+
+.terraMatterAddBtn:hover {
+  background: var(--terra-primary-strong);
+}
+
+.terraMatterAddBtn span {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.terraMatterListBlock {
+  margin-top: 14px;
+}
+
+.terraMatterListLabel {
+  margin: 0 12px 10px;
+  color: var(--terra-secondary);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.terraMatterList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.terraMatterItem,
+.terraMatterEmptyItem {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--terra-muted);
+  cursor: pointer;
+  font-family: "Nunito Sans", sans-serif;
+  text-align: left;
+}
+
+.terraMatterItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 54px;
+  padding: 10px 12px;
+  border-left: 4px solid transparent;
+}
+
+.terraMatterItem:hover,
+.terraMatterItem.active {
+  background: var(--terra-surface-highest);
+  color: var(--terra-primary);
+}
+
+.terraMatterItem.active {
+  border-left-color: var(--terra-secondary);
+  font-weight: 800;
+}
+
+.terraMatterItemTitle {
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terraMatterItemMeta {
+  color: var(--terra-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.terraMatterEmptyItem {
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--terra-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.terraMatterSidebar.collapsed {
+  width: 84px;
+  padding: 24px 10px;
+}
+
+.terraMatterSidebar.collapsed .terraMatterSidebarHead {
+  padding: 0;
+}
+
+.terraMatterSidebar.collapsed .terraMatterSidebarHead h2,
+.terraMatterSidebar.collapsed .terraMatterSidebarHead p,
+.terraMatterSidebar.collapsed .terraMatterListLabel,
+.terraMatterSidebar.collapsed .terraMatterItemMeta,
+.terraMatterSidebar.collapsed .terraMatterAddBtn strong {
+  display: none;
+}
+
+.terraMatterSidebar.collapsed .terraMatterAddBtn {
+  width: 44px;
+  min-height: 44px;
+  margin: 0 auto 20px;
+  padding: 0;
+}
+
+.terraMatterSidebar.collapsed .terraMatterItem {
+  width: 52px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 0;
+  border-left: 0;
+}
+
+.terraMatterSidebar.collapsed .terraMatterItemTitle {
+  max-width: 36px;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.terraMatterPage .rightToolsRail {
+  top: 64px;
+  width: 48px;
+  padding: 32px 0;
+  border-left: 1px solid var(--terra-outline-soft);
+  background: var(--terra-surface-low);
+  box-shadow: none;
+}
+
+.terraMatterPage .toolRailItem {
+  width: 48px;
+  height: auto;
+  min-height: 156px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--terra-muted);
+  font-family: "Nunito Sans", sans-serif;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+.terraMatterPage .toolRailItem span {
+  writing-mode: vertical-lr;
+}
+
+.terraMatterPage .toolRailItem:hover {
+  background: transparent;
+  color: var(--terra-primary);
+}
+
+.terraMatterMain {
+  padding-top: 64px;
+  padding-left: 256px;
+  padding-right: 48px;
+  background: var(--terra-surface-low);
+}
+
+.terraMatterMain.sidebarCollapsed {
+  padding-left: 84px;
+}
+
+.terraMatterPage .matterOverviewWrap {
+  min-height: calc(100vh - 64px);
+  max-width: none;
+  padding: 48px max(32px, calc((100vw - 256px - 48px - 896px) / 2)) 144px;
+  background: var(--terra-surface-bright);
+  color: var(--terra-text);
+  font-family: "Nunito Sans", sans-serif;
+}
+
+.terraMatterPage .homeDashMain.sidebarCollapsed .matterOverviewWrap {
+  padding-inline: max(32px, calc((100vw - 84px - 48px - 896px) / 2));
+}
+
+.terraMatterPage .matterOverviewWrap::before {
+  display: none;
+}
+
+.terraMatterPage .matterOverviewHead {
+  display: block;
+  margin: 0 0 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.terraMatterPage .matterEyebrow {
+  margin: 0 0 8px;
+  color: var(--terra-secondary);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.terraMatterPage .matterOverviewTitleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 14px;
+}
+
+.terraMatterPage .matterEditableTitleWrap {
+  min-width: 0;
+}
+
+.terraMatterPage .matterTitleEditTrigger {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+.terraMatterPage .matterOverviewHead h1 {
+  max-width: 760px;
+  margin: 0;
+  color: var(--terra-text);
+  font-family: "Literata", serif;
+  font-size: clamp(38px, 4.4vw, 56px);
+  font-weight: 650;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.terraMatterPage .matterTitleEditTrigger:hover h1,
+.terraMatterPage .matterTitleEditTrigger:focus-visible h1 {
+  color: var(--terra-text);
+}
+
+.terraMatterPage .matterTitleEditorInput {
+  width: min(760px, 100%);
+  border: 1px solid var(--terra-outline-soft);
+  border-radius: 8px;
+  background: var(--terra-surface);
+  color: var(--terra-text);
+  font-family: "Literata", serif;
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 1.08;
+}
+
+.terraMatterPage .matterSubhead {
+  max-width: 760px;
+  margin: 0 0 24px;
+  color: var(--terra-muted);
+  font-family: "Literata", serif;
+  font-size: 20px;
+  font-style: italic;
+  line-height: 1.45;
+}
+
+.terraMatterPage .matterOverviewActionRow {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 360px;
+}
+
+.terraMatterPage :where(.matterMockModeBtn, .matterDeleteBtn) {
+  min-height: 32px;
+  border: 1px solid var(--terra-outline-soft);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--terra-muted);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+.terraMatterPage
+  :where(
+    .matterAddFilesBtn,
+    .matterStartDraftingBtn,
+    .matterEmptyUploadButton
+  ) {
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--terra-primary);
+  color: var(--terra-on-primary);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.1);
+}
+
+.terraMatterPage
+  :where(
+    .matterAddFilesBtn,
+    .matterStartDraftingBtn,
+    .matterEmptyUploadButton
+  ):hover {
+  background: var(--terra-primary-strong);
+}
+
+.terraMatterPage .matterReaderFontBar {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  margin: 8px 0 24px;
+  padding: 16px;
+  border: 1px solid rgba(196, 200, 188, 0.32);
+  border-radius: 8px;
+  background: var(--terra-surface-low);
+}
+
+.terraMatterPage .matterReaderFontLabel {
+  color: var(--terra-secondary);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.terraMatterPage .matterReaderFontSelect {
+  min-height: 32px;
+  border: 1px solid var(--terra-outline-soft);
+  border-radius: 4px;
+  background: var(--terra-surface);
+  color: var(--terra-text);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.terraMatterPage .matterWorkspaceTabs {
+  display: flex;
+  gap: 0;
+  margin: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.42);
+  background: transparent;
+}
+
+.terraMatterPage .matterWorkspaceTab {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--terra-muted);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 0.9rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+.terraMatterPage .matterWorkspaceTab:hover,
+.terraMatterPage .matterWorkspaceTab.isActive {
+  border-bottom-color: var(--terra-primary);
+  background: transparent;
+  color: var(--terra-primary);
+}
+
+.terraMatterPage .matterWorkspaceTab small {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--terra-surface-highest);
+  color: var(--terra-muted);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.terraMatterPage :where(.matterWorkspacePanel, .matterEmptyUploadPanel) {
+  border: 1px solid rgba(196, 200, 188, 0.42);
+  border-radius: 24px;
+  background: var(--terra-surface-low);
+  color: var(--terra-text);
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.05);
+}
+
+.terraMatterPage .matterWorkspacePanel {
+  padding: 32px;
+}
+
+.terraMatterPage .matterWorkspacePanelHead {
+  align-items: flex-start;
+  margin-bottom: 24px;
+  border: 0;
+}
+
+.terraMatterPage .matterWorkspacePanelHead span,
+.terraMatterPage .matterWorkspacePanelHead small,
+.terraMatterPage .matterWorkspacePanelHead p {
+  color: var(--terra-secondary);
+}
+
+.terraMatterPage .matterWorkspacePanelHead h2 {
+  color: var(--terra-text);
+  font-family: "Literata", serif;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.terraMatterPage
+  :where(
+    .matterWorkspacePanel h3,
+    .matterWorkspacePanel h4,
+    .matterOverviewSummaryCard h3
+  ) {
+  color: var(--terra-text);
+  font-family: "Literata", serif;
+}
+
+.terraMatterPage
+  :where(
+    .matterWorkspacePanel p,
+    .matterWorkspacePanel li,
+    .matterOverviewSummaryCard p
+  ) {
+  color: var(--terra-muted);
+  font-family: "Nunito Sans", sans-serif;
+  line-height: 1.65;
+}
+
+.terraMatterPage
+  :where(
+    .matterOverviewSummaryCard,
+    .matterUnderstandingMetaGrid span,
+    .matterNextStepsPanel,
+    .matterNextStepsStaticCard,
+    .matterNextStepsAccordion,
+    .matterFrameworkCard,
+    .matterIssueCard,
+    .matterDraftRecommendationCard,
+    .matterPersonCard
+  ) {
+  border: 1px solid rgba(196, 200, 188, 0.38);
+  border-radius: 8px;
+  background: rgba(228, 224, 216, 0.3);
+  box-shadow: none;
+}
+
+.terraMatterPage
+  :where(
+    .matterBriefStatus.is-ready,
+    .matterDraftRecommendationCard.isReady,
+    .matterNextStepsPanel.isDraft
+  ) {
+  border-color: rgba(74, 124, 89, 0.34);
+  background: rgba(200, 232, 208, 0.34);
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(
+    .matterAnalysisPanel,
+    .matterSummaryPanel,
+    .matterBriefLoopPanel,
+    .matterUnderstandingCard,
+    .matterUnderstandingPanel,
+    .matterSummaryPreviewCard,
+    .matterSummaryPlaceholder
+  ) {
+  border: 1px solid rgba(196, 200, 188, 0.42) !important;
+  border-radius: 24px !important;
+  background: var(--terra-surface-low) !important;
+  color: var(--terra-text) !important;
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.05) !important;
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(.matterSummaryPanel, .matterBriefLoopPanel) {
+  padding: 32px !important;
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(.matterAnalysisPanelHead, .matterBriefLoopHead) {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(
+    .matterAnalysisPanelHead h3,
+    .matterBriefLoopPanel h2,
+    .matterBriefLoopPanel h3,
+    .matterUnderstandingCard h3,
+    .matterUnderstandingPanel h3
+  ) {
+  color: var(--terra-text) !important;
+  font-family: "Literata", serif !important;
+  font-size: 26px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+}
+
+.terraMatterPage .matterOverviewWrap :where(.matterSummaryPreviewCard) {
+  margin-top: 18px !important;
+  padding: 20px 24px !important;
+  border-radius: 8px !important;
+  background: rgba(228, 224, 216, 0.3) !important;
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(
+    .matterSummaryLead,
+    .matterSummaryLead strong,
+    .matterBriefText,
+    .matterBriefPointDetail,
+    .matterBriefPointReason,
+    .matterBriefAcceptedMeta,
+    .matterUnderstandingCard p,
+    .matterUnderstandingPanel p
+  ) {
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  line-height: 1.65 !important;
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(
+    .matterSummaryLead strong,
+    .matterBriefPointHeadingText,
+    .matterBriefQuestionBox strong,
+    .matterUnderstandingMetaGrid strong
+  ) {
+  color: var(--terra-text) !important;
+  font-weight: 800 !important;
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(
+    .matterUnderstandingMetaGrid span,
+    .matterBriefQuestionBox,
+    .matterBriefPoint,
+    .matterNextStepsPanel,
+    .matterNextStepsStaticCard,
+    .matterNextStepsAccordion,
+    .matterFrameworkCard,
+    .matterIssueCard,
+    .matterDraftRecommendationCard,
+    .matterPersonCard
+  ) {
+  border: 1px solid rgba(196, 200, 188, 0.38) !important;
+  border-radius: 8px !important;
+  background: rgba(228, 224, 216, 0.3) !important;
+  color: var(--terra-text) !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(
+    .matterUnderstandingMetaGrid span,
+    .matterBriefPointHeadingMetaLabel,
+    .matterUnderstandingMetaLabel,
+    .matterBriefStatus,
+    .matterUnderstandingTraceLabel,
+    .matterSummaryBadge,
+    .matterSummaryConfidence
+  ) {
+  color: var(--terra-secondary) !important;
+}
+
+.terraMatterPage
+  .matterOverviewWrap
+  :where(.matterSummaryActionBtn, .matterBriefActions button) {
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: var(--terra-primary) !important;
+  color: var(--terra-on-primary) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage
+  :where(
+    .matterWorkspacePanel a,
+    .matterIssueCard a,
+    .matterFrameworkCard a,
+    .matterSourceFileButton
+  ) {
+  color: var(--terra-primary);
+}
+
+.terraMatterPage .terraMatterAnalysisTab {
+  overflow: hidden !important;
+  padding: 0 !important;
+  border: 1px solid rgba(196, 200, 188, 0.42) !important;
+  border-radius: 24px !important;
+  background: var(--terra-surface-low) !important;
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.05) !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab > .matterWorkspacePanelHead {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 20px !important;
+  margin: 0 !important;
+  padding: 24px !important;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.28) !important;
+  background: rgba(228, 224, 216, 0.5) !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab > .matterWorkspacePanelHead .matterEyebrow {
+  display: none;
+}
+
+.terraMatterPage .terraMatterAnalysisTab > .matterWorkspacePanelHead h2 {
+  margin: 0 !important;
+  color: var(--terra-text) !important;
+  font-family: "Literata", serif !important;
+  font-size: 32px !important;
+  font-weight: 650 !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab > .matterWorkspacePanelHead .matterBriefStatus {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 28px !important;
+  padding: 5px 12px !important;
+  border: 1px solid rgba(196, 200, 188, 0.42) !important;
+  border-radius: 8px !important;
+  background: var(--terra-surface-highest) !important;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab > :not(.matterWorkspacePanelHead) {
+  margin-inline: 32px !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab > .matterWorkspacePanelHead + * {
+  margin-top: 32px !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab > :last-child {
+  margin-bottom: 32px !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab > .matterUnderstandingPanel,
+.terraMatterPage .terraMatterAnalysisTab > .matterNextStepsPanel {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterUnderstandingPanel {
+  padding: 0 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterUnderstandingPanel > h3,
+.terraMatterPage .terraMatterAnalysisTab .matterAnalysisPanelHead h3 {
+  margin: 0 !important;
+  color: var(--terra-text) !important;
+  font-family: "Literata", serif !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  line-height: 1.35 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterUnderstandingPanel > .matterEyebrow,
+.terraMatterPage .terraMatterAnalysisTab .matterAnalysisPanelHead .matterEyebrow {
+  margin-bottom: 4px !important;
+  color: var(--terra-secondary) !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterAnalysisPanel {
+  margin-top: 32px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterAnalysisPanelHead {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  margin: 0 0 16px !important;
+  padding: 0 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterAnalysisWarningPanel,
+.terraMatterPage .terraMatterAnalysisTab .matterIssueCardGrid {
+  padding: 24px !important;
+  border-radius: 16px !important;
+  background: #2e3230 !important;
+  color: #f5f0e8 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterIssueCardGrid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterIssueCardGrid .matterIssueCard {
+  padding: 0 0 16px !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(245, 240, 232, 0.16) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: rgba(245, 240, 232, 0.9) !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .matterIssueCardGrid
+  .matterIssueCard:last-child {
+  padding-bottom: 0 !important;
+  border-bottom: 0 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterIssueCardGrid :where(h4, strong) {
+  color: #ffffff !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .matterIssueCardGrid
+  :where(p, li, .matterIssueCardPreview, .matterIssueKey) {
+  color: rgba(245, 240, 232, 0.88) !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .matterIssueCardGrid
+  :where(.matterIssueSupportBadge, .matterPriorityBadge) {
+  border: 0 !important;
+  background: #c8e8d0 !important;
+  color: #2a6038 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterFrameworkCardGrid,
+.terraMatterPage .terraMatterAnalysisTab .matterNextStepCardGrid,
+.terraMatterPage .terraMatterAnalysisTab .matterCompactFactList,
+.terraMatterPage .terraMatterAnalysisTab .matterNextStepsStack {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  :where(
+    .matterFrameworkCard,
+    .matterNextStepCard,
+    .matterCompactFactCard,
+    .matterNextStepsPanel,
+    .matterNextStepsStaticCard
+  ) {
+  width: 100% !important;
+  padding: 16px !important;
+  border: 1px solid rgba(196, 200, 188, 0.28) !important;
+  border-radius: 8px !important;
+  background: var(--terra-surface) !important;
+  color: var(--terra-text) !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  :where(
+    .matterFrameworkCard:hover,
+    .matterNextStepCard:hover,
+    .matterCompactFactCard:hover,
+    .matterNextStepsPanel:hover
+  ) {
+  background: var(--terra-surface-highest) !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  :where(
+    .matterFrameworkCard strong,
+    .matterNextStepCard strong,
+    .matterCompactFactTitleRow strong,
+    .matterNextStepsPanel strong
+  ) {
+  color: var(--terra-text) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  line-height: 1.4 !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  :where(
+    .matterFrameworkCard p,
+    .matterFrameworkCard small,
+    .matterNextStepCard p,
+    .matterCompactFactCard p,
+    .matterNextStepsPanel p,
+    .matterNextStepsPreview
+  ) {
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterCompactFactToggle {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  text-align: left !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterCompactFactBody {
+  margin-top: 16px !important;
+  padding-top: 16px !important;
+  border-top: 1px solid rgba(196, 200, 188, 0.28) !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterCompactFactPanel {
+  border: 1px solid rgba(196, 200, 188, 0.26) !important;
+  border-radius: 8px !important;
+  background: rgba(228, 224, 216, 0.3) !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterCompactFactPanel span,
+.terraMatterPage .terraMatterAnalysisTab .matterNextStepDraftType,
+.terraMatterPage .terraMatterAnalysisTab .matterDraftRecommendationFooter span {
+  color: var(--terra-muted) !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterDebriefEmpty,
+.terraMatterPage .terraMatterAnalysisTab .matterWorkspaceWarning {
+  margin-top: 24px !important;
+  padding-top: 24px !important;
+  border-top: 1px solid rgba(196, 200, 188, 0.28) !important;
+  color: rgba(74, 78, 74, 0.62) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 12px !important;
+  font-style: italic !important;
+  line-height: 1.6 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterBulletList {
+  display: grid !important;
+  gap: 10px !important;
+  margin: 12px 0 0 !important;
+  padding-left: 18px !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .matterBulletList li::marker {
+  color: #c8e8d0 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .terraAnalysisIssuesPanel {
+  padding: 24px !important;
+  border: 0 !important;
+  border-radius: 16px !important;
+  background: #2e3230 !important;
+  color: #f5f0e8 !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisIssuesPanel
+  .matterNextStepCardHead
+  strong {
+  color: #c8e8d0 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .terraAnalysisIssuesPanel .matterBulletList {
+  gap: 16px !important;
+  margin-top: 16px !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisIssuesPanel
+  .matterBulletList
+  li {
+  color: rgba(245, 240, 232, 0.88) !important;
+  font-size: 14px !important;
+  line-height: 1.7 !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisIssuesPanel
+  .matterBulletList
+  li
+  strong {
+  color: #ffffff !important;
+  font-weight: 900 !important;
+}
+
+.terraMatterPage .terraMatterAnalysisTab .terraAnalysisNextPanel {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  > .matterNextStepCardHead {
+  margin-bottom: 14px !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  > .matterNextStepCardHead
+  strong {
+  color: var(--terra-secondary) !important;
+  font-size: 13px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepAccordionList {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepDisclosure {
+  border: 1px solid rgba(196, 200, 188, 0.28) !important;
+  border-radius: 8px !important;
+  background: var(--terra-surface) !important;
+  color: var(--terra-text) !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepDisclosure
+  summary {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  min-height: 64px !important;
+  padding: 14px 16px !important;
+  border: 0 !important;
+  background: var(--terra-surface) !important;
+  color: var(--terra-text) !important;
+  cursor: pointer !important;
+  list-style: none !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepDisclosure
+  summary::-webkit-details-marker {
+  display: none !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepDisclosure
+  summary:hover {
+  background: var(--terra-surface-highest) !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepDisclosure
+  summary
+  strong {
+  color: var(--terra-text) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepDisclosure
+  summary
+  small {
+  display: block !important;
+  margin-top: 3px !important;
+  color: var(--terra-muted) !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: capitalize !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepDisclosure
+  summary
+  svg {
+  color: var(--terra-primary) !important;
+  stroke-width: 2 !important;
+}
+
+.terraMatterPage
+  .terraMatterAnalysisTab
+  .terraAnalysisNextPanel
+  .matterNextStepsAccordionBody {
+  padding: 0 16px 16px !important;
+  border-top: 1px solid rgba(196, 200, 188, 0.2) !important;
+  background: var(--terra-surface-low) !important;
+  color: var(--terra-muted) !important;
+}
+
+.terraMatterPage .matterChatDockButton {
+  position: fixed !important;
+  right: auto !important;
+  bottom: 32px !important;
+  left: calc(50% + 104px) !important;
+  z-index: 80 !important;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) 32px !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: min(768px, calc(100vw - 256px - 48px - 64px)) !important;
+  max-width: none !important;
+  min-height: 72px !important;
+  padding: 8px !important;
+  border: 1px solid rgba(196, 200, 188, 0.45) !important;
+  border-radius: 24px !important;
+  background: rgba(250, 246, 240, 0.92) !important;
+  color: var(--terra-text) !important;
+  box-shadow: var(--terra-shadow) !important;
+  transform: translateX(-50%) !important;
+  backdrop-filter: blur(18px) !important;
+}
+
+.terraMatterPage .matterChatDockButton::before {
+  display: none !important;
+}
+
+.terraMatterPage .homeDashMain.sidebarCollapsed ~ .matterChatDockButton,
+.terraMatterPage:has(.homeDashMain.sidebarCollapsed) .matterChatDockButton {
+  left: calc(50% - 18px) !important;
+  width: min(768px, calc(100vw - 84px - 48px - 64px)) !important;
+}
+
+.terraMatterPage .matterChatDockButtonModeRow {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  align-self: start !important;
+  padding: 4px !important;
+  border-radius: 8px !important;
+  background: var(--terra-surface-highest) !important;
+  white-space: nowrap !important;
+}
+
+.terraMatterPage .matterChatDockButtonModeRow span {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 28px !important;
+  padding: 0 14px !important;
+  border-radius: 6px !important;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+}
+
+.terraMatterPage .matterChatDockButtonModeRow span.isActive {
+  background: var(--terra-surface) !important;
+  color: var(--terra-text) !important;
+  box-shadow: 0 1px 3px rgba(46, 50, 48, 0.08) !important;
+}
+
+.terraMatterPage .matterChatDockButtonInput {
+  overflow: hidden !important;
+  color: rgba(74, 78, 74, 0.62) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  text-align: left !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.terraMatterPage .matterChatDockButtonSend {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  background: var(--terra-primary) !important;
+  color: var(--terra-on-primary) !important;
+}
+
+.terraMatterPage .matterChatDockButton:hover {
+  border-color: rgba(74, 124, 89, 0.36) !important;
+  background: rgba(250, 246, 240, 0.96) !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab {
+  overflow: hidden !important;
+  padding: 4px !important;
+  border: 1px solid rgba(196, 200, 188, 0.5) !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  color: var(--terra-text) !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab > .matterWorkspacePanelHead {
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 20px !important;
+  margin: 0 !important;
+  padding: 24px !important;
+  border: 0 !important;
+  border-radius: 12px 12px 0 0 !important;
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.14), transparent 38%),
+    #2e3230 !important;
+  color: var(--terra-on-primary) !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab > .matterWorkspacePanelHead .matterEyebrow {
+  margin: 0 0 4px !important;
+  color: var(--terra-surface-highest) !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab > .matterWorkspacePanelHead h2 {
+  margin: 0 !important;
+  color: #ffffff !important;
+  font-family: "Literata", serif !important;
+  font-size: 32px !important;
+  font-weight: 650 !important;
+  line-height: 1.15 !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab > .matterWorkspacePanelHead .matterBriefStatus {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 28px !important;
+  padding: 5px 12px !important;
+  border: 1px solid rgba(228, 224, 216, 0.3) !important;
+  border-radius: 999px !important;
+  background: rgba(228, 224, 216, 0.18) !important;
+  color: var(--terra-surface-highest) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab > .matterFrameworkCardGrid,
+.terraMatterPage .terraMatterEvidenceTab > .matterIssueCardGrid,
+.terraMatterPage .terraMatterEvidenceTab > .matterCaseList {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab > .matterFrameworkCardGrid {
+  border-bottom: 1px solid rgba(196, 200, 188, 0.3) !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterFrameworkCard,
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCard,
+.terraMatterPage .terraMatterEvidenceTab .matterCaseRow {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 24px !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 24px !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.3) !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  color: var(--terra-text) !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterFrameworkCard:hover,
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCard:hover,
+.terraMatterPage .terraMatterEvidenceTab .matterCaseRow:hover {
+  background: rgba(245, 241, 234, 0.64) !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterFrameworkCard:last-child,
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCard:last-child,
+.terraMatterPage .terraMatterEvidenceTab .matterCaseRow:last-child {
+  border-bottom: 0 !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterFrameworkCard strong,
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCard h4,
+.terraMatterPage .terraMatterEvidenceTab .matterCaseTitleLink {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--terra-primary) !important;
+  font-family: "Literata", serif !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  line-height: 1.35 !important;
+  text-align: left !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterFrameworkCard strong:hover,
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCard h4:hover,
+.terraMatterPage .terraMatterEvidenceTab .matterCaseTitleLink:hover {
+  text-decoration: underline !important;
+  text-underline-offset: 0.16em !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterFrameworkCard p,
+.terraMatterPage .terraMatterEvidenceTab .matterIssueKey,
+.terraMatterPage .terraMatterEvidenceTab .matterNextStepDraftType {
+  display: block !important;
+  margin: 8px 0 0 !important;
+  color: var(--terra-tertiary, #705c30) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.06em !important;
+  line-height: 1.4 !important;
+  text-transform: uppercase !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCard > p {
+  grid-column: 1 / -1 !important;
+  margin: -10px 0 0 !important;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCardHead,
+.terraMatterPage .terraMatterEvidenceTab .matterCaseRowMain {
+  display: contents !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterIssueSupportBadge,
+.terraMatterPage .terraMatterEvidenceTab .matterCaseSummaryToggle,
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCardBody button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  justify-self: end !important;
+  min-height: 32px !important;
+  padding: 0 8px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--terra-outline) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterCaseSummaryToggle:hover,
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCardBody button:hover {
+  color: var(--terra-primary) !important;
+  background: transparent !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterIssueCardBody {
+  grid-column: 1 / -1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterCaseSummary {
+  grid-column: 1 / -1 !important;
+  margin-top: -8px !important;
+  padding: 16px !important;
+  border: 1px solid rgba(196, 200, 188, 0.28) !important;
+  border-radius: 8px !important;
+  background: var(--terra-surface-low) !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterCaseSummary p {
+  margin: 0 !important;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+}
+
+.terraMatterPage .terraMatterEvidenceTab .matterDebriefEmpty {
+  margin: 0 !important;
+  padding: 28px 24px !important;
+  color: rgba(74, 78, 74, 0.62) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 13px !important;
+  font-style: italic !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 24px !important;
+  padding: 24px !important;
+  border: 1px solid var(--terra-outline-soft) !important;
+  border-radius: 24px !important;
+  background: var(--terra-surface-low) !important;
+  color: var(--terra-text) !important;
+  box-shadow: 0 4px 20px rgba(46, 50, 48, 0.03) !important;
+  overflow: hidden !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab > .matterWorkspacePanelHead {
+  position: relative !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 20px !important;
+  margin: 0 !important;
+  padding: 24px !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background:
+    linear-gradient(90deg, transparent, rgba(228, 224, 216, 0.1)),
+    #2e3230 !important;
+  color: var(--terra-surface) !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab > .matterWorkspacePanelHead .matterEyebrow {
+  margin: 0 0 8px !important;
+  color: rgba(228, 224, 216, 0.5) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab > .matterWorkspacePanelHead h2 {
+  margin: 0 !important;
+  color: var(--terra-surface) !important;
+  font-family: "Literata", serif !important;
+  font-size: clamp(32px, 3vw, 40px) !important;
+  font-weight: 650 !important;
+  line-height: 1.15 !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftRecommendationsActions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterBriefStatus {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 32px !important;
+  padding: 6px 12px !important;
+  border: 1px solid rgba(228, 224, 216, 0.24) !important;
+  border-radius: 8px !important;
+  background: rgba(228, 224, 216, 0.14) !important;
+  color: var(--terra-surface-highest) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftRefreshBtn {
+  min-height: 36px !important;
+  padding: 0 16px !important;
+  border: 1px solid rgba(228, 224, 216, 0.24) !important;
+  border-radius: 8px !important;
+  background: var(--terra-text) !important;
+  color: var(--terra-surface) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftRefreshBtn:hover:not(:disabled) {
+  background: var(--terra-surface) !important;
+  color: var(--terra-text) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab :where(.matterNextStepsStack, .matterDraftRecommendationGrid) {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 24px !important;
+}
+
+.terraMatterPage
+  .terraMatterDraftsTab
+  :where(.matterNextStepsPanel.isDraft, .matterDraftRecommendationCard) {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 24px !important;
+  padding: 32px !important;
+  border: 1px solid rgba(196, 200, 188, 0.5) !important;
+  border-radius: 12px !important;
+  background:
+    radial-gradient(circle at top right, rgba(200, 232, 208, 0.16), transparent 28%),
+    var(--terra-surface) !important;
+  color: var(--terra-text) !important;
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.05) !important;
+  overflow: hidden !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepCardHead,
+.terraMatterPage .terraMatterDraftsTab .matterDraftRecommendationTop,
+.terraMatterPage .terraMatterDraftsTab .matterDraftRecommendationFooter {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  margin: 0 !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab :where(.matterNextStepCardHead strong, .matterDraftRecommendationTop h3) {
+  margin: 0 !important;
+  color: var(--terra-text) !important;
+  font-family: "Literata", serif !important;
+  font-size: 22px !important;
+  font-weight: 550 !important;
+  line-height: 1.3 !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab :where(.matterNextStepsPreview, .matterDraftRecommendationCard p) {
+  margin: 0 !important;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 16px !important;
+  line-height: 1.65 !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab :where(.matterDraftRecommendationCard small, .matterDraftRecommendationFooter span) {
+  color: var(--terra-secondary) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1.45 !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftRecommendationFooter > span::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: var(--terra-tertiary, #705c30);
+  vertical-align: middle;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftCardActions {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  flex: 0 0 auto !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepsStaticCard.is-done {
+  border-color: rgba(120, 168, 134, 0.55) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepsStaticCard.is-running {
+  border-color: rgba(180, 157, 91, 0.62) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterStartDraftingBtn {
+  flex: 0 0 auto !important;
+  min-height: 44px !important;
+  padding: 0 20px !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: var(--terra-primary) !important;
+  color: var(--terra-on-primary) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.1) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterStartDraftingBtn:hover:not(:disabled) {
+  background: var(--terra-primary-strong) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepDisclosure,
+.terraMatterPage .terraMatterDraftsTab .matterNextStepsAccordionBody {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepDisclosure summary,
+.terraMatterPage .terraMatterDraftsTab .matterNextStepsAccordionBody {
+  border-radius: 12px !important;
+  background: #2e3230 !important;
+  color: var(--terra-surface) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepDisclosure summary {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 16px !important;
+  cursor: pointer !important;
+  list-style: none !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepDisclosure summary::-webkit-details-marker {
+  display: none !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepDisclosure summary strong {
+  color: var(--terra-surface) !important;
+  font-family: "Literata", serif !important;
+  font-size: 18px !important;
+  font-weight: 650 !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepDisclosure summary small {
+  display: block !important;
+  margin-top: 4px !important;
+  color: rgba(228, 224, 216, 0.7) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepDisclosure summary svg {
+  color: var(--terra-tertiary-container, #c4a66a) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepsAccordionBody {
+  margin-top: 8px !important;
+  padding: 16px !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterNextStepsAccordionBody li {
+  color: rgba(245, 240, 232, 0.88) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftRecommendationGroup {
+  display: grid !important;
+  gap: 16px !important;
+  margin-top: 8px !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftRecommendationGroupHead {
+  display: grid !important;
+  gap: 4px !important;
+  padding: 16px !important;
+  border: 1px solid rgba(196, 200, 188, 0.42) !important;
+  border-radius: 12px !important;
+  background: rgba(228, 224, 216, 0.34) !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftRecommendationGroupHead span {
+  color: var(--terra-text) !important;
+  font-family: "Literata", serif !important;
+  font-size: 18px !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftRecommendationGroupHead small,
+.terraMatterPage .terraMatterDraftsTab .matterDebriefEmpty {
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+}
+
+.terraMatterPage .terraMatterDraftsTab .matterDraftMissingList span {
+  border: 1px solid rgba(196, 200, 188, 0.42) !important;
+  border-radius: 999px !important;
+  background: var(--terra-surface-low) !important;
+  color: var(--terra-muted) !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab {
+  margin-top: 24px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleHead {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 24px !important;
+  padding: 0 0 4px !important;
+  border: 0 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleHead h2 {
+  margin: 0 !important;
+  color: var(--terra-text) !important;
+  font-family: "Literata", serif !important;
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: uppercase !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleInfo {
+  margin: 6px 0 0 !important;
+  max-width: 720px !important;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleActions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex-shrink: 0 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleFetchBtn,
+.terraMatterPage .terraMatterPeopleTab .matterPeopleAddBtn,
+.terraMatterPage .terraMatterPeopleTab .matterPeopleEmptyAdd {
+  border: 1px solid rgba(196, 200, 188, 0.7) !important;
+  border-radius: 10px !important;
+  background: var(--terra-surface-low) !important;
+  color: var(--terra-primary) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  box-shadow: none !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleFetchBtn {
+  min-height: 40px !important;
+  padding: 0 16px !important;
+  gap: 8px !important;
+  font-size: 14px !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleAddBtn {
+  width: 40px !important;
+  height: 40px !important;
+  padding: 0 !important;
+  border-color: transparent !important;
+  background: var(--terra-primary) !important;
+  color: var(--terra-on-primary) !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleFetchBtn:hover,
+.terraMatterPage .terraMatterPeopleTab .matterPeopleAddBtn:hover,
+.terraMatterPage .terraMatterPeopleTab .matterPeopleEmptyAdd:hover {
+  border-color: var(--terra-primary) !important;
+  background: var(--terra-secondary-container) !important;
+  color: var(--terra-primary-strong) !important;
+  transform: translateY(-1px) !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleAddBtn:hover {
+  background: var(--terra-primary-strong) !important;
+  color: var(--terra-on-primary) !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleGrid {
+  margin-top: 26px !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonCard {
+  position: relative !important;
+  min-height: 184px !important;
+  padding: 20px !important;
+  border: 1px solid rgba(196, 200, 188, 0.42) !important;
+  border-radius: 12px !important;
+  background: var(--terra-surface-bright) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+  box-shadow: none !important;
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    border-color 180ms ease !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonCard:hover {
+  border-color: rgba(74, 124, 89, 0.28) !important;
+  box-shadow: 0 10px 24px rgba(46, 50, 48, 0.09) !important;
+  transform: translateY(-1px) !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonRemoveBtn {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  width: 28px !important;
+  height: 28px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: rgba(74, 78, 74, 0.48) !important;
+  opacity: 0 !important;
+  transition:
+    opacity 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonCard:hover .matterPersonRemoveBtn,
+.terraMatterPage .terraMatterPeopleTab .matterPersonRemoveBtn:focus-visible {
+  opacity: 1 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonRemoveBtn:hover {
+  background: var(--terra-surface-highest) !important;
+  color: var(--terra-text) !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonTop {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 16px !important;
+  padding-right: 20px !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonAvatar {
+  flex: 0 0 auto !important;
+  width: 48px !important;
+  height: 48px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #d6eadb !important;
+  color: #21482b !important;
+  font-family: "Literata", serif !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonCard:nth-child(2n) .matterPersonAvatar {
+  background: #f5d7d2 !important;
+  color: #7b1d18 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonCard:nth-child(3n) .matterPersonAvatar {
+  background: var(--terra-secondary-container) !important;
+  color: #5e5548 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonCard:nth-child(4n) .matterPersonAvatar {
+  background: #f1e0b8 !important;
+  color: #624b12 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonIdentity {
+  min-width: 0 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonCard h3 {
+  margin: 0 !important;
+  color: var(--terra-text) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  line-height: 1.24 !important;
+  letter-spacing: 0 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonCard strong {
+  display: block !important;
+  margin-top: 6px !important;
+  color: var(--terra-secondary) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonDescription {
+  margin: 16px 0 0 !important;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonFooter {
+  margin-top: auto !important;
+  padding-top: 16px !important;
+  border-top: 1px solid rgba(196, 200, 188, 0.24) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonConfidence {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: var(--terra-primary) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonConfidence::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--terra-primary), var(--terra-primary)) center/7px 2px no-repeat,
+    var(--terra-secondary-container);
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPersonDetailsLink {
+  color: var(--terra-secondary) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px !important;
+  white-space: nowrap !important;
+}
+
+.terraMatterPage .terraMatterPeopleTab .matterPeopleEmptyAdd {
+  margin-top: 26px !important;
+  min-height: 112px !important;
+  border-style: dashed !important;
+  border-radius: 12px !important;
+  background: var(--terra-surface-low) !important;
+  color: var(--terra-primary) !important;
+}
+
+.terraMatterPage .chatDockWrap {
+  position: fixed;
+  right: auto;
+  bottom: 32px;
+  left: calc(50% + 104px);
+  z-index: 80;
+  width: min(768px, calc(100vw - 256px - 48px - 64px));
+  transform: translateX(-50%);
+}
+
+.terraMatterPage .homeDashMain.sidebarCollapsed .chatDockWrap,
+.terraMatterPage:has(.homeDashMain.sidebarCollapsed) .chatDockWrap {
+  left: calc(50% - 18px);
+  width: min(768px, calc(100vw - 84px - 48px - 64px));
+}
+
+.terraMatterPage .chatDock {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  min-height: 72px;
+  padding: 8px;
+  border: 1px solid rgba(196, 200, 188, 0.45) !important;
+  border-radius: 24px !important;
+  background: rgba(250, 246, 240, 0.92) !important;
+  box-shadow: var(--terra-shadow) !important;
+  backdrop-filter: blur(18px);
+}
+
+.terraMatterPage .chatSparkle {
+  align-self: start;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--terra-secondary-container) !important;
+  color: var(--terra-primary) !important;
+  font-family: "Literata", serif;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 32px;
+  text-align: center;
+}
+
+.terraMatterPage .chatModeSwitch {
+  align-self: start;
+  padding: 4px;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: var(--terra-surface-highest) !important;
+}
+
+.terraMatterPage .chatModeOption {
+  border-radius: 6px !important;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.terraMatterPage .chatModeOption.is-active {
+  background: var(--terra-surface) !important;
+  color: var(--terra-text) !important;
+  box-shadow: 0 1px 3px rgba(46, 50, 48, 0.08) !important;
+}
+
+.terraMatterPage .chatDock textarea {
+  min-height: 42px;
+  padding: 12px 2px;
+  background: transparent !important;
+  color: var(--terra-text) !important;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.terraMatterPage .chatDock textarea::placeholder {
+  color: rgba(74, 78, 74, 0.6);
+  font-style: normal;
+}
+
+.terraMatterPage .chatIconBtn,
+.terraMatterPage .chatSendBtn {
+  align-self: end;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.terraMatterPage .chatSendBtn {
+  background: var(--terra-primary) !important;
+  color: var(--terra-on-primary) !important;
+}
+
+.terraMatterPage .chatSendBtn:not(:disabled):hover {
+  background: var(--terra-primary-strong);
+  color: var(--terra-on-primary);
+}
+
+@media (max-width: 980px) {
+  .terraMatterSidebar {
+    width: 84px;
+    padding: 24px 10px;
+  }
+
+  .terraMatterSidebar .terraMatterSidebarHead h2,
+  .terraMatterSidebar .terraMatterSidebarHead p,
+  .terraMatterSidebar .terraMatterListLabel,
+  .terraMatterSidebar .terraMatterItemMeta,
+  .terraMatterSidebar .terraMatterAddBtn strong {
+    display: none;
+  }
+
+  .terraMatterMain,
+  .terraMatterMain.sidebarCollapsed {
+    padding-left: 84px;
+  }
+
+  .terraMatterPage .matterOverviewTitleRow {
+    flex-direction: column;
+  }
+
+  .terraMatterPage .matterOverviewActionRow {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .terraMatterPage .terraMatterPeopleTab .matterPeopleGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .terraMatterPage .sectionRouteNav,
+  .terraMatterPage .creditBalanceChip {
+    display: none;
+  }
+
+  .terraMatterSidebar,
+  .terraMatterSidebar.collapsed,
+  .terraMatterPage .rightToolsRail {
+    display: none;
+  }
+
+  .terraMatterMain,
+  .terraMatterMain.sidebarCollapsed {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .terraMatterPage .matterOverviewWrap,
+  .terraMatterPage .homeDashMain.sidebarCollapsed .matterOverviewWrap {
+    padding: 32px 18px 132px;
+  }
+
+  .terraMatterPage .matterOverviewHead h1 {
+    font-size: 36px;
+  }
+
+  .terraMatterPage .matterWorkspacePanel {
+    padding: 22px;
+    border-radius: 18px;
+  }
+
+  .terraMatterPage .terraMatterPeopleTab .matterPeopleHead {
+    flex-direction: column !important;
+  }
+
+  .terraMatterPage .terraMatterPeopleTab .matterPeopleActions {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .terraMatterPage .terraMatterPeopleTab .matterPeopleGrid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .terraMatterPage .chatDockWrap,
+  .terraMatterPage .homeDashMain.sidebarCollapsed .chatDockWrap,
+  .terraMatterPage:has(.homeDashMain.sidebarCollapsed) .chatDockWrap {
+    left: 50%;
+    width: calc(100vw - 24px);
+  }
+
+  .terraMatterPage .chatDock {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}

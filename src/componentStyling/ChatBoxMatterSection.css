@@ -1,23 +1,20 @@
 .matterChatBackdrop {
   position: fixed;
-  inset: 0;
-  z-index: 80;
+  inset: 64px 80px 0 0;
+  z-index: 180;
   display: flex;
   align-items: stretch;
   justify-content: flex-end;
-  padding: 0;
-  background: rgba(27, 28, 25, 0.3);
-  backdrop-filter: blur(3px);
+  background: rgba(46, 50, 48, 0.06);
+  backdrop-filter: blur(2px);
 }
 
 .matterChatBox {
-  width: min(760px, 72vw);
-  height: 100vh;
-  border: 0;
-  border-left: 1px solid #d7cbc0;
-  border-radius: 0;
-  background: #fbf9f4;
-  box-shadow: -28px 0 70px rgba(43, 26, 22, 0.18);
+  width: min(600px, 100vw - 80px);
+  height: calc(100vh - 64px);
+  border-left: 1px solid #c4c8bc;
+  background: #faf6f0;
+  box-shadow: -10px 0 30px rgba(46, 50, 48, 0.05);
   display: grid;
   grid-template-rows: auto 1fr auto auto;
   overflow: hidden;
@@ -27,44 +24,50 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 28px 34px 22px;
-  border-bottom: 1px solid #d9d1c8;
+  gap: 16px;
+  padding: 24px 32px;
+  border-bottom: 1px solid rgba(196, 200, 188, 0.5);
+  background: rgba(250, 246, 240, 0.95);
+  backdrop-filter: blur(8px);
 }
 
 .matterChatHeader h2 {
-  margin: 4px 0 0;
-  font-family: "Fraunces", serif;
-  font-size: 32px;
-  font-weight: 500;
-  line-height: 1.05;
-  color: #2b1a16;
+  margin: 2px 0 0;
+  font-family: "Literata", "Newsreader", Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #2e3230;
 }
 
 .matterChatEyebrow {
   margin: 0;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-family: "Work Sans", sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  gap: 6px;
+  color: #705c30;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #796d55;
 }
 
 .matterChatClose {
-  width: 38px;
-  height: 38px;
-  border: 1px solid #ddcdbc;
-  border-radius: 50%;
-  background: #fffaf4;
-  color: #5e493f;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #4a4e4a;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+.matterChatClose:hover {
+  background: #f5f1ea;
 }
 
 .matterChatClose:disabled {
@@ -75,73 +78,92 @@
 .matterChatMessages {
   min-height: 0;
   overflow-y: auto;
-  padding: 30px 34px;
+  padding: 32px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 24px;
+  scroll-behavior: smooth;
 }
 
 .matterChatMessage {
   display: flex;
-  gap: 10px;
-  max-width: 92%;
+  align-items: flex-start;
+  gap: 16px;
+  max-width: 90%;
+}
+
+.matterChatMessage.is-user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+  max-width: 85%;
+}
+
+.matterChatAvatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 999px;
+  background: #eae6de;
+  color: #4a7c59;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.matterChatUserAvatar {
+  background: #d8f0de;
+  color: #2a6038;
+}
+
+.matterChatMessageBody {
+  min-width: 0;
+  border-radius: 1rem;
 }
 
 .matterChatMessageBody > p {
   margin: 0;
   white-space: pre-wrap;
-  font-family: "Newsreader", serif;
-  font-size: 20px;
-  line-height: 1.42;
-  color: #2f241f;
-}
-
-.matterChatMessage.is-assistant {
-  align-self: flex-start;
-}
-
-.matterChatMessage.is-assistant p {
-  border-left: 3px solid #700d0d;
-  background: #f5f3ee;
-  padding: 16px 18px;
-}
-
-.matterChatMessage.isTyping p {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.matterChatMessage.is-user {
-  align-self: flex-end;
-}
-
-.matterChatMessage.is-user p {
-  background: #6f3f35;
-  color: #fffaf4;
-  padding: 13px 15px;
-  font-family: "Work Sans", sans-serif;
+  font-family: "Literata", "Newsreader", Georgia, serif;
   font-size: 15px;
+  line-height: 1.7;
 }
 
-.matterChatMessageBody {
-  min-width: 0;
+.matterChatMessage.is-assistant .matterChatMessageBody {
+  border-radius: 1rem 1rem 1rem 0.25rem;
+  background: #f5f1ea;
+  padding: 20px;
+  color: #2e3230;
+}
+
+.matterChatMessage.is-user .matterChatMessageBody {
+  border-radius: 1rem 1rem 0.25rem 1rem;
+  background: #4a7c59;
+  padding: 20px;
+  color: #fff;
+}
+
+.matterChatMessage.is-user .matterChatMessageBody > p {
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
 }
 
 .matterChatSources {
-  margin-top: 10px;
-  padding: 12px 0 0;
-  border-top: 1px solid #d9d1c8;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid rgba(196, 200, 188, 0.3);
+  border-radius: 0.75rem;
+  background: #faf6f0;
   display: grid;
-  gap: 7px;
+  gap: 10px;
 }
 
 .matterChatSources > span {
-  font-family: "Work Sans", sans-serif;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: #7e6d64;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #705c30;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .matterChatSources a,
@@ -149,41 +171,54 @@
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 2px 10px;
-  padding: 8px 10px;
-  border: 1px solid #ddd2c6;
-  background: #fff;
-  color: #342923;
+  padding: 0;
+  color: #4a4e4a;
   text-decoration: none;
+}
+
+.matterChatSources strong {
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .matterChatSources small {
   grid-column: 1;
-  color: #786b62;
-  font-family: "Work Sans", sans-serif;
-  font-size: 11px;
+  color: #6b6358;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 12px;
 }
 
 .matterChatSources svg {
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
+  color: #4a7c59;
 }
 
 .matterChatThinking {
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 14px 16px;
-  border: 1px solid #d9d1c8;
-  border-left: 3px solid #700d0d;
-  background: #f5f3ee;
-  max-width: 92%;
+  gap: 12px;
+  max-width: 90%;
+  padding: 16px 18px;
+  border-radius: 1rem;
+  background: #f5f1ea;
+  color: #2e3230;
 }
 
 .matterChatThinkingMark {
-  color: #700d0d;
-  font-family: "Fraunces", serif;
-  font-size: 22px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 999px;
+  background: #eae6de;
+  color: #4a7c59;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Literata", "Newsreader", Georgia, serif;
+  font-size: 1.125rem;
   font-weight: 700;
 }
 
@@ -193,87 +228,34 @@
 }
 
 .matterChatThinking strong {
-  font-family: "Work Sans", sans-serif;
+  color: #705c30;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
   font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #4c0003;
 }
 
 .matterChatThinking p {
-  margin-top: 3px;
-  color: #64574f;
-  font-family: "Newsreader", serif;
+  margin-top: 4px;
+  color: #4a4e4a;
+  font-family: "Literata", "Newsreader", Georgia, serif;
+  font-size: 15px;
 }
 
 .matterChatThinkingPulse {
   margin-left: auto;
   width: 8px;
   height: 8px;
-  background: #700d0d;
+  border-radius: 999px;
+  background: #4a7c59;
   animation: matterChatThinkingBlink 1.2s infinite ease-in-out;
 }
 
-.matterChatAvatar {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: #6f3f35;
-  color: #fffaf4;
+.matterChatMessage.isTyping .matterChatMessageBody > p {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  margin-top: 4px;
-}
-
-.matterChatSuggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 26px 14px;
-}
-
-.matterChatSuggestions button {
-  border: 1px solid #d8c8b6;
-  border-radius: 999px;
-  background: #fffaf4;
-  color: #5c453b;
-  padding: 8px 12px;
-  font-family: "Work Sans", sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.matterChatError {
-  margin: 0;
-  padding: 0 26px 12px;
-  color: #8c2e24;
-  font-family: "Work Sans", sans-serif;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.matterChatClarificationActions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 26px 12px;
-}
-
-.matterChatClarificationActions button {
-  border: 1px solid #d2c3b5;
-  border-radius: 999px;
-  background: #fffaf4;
-  color: #6b5449;
-  padding: 8px 12px;
-  font-family: "Work Sans", sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.matterChatClarificationActions button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  gap: 10px;
 }
 
 .matterChatTypingIndicator {
@@ -286,7 +268,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #8f725b;
+  background: #6b6358;
   animation: matterChatTypingPulse 1s infinite ease-in-out;
 }
 
@@ -298,9 +280,61 @@
   animation-delay: 0.3s;
 }
 
+.matterChatSuggestions {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 24px 14px;
+}
+
+.matterChatSuggestions button {
+  flex: 0 0 auto;
+  border: 1px solid #c4c8bc;
+  border-radius: 999px;
+  background: transparent;
+  color: #4a7c59;
+  padding: 10px 16px;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.matterChatSuggestions button:hover {
+  background: rgba(120, 168, 134, 0.08);
+}
+
+.matterChatError {
+  margin: 0;
+  padding: 0 24px 12px;
+  color: #b83230;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.matterChatClarificationActions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 24px 12px;
+}
+
+.matterChatClarificationActions button {
+  border: 1px solid #c4c8bc;
+  border-radius: 999px;
+  background: transparent;
+  color: #4a4e4a;
+  padding: 9px 14px;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .matterChatComposer {
-  position: relative;
-  padding: 0 26px 24px;
+  padding: 0 24px 16px;
+  background: rgba(250, 246, 240, 0.95);
+  backdrop-filter: blur(8px);
 }
 
 .matterChatComposer .chatDockWrap {
@@ -311,30 +345,122 @@
 }
 
 .matterChatComposer .chatDock {
-  box-shadow: 0 10px 30px rgba(63, 43, 35, 0.2);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px 8px;
+  min-height: 0;
+  padding: 8px;
+  border-radius: 24px;
+  border: 1px solid rgba(116, 121, 110, 0.3);
+  background: #f5f1ea;
+  box-shadow: 0 4px 20px rgba(46, 50, 48, 0.03);
+  backdrop-filter: none;
+}
+
+.matterChatComposer .chatSparkle {
+  display: none;
+}
+
+.matterChatComposer .chatModeSwitch {
+  grid-column: 1 / -1;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  gap: 6px;
+}
+
+.matterChatComposer .chatModeOption {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: transparent;
+  color: #4a4e4a;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.matterChatComposer .chatModeOption.is-active {
+  background: #e4e0d8;
+  color: #2e3230;
+  box-shadow: none;
+}
+
+.matterChatComposer .chatDock textarea {
+  min-height: 44px;
+  max-height: 128px;
+  padding: 8px 10px 10px 12px;
+  color: #2e3230;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  scrollbar-color: rgba(116, 121, 110, 0.45) transparent;
+}
+
+.matterChatComposer .chatDock textarea::placeholder {
+  color: #74796e;
+  font-style: normal;
+}
+
+.matterChatComposer .chatSendBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: #4a7c59;
+  color: #fff;
+  align-self: end;
+}
+
+.matterChatComposer .chatSendBtn:not(:disabled):hover {
+  background: #2a6038;
+  color: #fff;
+}
+
+.matterChatComposer .chatSendBtn:disabled {
+  background: #d4ccbf;
+  color: #faf6f0;
+  opacity: 1;
+}
+
+.matterChatComposer::after {
+  content: "Associate may produce inaccurate information about matters, people, or facts.";
+  display: block;
+  margin-top: 10px;
+  color: #74796e;
+  font-family: "Nunito Sans", "Work Sans", sans-serif;
+  font-size: 11px;
+  text-align: center;
 }
 
 @media (max-width: 720px) {
   .matterChatBackdrop {
-    padding: 0;
+    inset: 64px 0 0 0;
   }
 
   .matterChatBox {
     width: 100%;
-    height: 100vh;
-    border-radius: 0;
   }
 
-  .matterChatMessage {
-    max-width: 94%;
+  .matterChatHeader,
+  .matterChatMessages,
+  .matterChatComposer {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .matterChatSuggestions {
+    padding-left: 18px;
+    padding-right: 18px;
   }
 }
 
 @keyframes matterChatThinkingBlink {
   0%,
   100% {
-    opacity: 0.25;
+    opacity: 0.3;
   }
+
   50% {
     opacity: 1;
   }

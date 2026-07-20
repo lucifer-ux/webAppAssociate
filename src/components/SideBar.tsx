@@ -1,10 +1,11 @@
 import "../componentStyling/SideBar.css";
 import Button from "./Button";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { RecentResearchItem } from "./ActiveResearchPage";
 import { useMatterStore } from "../context/MatterStoreContext";
+import { usePipelines } from "../context/PipelineContext";
 import { listDrafts, type DraftSummary } from "./draftingApi";
 
 export type RecentMatterItem = {
@@ -71,7 +72,8 @@ const SideBar = ({
     location.pathname === "/drafting" ||
     location.pathname === "/draft";
   const isActiveResearchRoute =
-    location.pathname === "/dashboard/active-research";
+    location.pathname === "/dashboard/active-research" ||
+    location.pathname === "/research";
   const isMatterRoute = location.pathname === "/matter" || location.pathname === "/dashboard";
   const showResearchSection = isActiveResearchRoute;
   const showMatterSection = isMatterRoute;
@@ -82,18 +84,47 @@ const SideBar = ({
     isSavedMattersLoading,
     setActiveMatterId,
   } = useMatterStore();
+  const { jobs, navigateToJob } = usePipelines();
 
   const [isRecentResearchesOpen, setIsRecentResearchesOpen] = useState(true);
   const [draftTabs, setDraftTabs] = useState<DraftSummary[]>([]);
+  const runningDraftJobs = useMemo(
+    () =>
+      jobs.filter(
+        (job) =>
+          job.source === "draft-job" &&
+          (job.status === "queued" || job.status === "running"),
+      ),
+    [jobs],
+  );
+  const runningDraftByDraftId = useMemo(() => {
+    const map = new Map<string, (typeof runningDraftJobs)[number]>();
+    runningDraftJobs.forEach((job) => {
+      const draftId = String(job.draftId || job.resultId || "").trim();
+      if (draftId) map.set(draftId, job);
+    });
+    return map;
+  }, [runningDraftJobs]);
+  const visibleDraftTabs = useMemo(
+    () =>
+      draftTabs.filter((draft) => {
+        if (runningDraftByDraftId.has(draft.id)) return false;
+        const generationStatus = String(draft.generationStatus || "").toLowerCase();
+        if (generationStatus === "running" || generationStatus === "failed") return false;
+        if (generationStatus && generationStatus !== "completed") return false;
+        return Boolean(draft.lastSavedAt || draft.saveVersion > 0 || generationStatus === "completed");
+      }),
+    [draftTabs, runningDraftByDraftId],
+  );
 
   const hasRecentResearches = recentResearches.length > 0;
   const activeResearchItem =
-    recentResearches.find((item) => item.id === activeResearchId) ||
-    recentResearches[0] ||
-    null;
-  const researchSectionTitle = getResearchSectionTitle(
-    activeResearchItem?.query || "",
-  );
+    (activeResearchId
+      ? recentResearches.find((item) => item.id === activeResearchId)
+      : null) || null;
+  const researchSectionTitle = activeResearchItem
+    ? getResearchSectionTitle(activeResearchItem.query)
+    : "New research";
   const visibleMatters = [
     ...matters.map((matter) => ({
       id: matter.id,
@@ -136,7 +167,7 @@ const SideBar = ({
 
   const startNewResearch = () => {
     onStartResearch?.();
-    navigate("/dashboard/active-research");
+    navigate("/research");
   };
 
   return (
@@ -199,8 +230,8 @@ const SideBar = ({
                   className={`recentMatterItem ${research.id === activeResearchId ? "active" : ""}`}
                   onClick={() => {
                     onSelectResearch?.(research.id);
-                    if (location.pathname !== "/dashboard/active-research") {
-                      navigate("/dashboard/active-research");
+                    if (!isActiveResearchRoute) {
+                      navigate("/research");
                     }
                   }}
                 >
@@ -220,7 +251,7 @@ const SideBar = ({
                   title={research.query}
                   onClick={() => {
                     onSelectResearch?.(research.id);
-                    navigate("/dashboard/active-research");
+                    navigate("/research");
                   }}
                 >
                   {getCollapsedResearchLabel(research.query)}
@@ -303,17 +334,37 @@ const SideBar = ({
             <h3>Active drafts</h3>
           </div>
 
-          {draftTabs.length > 0 ? (
+          {visibleDraftTabs.length > 0 || runningDraftJobs.length > 0 ? (
             <div className="recentItemsList">
-              {draftTabs.map((tab) => (
+              {runningDraftJobs.map((job) => (
+                <Button
+                  key={job.id}
+                  type="button"
+                  className="recentMatterItem"
+                  onClick={() => navigateToJob(job)}
+                  title={job.title}
+                >
+                  <span className="recentItemTitle">{job.title} · generating</span>
+                </Button>
+              ))}
+              {visibleDraftTabs.map((tab) => (
                 <Button
                   key={tab.id}
                   type="button"
                   className="recentMatterItem"
-                  onClick={() => navigate(`/dashboard/drafting?draft=${encodeURIComponent(tab.id)}`)}
+                  onClick={() => {
+                    const runningJob = runningDraftByDraftId.get(tab.id);
+                    if (runningJob) {
+                      navigateToJob(runningJob);
+                      return;
+                    }
+                    navigate(`/dashboard/drafting?draft=${encodeURIComponent(tab.id)}`);
+                  }}
                   title={tab.title}
                 >
-                  <span className="recentItemTitle">{tab.title}</span>
+                  <span className="recentItemTitle">
+                    {tab.title}
+                  </span>
                 </Button>
               ))}
             </div>
