@@ -21,6 +21,7 @@
   background: var(--terra-background);
   color: var(--terra-text);
   font-family: "Nunito Sans", sans-serif;
+  overflow-x: clip;
 }
 
 .terraMatterPage h1,
@@ -323,10 +324,14 @@
 }
 
 .terraMatterMain {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding-top: 64px;
   padding-left: 256px;
   padding-right: 48px;
   background: var(--terra-surface-low);
+  overflow-x: clip;
 }
 
 .terraMatterMain.sidebarCollapsed {
@@ -334,12 +339,24 @@
 }
 
 .terraMatterPage .matterOverviewWrap {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   min-height: calc(100vh - 64px);
+  min-height: calc(100dvh - 64px);
   max-width: none;
   padding: 48px max(32px, calc((100vw - 256px - 48px - 896px) / 2)) 144px;
   background: var(--terra-surface-bright);
   color: var(--terra-text);
   font-family: "Nunito Sans", sans-serif;
+  overflow-x: clip;
+}
+
+.terraMatterPage .matterOverviewWrap > *,
+.terraMatterPage :where(.matterOverviewHead, .matterWorkspaceTabs, .matterWorkspacePanel, .matterEmptyUploadPanel) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .terraMatterPage .homeDashMain.sidebarCollapsed .matterOverviewWrap {
@@ -487,6 +504,7 @@
   border: 1px solid rgba(196, 200, 188, 0.32);
   border-radius: 8px;
   background: var(--terra-surface-low);
+  flex-wrap: wrap;
 }
 
 .terraMatterPage .matterReaderFontLabel {
@@ -2199,7 +2217,125 @@
   color: var(--terra-on-primary);
 }
 
-@media (max-width: 980px) {
+/* New-matter empty state: keep it in the light Terra workspace rather than
+   inheriting the legacy dark command-panel treatment from MatterSection.css. */
+.terraMatterPage .matterEmptyUploadPanel {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1.12fr) minmax(280px, 0.72fr);
+  align-items: center;
+  gap: 32px;
+  margin-top: 22px;
+  padding: 32px !important;
+  overflow: visible;
+  border: 1px solid rgba(196, 200, 188, 0.72) !important;
+  border-radius: 24px !important;
+  background: var(--terra-surface-low) !important;
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.05) !important;
+  color: var(--terra-text) !important;
+  animation: none;
+}
+
+.terraMatterPage .matterEmptyUploadPanel::after {
+  display: none;
+}
+
+.terraMatterPage .matterEmptyUploadPanel > * {
+  position: static;
+}
+
+.terraMatterPage .matterEmptyUploadPanel .matterEyebrow {
+  margin: 0 0 8px;
+  color: var(--terra-secondary);
+}
+
+.terraMatterPage .matterEmptyUploadPanel h2 {
+  max-width: 600px;
+  margin: 0;
+  color: var(--terra-text) !important;
+  font-family: "Literata", serif !important;
+  font-size: clamp(30px, 3.4vw, 44px) !important;
+  font-weight: 600 !important;
+  line-height: 1.12;
+}
+
+.terraMatterPage .matterEmptyUploadPanel p:not(.matterEyebrow) {
+  max-width: 600px;
+  margin: 12px 0 0;
+  color: var(--terra-muted) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.terraMatterPage .matterEmptyUploadActions {
+  display: grid;
+  justify-items: stretch;
+  gap: 14px;
+  max-width: none;
+  padding: 20px !important;
+  border: 1px solid rgba(196, 200, 188, 0.72) !important;
+  border-radius: 16px;
+  background: var(--terra-surface) !important;
+}
+
+.terraMatterPage .matterEmptyUploadActions p {
+  max-width: none;
+  margin: 2px 0 0;
+  color: var(--terra-secondary) !important;
+  font-family: "Nunito Sans", sans-serif !important;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.terraMatterPage .matterEmptyUploadButton.buttonStyle {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--terra-primary);
+  color: var(--terra-on-primary);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  box-shadow: 0 1px 2px rgba(46, 50, 48, 0.12);
+}
+
+.terraMatterPage .matterEmptyUploadButton.buttonStyle:hover:not(:disabled) {
+  transform: none;
+  background: var(--terra-primary-strong);
+  box-shadow: 0 2px 5px rgba(46, 50, 48, 0.16);
+}
+
+.terraMatterPage .matterEmptyResearchButton.buttonStyle {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--terra-outline-soft);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--terra-primary);
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  box-shadow: none;
+}
+
+.terraMatterPage .matterEmptyResearchButton.buttonStyle:hover:not(:disabled) {
+  transform: none;
+  border-color: var(--terra-primary);
+  background: var(--terra-secondary-container);
+  color: var(--terra-primary-strong);
+  box-shadow: none;
+}
+
+@media (max-width: 1120px) {
   .terraMatterSidebar {
     width: 84px;
     padding: 24px 10px;
@@ -2218,6 +2354,11 @@
     padding-left: 84px;
   }
 
+  .terraMatterPage .matterOverviewWrap,
+  .terraMatterPage .homeDashMain.sidebarCollapsed .matterOverviewWrap {
+    padding: 40px clamp(24px, 4vw, 40px) 140px;
+  }
+
   .terraMatterPage .matterOverviewTitleRow {
     flex-direction: column;
   }
@@ -2229,6 +2370,27 @@
 
   .terraMatterPage .terraMatterPeopleTab .matterPeopleGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .terraMatterPage .matterEmptyUploadPanel {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 960px) {
+  .terraMatterPage .rightToolsRail {
+    display: none;
+  }
+
+  .terraMatterMain,
+  .terraMatterMain.sidebarCollapsed {
+    padding-right: 0;
+  }
+
+  .terraMatterPage .matterWorkspaceTab {
+    flex: 0 0 auto;
+    padding-inline: 12px;
+    font-size: 12px;
   }
 }
 
@@ -2246,8 +2408,27 @@
 
   .terraMatterMain,
   .terraMatterMain.sidebarCollapsed {
+    padding-top: 64px;
     padding-left: 0;
     padding-right: 0;
+  }
+
+  .terraMatterPage .homeDashTopBar {
+    height: 64px;
+    min-height: 64px;
+    flex-wrap: nowrap;
+    padding: 0 12px;
+  }
+
+  .terraMatterPage .topBarLeft,
+  .terraMatterPage .topBarRight {
+    width: auto;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+  }
+
+  .terraMatterPage .sidebarToggleBtn {
+    display: none;
   }
 
   .terraMatterPage .matterOverviewWrap,
@@ -2287,5 +2468,56 @@
   .terraMatterPage .chatDock {
     display: flex;
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .terraMatterPage .homeDashTopBar {
+    padding-inline: 8px;
+  }
+
+  .terraMatterPage .topBarLeft {
+    gap: 6px;
+  }
+
+  .terraMatterPage .topBarLeft::after {
+    font-size: 20px;
+  }
+
+  .terraMatterPage .topBarRight {
+    gap: 7px;
+  }
+
+  .terraMatterPage .productHeaderUserCluster {
+    padding-left: 8px;
+  }
+
+  .terraMatterPage .pipelineJobCenterButton {
+    padding-inline: 9px;
+  }
+
+  .terraMatterPage .matterOverviewWrap,
+  .terraMatterPage .homeDashMain.sidebarCollapsed .matterOverviewWrap {
+    padding: 24px 12px 120px;
+  }
+
+  .terraMatterPage .matterOverviewHead {
+    margin-bottom: 24px;
+  }
+
+  .terraMatterPage .matterOverviewHead h1 {
+    font-size: clamp(30px, 10vw, 36px);
+  }
+
+  .terraMatterPage .matterReaderFontBar,
+  .terraMatterPage .matterWorkspacePanel,
+  .terraMatterPage .matterEmptyUploadPanel {
+    padding: 16px !important;
+    border-radius: 14px !important;
+  }
+
+  .terraMatterPage .matterOverviewActionRow > * {
+    width: 100%;
+    flex: 1 1 100%;
   }
 }

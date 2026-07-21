@@ -37,10 +37,94 @@
 
 .matterUploadLoaderInline .matterUploadLoaderContent h2 {
   font-size: clamp(28px, 2vw, 34px);
+  color: #2e3230;
 }
 
 .matterUploadLoaderInline .matterUploadLoaderLead {
   font-size: 18px;
+  color: #4a4e4a;
+}
+
+/* Inline loaders appear on the light Terra workspace. Override the
+   overlay's light-on-dark palette so every stage remains legible. */
+.matterUploadLoaderInline .matterUploadLoaderEyebrow {
+  color: #2a6038;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderStatusRow strong,
+.matterUploadLoaderInline .matterUploadLoaderStatusRow span {
+  color: #2a6038;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderProgress {
+  background: #d8ddd3;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderProgressBar {
+  background: linear-gradient(90deg, #4a7c59 0%, #2a6038 100%);
+  box-shadow: 0 0 12px rgba(74, 124, 89, 0.22);
+}
+
+.matterUploadLoaderInline .matterUploadLoaderSteps {
+  border-left-color: #4a7c59;
+  background: #f5f1ea;
+  box-shadow: 0 8px 24px rgba(46, 50, 48, 0.08);
+}
+
+.matterUploadLoaderInline .matterUploadLoaderStepDone {
+  color: #4a4e4a;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderStepDone .matterUploadLoaderStepIcon,
+.matterUploadLoaderInline .matterUploadLoaderStepActive .matterUploadLoaderStepIcon {
+  color: #2a6038;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderStepActive {
+  color: #2e3230;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderStepUpcoming,
+.matterUploadLoaderInline .matterUploadLoaderStepUpcoming .matterUploadLoaderStepIcon {
+  color: #6b6358;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderTranscript {
+  border-color: #c4c8bc;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(46, 50, 48, 0.08);
+}
+
+.matterUploadLoaderInline .matterUploadLoaderTranscriptHeader {
+  border-bottom-color: #e4e0d8;
+  color: #2a6038;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderTranscriptEntry {
+  color: #2e3230;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderTranscriptEntry + .matterUploadLoaderTranscriptEntry {
+  border-top-color: #e4e0d8;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderSpinnerCard {
+  border-color: #c4c8bc;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(46, 50, 48, 0.08);
+}
+
+.matterUploadLoaderInline .matterUploadLoaderSpinner {
+  border-color: #d8ddd3;
+  border-top-color: #4a7c59;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderSpinnerText h2 {
+  color: #2e3230;
+}
+
+.matterUploadLoaderInline .matterUploadLoaderSpinnerText .matterUploadLoaderLead {
+  color: #4a4e4a;
 }
 
 .matterUploadLoaderInline .matterUploadLoaderPreview {

@@ -1,11 +1,13 @@
 import "../componentStyling/UploadPopUp.css";
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type DragEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { CirclePlus, FileText, X } from "lucide-react";
 import Button from "./Button";
 
@@ -89,6 +91,17 @@ const UploadPopUp = ({
     [validations],
   );
 
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -114,7 +127,7 @@ const UploadPopUp = ({
       validations.length === selectedFiles.length &&
       validations.every((item) => item.accepted));
 
-  return (
+  return createPortal(
     <div
       className="uploadPopupBackdrop"
       role="dialog"
@@ -172,13 +185,14 @@ const UploadPopUp = ({
 
         <div className="uploadPopupContentGrid">
           <div className="uploadPopupLeftColumn">
-            <div className="uploadPopupMetaInline">
-              Up to {maxFiles} files • {sizeLimitLabel} each • {maxPages} pages
-              max for PDFs
-            </div>
-
             <label className="uploadPopupPromptField">
-              <span>Input context (required)</span>
+              <span className="uploadPopupPromptHead">
+                <strong>Input context (required)</strong>
+                <small className="uploadPopupMetaInline">
+                  Up to {maxFiles} files • {sizeLimitLabel} each • {maxPages} pages
+                  max for PDFs
+                </small>
+              </span>
               <div className="uploadPopupPromptBox">
                 <textarea
                   value={queryValue}
@@ -315,7 +329,8 @@ const UploadPopUp = ({
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

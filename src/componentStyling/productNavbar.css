@@ -841,6 +841,34 @@
   .draftChromeToolbar {
     flex-wrap: wrap;
   }
+
+  .productTopBar:not(.draftingChromeBar) .productHeaderUserName {
+    display: none;
+  }
+}
+
+@media (max-width: 1180px) and (min-width: 961px) {
+  .productTopBar:not(.draftingChromeBar) {
+    gap: 14px;
+    padding-inline: 16px;
+  }
+
+  .productTopBar:not(.draftingChromeBar) .sectionRouteNav {
+    min-width: 0;
+    gap: 14px;
+  }
+
+  .productTopBar:not(.draftingChromeBar) .topBarRight {
+    gap: 12px;
+  }
+
+  .productTopBar:not(.draftingChromeBar) .creditBalanceChip {
+    min-width: 0;
+  }
+
+  .productHeaderUserName {
+    display: none;
+  }
 }
 
 @media (max-width: 640px) {
