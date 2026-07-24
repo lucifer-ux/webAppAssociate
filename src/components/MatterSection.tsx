@@ -156,9 +156,7 @@ const MATTER_UPLOAD_PREFILL_QUERY_SESSION_KEY =
   "matter_uploader_prefill_context";
 const MATTER_READER_FONT_SESSION_KEY = "matter_reader_font";
 const MATTER_BRIEF_ANIMATION_KEY = "matter_brief_animation_signature";
-const MATTER_UPLOAD_MAX_FILES = 5;
-const MATTER_UPLOAD_MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MATTER_UPLOAD_MAX_PAGES = 20;
+const MATTER_UPLOAD_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
 const GROUND_ANALYSIS_INITIAL_FACT_COUNT = 3;
 const MATTER_JOB_POLL_INTERVAL_MS = 5000;
 const GROUND_ANALYSIS_POLL_INTERVAL_MS = 5000;
@@ -1553,10 +1551,6 @@ const MatterSection = ({
     ),
     activeMatter?.fileName ? 1 : 0,
   );
-  const appendRemainingSlots = Math.max(
-    0,
-    MATTER_UPLOAD_MAX_FILES - uploadedDocumentCount,
-  );
   const isActiveMockMatter = isMockMatterId(activeMatter?.id);
   const activeMatterContextCore = (activeMatter?.contextcore ||
     null) as ContextCoreMatterState | null;
@@ -1621,10 +1615,6 @@ const MatterSection = ({
         error: "",
       }
     : { submitting: false, error: "" };
-  const popupFileLimit =
-    uploadPopupMode === "append"
-      ? appendRemainingSlots
-      : MATTER_UPLOAD_MAX_FILES;
   const activeWorkflowSelectionId = activeMatter?.id
     ? workflowSelectionIdByMatterId[activeMatter.id] ||
       activeAtlasRecognition?.primaryWorkflowId ||
@@ -1642,7 +1632,6 @@ const MatterSection = ({
     isValidatingUploadFiles ||
     (activeMatter
       ? isAppendingMatterFiles ||
-        appendRemainingSlots <= 0 ||
         isActiveMockMatter
       : false);
   const matterHeading = useMemo(() => {
@@ -6885,38 +6874,20 @@ const MatterSection = ({
 
   const handlePopupFilesSelected = (files: File[]) => {
     const localErrors: string[] = [];
-    const oversizedFiles = files.filter(
-      (file) => file.size > MATTER_UPLOAD_MAX_FILE_BYTES,
-    );
-    if (oversizedFiles.length) {
+    const merged = mergePendingFiles(pendingUploadFiles, files);
+    const totalSize = merged.reduce((total, file) => total + file.size, 0);
+    if (totalSize > MATTER_UPLOAD_MAX_TOTAL_BYTES) {
       localErrors.push(
-        oversizedFiles
-          .map(
-            (file) =>
-              `${file.name} exceeds the 10MB per-file limit for this upload.`,
-          )
-          .join(" "),
+        "The combined upload size must be 100 MB or less.",
       );
     }
-
-    const candidateFiles = files.filter(
-      (file) => file.size <= MATTER_UPLOAD_MAX_FILE_BYTES,
-    );
-    const merged = mergePendingFiles(pendingUploadFiles, candidateFiles);
-    const limited = merged.slice(0, popupFileLimit);
-
-    if (merged.length > popupFileLimit) {
-      localErrors.push(
-        uploadPopupMode === "append"
-          ? `You can add ${popupFileLimit} more file${popupFileLimit === 1 ? "" : "s"} to this matter.`
-          : `You can upload up to ${MATTER_UPLOAD_MAX_FILES} files at a time.`,
-      );
-    }
-
-    setPendingUploadFiles(limited);
+    const nextFiles = totalSize > MATTER_UPLOAD_MAX_TOTAL_BYTES
+      ? pendingUploadFiles
+      : merged;
+    setPendingUploadFiles(nextFiles);
     const localErrorMessage = localErrors.join(" ").trim();
     setUploadPopupError(localErrorMessage);
-    void validateSelectedFiles(limited, localErrorMessage);
+    void validateSelectedFiles(nextFiles, localErrorMessage);
   };
 
   const handleRemovePendingUploadFile = (fileName: string) => {
@@ -9539,15 +9510,13 @@ const MatterSection = ({
         description={
           uploadPopupMode === "append"
             ? "Add more source files to this matter. We will verify them first, then ingest them into the same matter context."
-            : "Upload up to five source files and add any context you want to carry with the matter."
+            : "Upload source files totaling up to 100 MB and add any context you want to carry with the matter."
         }
         queryValue={uploadQuery}
         onQueryChange={setUploadQuery}
         selectedFiles={pendingUploadFiles}
         validations={uploadValidations}
-        maxFiles={popupFileLimit}
-        sizeLimitLabel="10 MB"
-        maxPages={MATTER_UPLOAD_MAX_PAGES}
+        totalSizeLimitLabel="100 MB"
         isValidating={isValidatingUploadFiles}
         isSubmitting={isUploadingMatter || isAppendingMatterFiles}
         errorMessage={uploadPopupError}

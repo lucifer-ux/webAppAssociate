@@ -30,9 +30,7 @@ type UploadPopUpProps = {
   onQueryChange: (value: string) => void;
   selectedFiles: File[];
   validations: UploadPopupValidationItem[];
-  maxFiles: number;
-  sizeLimitLabel: string;
-  maxPages: number;
+  totalSizeLimitLabel: string;
   isValidating: boolean;
   isSubmitting: boolean;
   errorMessage: string;
@@ -67,9 +65,7 @@ const UploadPopUp = ({
   onQueryChange,
   selectedFiles,
   validations,
-  maxFiles,
-  sizeLimitLabel,
-  maxPages,
+  totalSizeLimitLabel,
   isValidating,
   isSubmitting,
   errorMessage,
@@ -120,6 +116,7 @@ const UploadPopUp = ({
   };
 
   const acceptedCount = validations.filter((item) => item.accepted).length;
+  const selectedSize = selectedFiles.reduce((total, file) => total + file.size, 0);
   const hasMessage = Boolean(queryValue.trim());
   const allAccepted =
     allowEmptyFiles ||
@@ -189,8 +186,7 @@ const UploadPopUp = ({
               <span className="uploadPopupPromptHead">
                 <strong>Input context (required)</strong>
                 <small className="uploadPopupMetaInline">
-                  Up to {maxFiles} files • {sizeLimitLabel} each • {maxPages} pages
-                  max for PDFs
+                  {totalSizeLimitLabel} combined across all files
                 </small>
               </span>
               <div className="uploadPopupPromptBox">
@@ -230,7 +226,7 @@ const UploadPopUp = ({
             <div className="uploadPopupFilesHead">
               <h3>Selected files</h3>
               <span>
-                {selectedFiles.length} selected
+                {selectedFiles.length} selected{selectedFiles.length ? ` • ${formatBytes(selectedSize)}` : ""}
                 {selectedFiles.length
                   ? ` • ${acceptedCount} verified`
                   : allowEmptyFiles
